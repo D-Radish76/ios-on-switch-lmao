@@ -169,6 +169,8 @@ IOReturn AGXDeviceUserClient::runJob(const SwitchGpuJobRecord &record, JobScratc
 	const IOReturn result = runJobUses(record, job, out, set, siblings, siblingCount, why);
 	if (set)
 		switch_gpu_set_leave(set);
+	if (result != kIOReturnSuccess && record.promises && record.promises->count)
+		reholdPromises(record.promises);
 	return result;
 }
 

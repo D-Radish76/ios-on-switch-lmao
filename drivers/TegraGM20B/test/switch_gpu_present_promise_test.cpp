@@ -71,9 +71,9 @@ TEST(PresentPromise, AJobThatEndedBeforeItsConversionIsTakenByTheLastLook)
 	EXPECT_EQ(d.workItems, 1u);
 }
 
-// No job ever keeps the promise: the deadline has nothing to do with it, nor the give-up's pass; its maker withdraws it
-// (the held command buffer failed at Metal's bound), and the frame is dropped (the panel keeps the one before it); it
-// is never shown without its writes.
+// No job keeps the promise before its bound: the deadline has nothing to do with it, nor the give-up's pass; its maker
+// withdraws it (the held command buffer failed at Metal's bound), and the frame is dropped (the panel keeps the one
+// before it); it is never shown without its writes.
 TEST(PresentPromise, AnUnkeptPromiseWithdrawnDropsTheFrame)
 {
 	Producer a{kA, Channel(40)};
@@ -93,16 +93,15 @@ TEST(PresentPromise, AnUnkeptPromiseWithdrawnDropsTheFrame)
 	EXPECT_EQ(d.presented, 1u) << "the late job delivers nothing more";
 }
 
-// A cancel gives the promise back with nothing written, so the frame is what the surface holds: shown. A kill or a close
-// gives it up: dropped.
-// Its holder stopped (an app suspended mid-hold): the kernel gives the promise up at the holder's bound, which reports
-// its writer once and drops the frame; a job keeping it later delivers nothing more.
-TEST(PresentPromise, AnUnkeptPromisePastItsHoldersBoundDropsTheFrame)
+// Its holder stopped (an app suspended mid-hold, or before its submit worker armed anything): the kernel gives the
+// promise up at its bound, which reports its writer once and drops the frame; a job keeping it later delivers nothing
+// more.
+TEST(PresentPromise, AnUnkeptPromisePastItsBoundDropsTheFrame)
 {
 	Producer a{kA, Channel(40)};
 	Display d({&a});
 	ASSERT_EQ(d.offer(&kPromise, 1), 0);
-	d.holderBound();
+	d.atBound();
 	EXPECT_EQ(d.reported, 1u);
 	EXPECT_EQ(d.failed, 1u);
 	EXPECT_EQ(shown(d), 0u);
@@ -113,6 +112,8 @@ TEST(PresentPromise, AnUnkeptPromisePastItsHoldersBoundDropsTheFrame)
 	EXPECT_EQ(d.presented, 1u) << "the late job delivers nothing more";
 }
 
+// A cancel gives the promise back with nothing written, so the frame is what the surface holds: shown. A kill or a close
+// gives it up: dropped.
 TEST(PresentPromise, ACancelShowsTheFrameAndAKillDropsIt)
 {
 	for (const bool abandon : {false, true}) {
@@ -179,21 +180,29 @@ TEST(PresentPromiseDirect, ACancelShowsItsFrame)
 	EXPECT_EQ(d.panel, 2);
 }
 
-// Never kept: its maker's withdraw drops it, and the panel keeps frame 1. Once kept, the watch has its deadline from the
-// keep.
-// Past its holder's bound with the holder stopped: given up, and the panel keeps frame 1
-TEST(PresentPromiseDirect, UnkeptPastItsHoldersBoundIsDroppedKeepingThePreviousFrame)
+// Past its bound with the holder stopped: given up, and the panel keeps frame 1. The holder's job, when it runs later
+// (nothing armed it to fail, so its keep is accepted), writes the surface for the frames after: this present flips
+// nothing, and the next offer of the surface shows the job's frame.
+TEST(PresentPromiseDirect, UnkeptPastItsBoundIsDroppedAndTheLateJobFlipsNothing)
 {
 	Producer a{kA, Channel(40)};
 	Display d({&a});
 	ASSERT_EQ(d.offer(&kPromise, 1), 0);
 	d.filter();
-	d.holderBound();
+	d.atBound();
 	EXPECT_EQ(d.reported, 1u);
 	EXPECT_EQ(d.failed, 1u);
 	EXPECT_EQ(d.panel, 1);
+	const auto late = a.token(a.channel.submit(1, false));
+	d.kept(kWord, kValue, late);
+	a.channel.run();
+	d.filter();
+	EXPECT_EQ(d.panel, 1) << "the late job's write flipped a present already dropped";
+	EXPECT_EQ(d.presented, 1u);
 }
 
+// Never kept: its maker's withdraw drops it, and the panel keeps frame 1. Once kept, the watch has its deadline from the
+// keep.
 TEST(PresentPromiseDirect, UnkeptIsDroppedKeepingThePreviousFrame)
 {
 	Producer a{kA, Channel(40)};

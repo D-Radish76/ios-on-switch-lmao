@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+#include "TegraGM20BJobABI.h"
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -363,9 +364,9 @@ public:
     using Time = Clock::time_point;
 
     // How long Metal's GPU lets an untimed wait on a shared event hold its queue's head before the command buffer fails
-    // with MTLCommandBufferErrorTimeout: 5.0 s from the wait becoming the head, whatever waits behind it (an M4 Max,
-    // macOS 27.2.1: 5004.3-5005.5 ms over 26 held command buffers; a second held buffer fails 5.0 s after the first)
-    static constexpr std::chrono::milliseconds kHeldBound{5000};
+    // with MTLCommandBufferErrorTimeout, whatever waits behind it (TegraGM20BPromiseBoundNs, the kernel's bound too; a
+    // second held buffer fails a bound after the first)
+    static constexpr std::chrono::nanoseconds kHeldBound{TegraGM20BPromiseBoundNs};
 
     static Time now()
     {
@@ -377,7 +378,8 @@ public:
     }
 
     EventDeadline(Time start, uint32_t timeoutMs)
-        : until_(start + (timeoutMs ? std::chrono::milliseconds(timeoutMs) : kHeldBound)), timed_(timeoutMs != 0)
+        : until_(start + (timeoutMs ? std::chrono::nanoseconds(std::chrono::milliseconds(timeoutMs)) : kHeldBound)),
+          timed_(timeoutMs != 0)
     {}
 
     // A timed wait goes on at its limit as if reached; an untimed one waits for the value, its producer's failure or

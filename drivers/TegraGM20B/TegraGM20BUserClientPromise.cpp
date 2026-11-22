@@ -190,6 +190,26 @@ IOReturn AGXDeviceUserClient::keepPromises(const TegraGM20BAbiJobPromises *promi
 	return result;
 }
 
+// SubmitJob refused a job after keepPromises ended the bounds of the promises it was to keep: each one still made has
+// its bound again (tgm_promise_rehold), so a reader is not left waiting on a job that never came. lock_ only while the
+// promises are read, as armPromises.
+void AGXDeviceUserClient::reholdPromises(const TegraGM20BAbiJobPromises *promises)
+{
+	uint32_t made[TegraGM20BMaxJobPromises][2], count = 0;
+	IOLockLock(lock_);
+	for (uint32_t i = 0; i < promises->count && i < TegraGM20BMaxJobPromises; ++i) {
+		const uint32_t promise = promises->promise[i];
+		if (promise >= TegraGM20BMaxPromises ||
+		    promises_[promise].state != SWITCH_GPU_PROMISE_MADE)
+			continue;
+		made[count][0] = tgm_fence_offset(promiseWord(promise));
+		made[count++][1] = promises_[promise].value;
+	}
+	IOLockUnlock(lock_);
+	for (uint32_t i = 0; i < count; ++i)
+		tgm_promise_rehold(made[i][0], made[i][1]);
+}
+
 // Its job (`job`) is submitted: its users from now on follow the job's own writes, a user that already waits for the
 // word gets it at the job's end, and a direct present watching it watches the job.
 void AGXDeviceUserClient::keptPromises(const TegraGM20BAbiJobPromises *promises, uint32_t slot,

@@ -129,7 +129,9 @@ enum {
  * does for its readers, whatever its maker is doing; the maker's own Withdraw or Cancel of it afterwards succeeds. With
  * TegraGM20BPromiseArmFails (the command buffer fails at this bound, as Metal fails an untimed wait) a job that keeps it
  * later is refused with kIOReturnTimeout; without (it runs after the bound) its job still runs. An arm again replaces
- * the bound; a keep before it ends it. */
+ * the bound; a keep before it ends it. A promise nobody armed has the bound all the same, TegraGM20BPromiseBoundNs from
+ * its first reader's wait, without TegraGM20BPromiseArmFails: a holder that stops before it arms (suspended, stopped
+ * in a debugger, its submit worker never reaching the wait) keeps no other process waiting longer than that. */
 enum {
 	TegraGM20BPromiseMake = 0,
 	TegraGM20BPromiseCancel = 1,
@@ -139,8 +141,13 @@ enum {
 enum {
 	TegraGM20BPromiseArmFails = 1u,
 };
+/* Metal's bound on a committed command buffer that waits on a shared event, which IOGPU's kernel enforces whatever its
+ * process does (kIOGPUCommandBufferCallbackErrorTimeout): 5.0 s from the wait becoming its queue's head (an M4 Max,
+ * macOS 27.2.1: 5004.3-5005.5 ms over 26 held command buffers). The runtime fails a held command buffer there and arms
+ * it for its promises; the kernel bounds a promise nobody armed by it. */
+#define TegraGM20BPromiseBoundNs (5000ull * 1000 * 1000)
 /* The longest bound an arm may set: ten minutes, a hundred and twenty of Metal's 5 s */
-#define TegraGM20BPromiseArmMaxNs (600ull * 1000 * 1000 * 1000)
+#define TegraGM20BPromiseArmMaxNs (120 * TegraGM20BPromiseBoundNs)
 
 struct TegraGM20BAbiWriterPromise {
 	uint64_t uses_address;

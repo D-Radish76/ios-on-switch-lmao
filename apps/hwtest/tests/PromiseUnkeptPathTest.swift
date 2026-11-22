@@ -66,27 +66,31 @@ final class PromiseMakerCancel: @unchecked Sendable {
     }
 }
 
-/// A writer promise nobody keeps (drivers/TegraGM20B/SwitchGpuWriterPromise.h): the test's connection promises an
-/// IOSurface's writes and never submits the job. The kernel gives up an unkept promise only at a bound its holder armed
-/// (SwitchGpuPromiseGiveUp.h: a held command buffer's submit worker arms Metal's 5 s bound, gpu.path.holder_timeout);
-/// this promise is the test connection's own, with no command buffer and no bound, so its readers wait for the maker's
-/// own event: here its cancel, cancelSeconds after the promise, past the one-second give-up there was before. Each
-/// reader then goes on at once with the frame the surface held before. - composite: a layer showing the surface,
-/// rendered by the render server, whose job acquires the promise and parks at its submit, so the display's present
-/// waits behind that job: composite_ms about cancelSeconds. A composite that ended before the cancel with nothing given
-/// up never parked: SKIP with that reason, its promise cancelled then. - copy: the Metal device's blit of the surface
-/// (this process's own job, run only when its command buffers take the raw path), parked at its submit, and beside it a
-/// CPU lock of the surface that sleeps behind the same promise. Judged: no promise given up (d_abandoned 0: no "was not
-/// kept" line), each reader went on no sooner than the cancel and within PromiseCancelPathTest.goesOnMs of it
-/// (`<reader>_after_cancel_ms`: the cancel's CPU write reached the parked channel, and the CPU lock was woken, with no
-/// close), the frame before shown or read, the copy completed.
+/// A writer promise nobody keeps or arms (drivers/TegraGM20B/SwitchGpuWriterPromise.h): the test's connection promises
+/// an IOSurface's writes and then does nothing with it, as a holder that stopped right after its commit's make, before
+/// its submit worker armed a bound (iOS suspended it, a debugger stopped it). Its readers do not wait for it to run
+/// again: the kernel gives every unkept promise up at TegraGM20BPromiseBoundNs, Metal's 5 s, from its first reader's
+/// park when no holder armed its own (SwitchGpuPromiseGiveUp.h). All readers wait on the one promise at once, so the
+/// test takes one bound:
+/// - copy: the Metal device's blit of the surface (this process's own job, run only when its command buffers take the
+///   raw path), parked at its submit, and beside it a CPU lock of the surface that sleeps behind the same promise;
+/// - composite: a layer showing the surface, rendered by the render server, whose job acquires the promise and parks
+///   at its submit, so the display's present waits behind that job. A composite that ended before the bound never
+///   parked: SKIP with that reason.
+/// Judged: the promise given up once (d_abandoned 1, one "was not kept" line), the kernel's own wait from the first
+/// park to the give-up (waited_ms) at the bound and at most boundLateMs past it (the lateness of the give-up's one-shot
+/// thread call); each reader gone on no sooner than the bound after the test began and at most readerLateMs past it
+/// (its park after the start, then PromiseCancelPathTest.goesOnMs for a parked reader to see the raised word); no
+/// reader left for the safety cancel; the frame before shown and read; the copy completed; and the maker's cancel of
+/// the promise the kernel gave up still accepted.
 struct PromiseUnkeptPathTest: GPUPathTest {
     let id = "gpu.path.promise_unkept"
-    let name = "A writer promise nobody keeps is never given up: its readers go on at its maker's cancel"
+    let name = "A promise nobody keeps or arms is given up at the 5 s bound, its readers seeing the frame before"
     let counters = ["writer_promises", "promise_waits"]
     static let size = 64
     static let fill: [UInt8] = [0, 0, 255, 255]  // BGRA red: the frame before the promised one
-    static let cancelSeconds = 1.5
+    static let boundMs = 5000.0, boundLateMs = 50.0, safetySeconds = 8.0
+    static let readerLateMs = boundLateMs + PromiseCancelPathTest.goesOnMs
 
     func exercise(_ gpu: GPU, _ context: TestContext, _ metrics: inout Metrics) async throws -> [String] {
         let rowBytes = Self.size * 4
@@ -104,65 +108,7 @@ struct PromiseUnkeptPathTest: GPUPathTest {
         surface.unlock(options: [], seed: nil)
         var failures: [String] = []
 
-        let start = try PromiseTotals.read()
-        let (handle, compositePromise) = try PromiseCancelPathTest.promise(surface, maker)
-        defer {
-            _ = maker.call(
-                PromiseCancelPathTest.boFree, GPUConnection.words(PromiseCancelPathTest.halves(handle)), outputSize: 0)
-        }
-        let shown = await context.onStage { stage -> UIView in
-            let view = UIView(frame: CGRect(x: 0, y: 0, width: 96, height: 96))
-            view.layer.contents = surface
-            view.layer.contentsGravity = .resize
-            stage.addSubview(view)
-            return view
-        }
-        let compositeCancel = PromiseMakerCancel(maker, promise: compositePromise, afterSeconds: Self.cancelSeconds)
-        let rendering = DispatchTime.now()
-        let render = await MainActor.run { Snapshots.composited(shown) }
-        let compositeEnded = DispatchTime.now()
-        let compositeCancelledFirst = compositeCancel.at
-        compositeCancel.cancel()
-        await context.clearStage()
-        let afterComposite = try PromiseTotals.read()
-        let centre = render.pixel(render.width / 2, render.height / 2)
-        let compositeGivenUp = afterComposite.abandoned - start.abandoned
-        metrics.set("composite_ms", String(format: "%.1f", Self.ms(rendering, compositeEnded)))
-        metrics.set("composite_d_abandoned", compositeGivenUp)
-        metrics.set(
-            "centre", centre.prefix(3).map { String(Int(($0 * render.levels).rounded())) }.joined(separator: ","))
-        if compositeGivenUp != 0 {
-            failures.append("the composite's unkept promise was given up \(compositeGivenUp) times")
-        }
-        if compositeCancel.result != KERN_SUCCESS {
-            failures.append("the composite's cancel was refused: \(GPUConnection.hex(compositeCancel.result))")
-        }
-        if let cancelled = compositeCancelledFirst {
-            let afterMs = Self.ms(cancelled, compositeEnded)
-            metrics.set("composite_after_cancel_ms", String(format: "%.1f", afterMs))
-            if afterMs > PromiseCancelPathTest.goesOnMs {
-                failures.append(String(format: "the composite went on %.0f ms after the cancel", afterMs))
-            }
-            if centre[0] < 0.8 || centre[1] > 0.2 {
-                failures.append("the composite shows \(centre.prefix(3)), not the frame before (red)")
-            }
-        } else if compositeGivenUp == 0 {
-            PathParts.current?.skip(
-                String(
-                    format: "composite: the render server never parked on the promise (%.0f ms)",
-                    Self.ms(rendering, compositeEnded)),
-                counters: [])
-        }
-
-        guard PathParts.ownRouteRaw(gpu, part: "copy and CPU lock", counters: ["promise_waits"], &metrics) else {
-            return failures
-        }
-        let (copyHandle, copyPromise) = try PromiseCancelPathTest.promise(surface, maker)
-        defer {
-            _ = maker.call(
-                PromiseCancelPathTest.boFree, GPUConnection.words(PromiseCancelPathTest.halves(copyHandle)),
-                outputSize: 0)
-        }
+        let raw = PathParts.ownRouteRaw(gpu, part: "copy and CPU lock", counters: ["promise_waits"], &metrics)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false)
         descriptor.usage = [.shaderRead]
@@ -176,44 +122,103 @@ struct PromiseUnkeptPathTest: GPUPathTest {
             sourceSize: MTLSize(width: Self.size, height: Self.size, depth: 1), to: copied, destinationOffset: 0,
             destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size)
         blit.endEncoding()
-        let copyCancel = PromiseMakerCancel(maker, promise: copyPromise, afterSeconds: Self.cancelSeconds)
-        let copying = DispatchTime.now()
-        let cpuReader = CpuReader(surface)
-        commands.commit()
-        commands.waitUntilCompleted()
-        let copyEnded = DispatchTime.now()
-        let cpuRead = cpuReader.wait()
-        let copyCancelledFirst = copyCancel.at
-        copyCancel.cancel()
-        let afterCopy = try PromiseTotals.read()
-        let copyGivenUp = afterCopy.abandoned - afterComposite.abandoned
-        metrics.set("copy_ms", String(format: "%.1f", Self.ms(copying, copyEnded)))
-        metrics.set("cpu_reader_woken_ms", String(format: "%.1f", Self.ms(copying, cpuRead.woken)))
-        metrics.set("copy_d_abandoned", copyGivenUp)
-        if copyGivenUp != 0 { failures.append("the copy's unkept promise was given up \(copyGivenUp) times") }
-        if copyCancel.result != KERN_SUCCESS {
-            failures.append("the copy's cancel was refused: \(GPUConnection.hex(copyCancel.result))")
+
+        let start = try PromiseTotals.read()
+        let (handle, promise) = try PromiseCancelPathTest.promise(surface, maker)
+        defer {
+            _ = maker.call(
+                PromiseCancelPathTest.boFree, GPUConnection.words(PromiseCancelPathTest.halves(handle)), outputSize: 0)
         }
-        if let cancelled = copyCancelledFirst {
-            let copyAfterMs = Self.ms(cancelled, copyEnded), cpuAfterMs = Self.ms(cancelled, cpuRead.woken)
-            metrics.set("copy_after_cancel_ms", String(format: "%.1f", copyAfterMs))
-            metrics.set("cpu_after_cancel_ms", String(format: "%.1f", cpuAfterMs))
-            if copyAfterMs > PromiseCancelPathTest.goesOnMs {
-                failures.append(String(format: "the copy went on %.0f ms after the cancel", copyAfterMs))
+        let shown = await context.onStage { stage -> UIView in
+            let view = UIView(frame: CGRect(x: 0, y: 0, width: 96, height: 96))
+            view.layer.contents = surface
+            view.layer.contentsGravity = .resize
+            stage.addSubview(view)
+            return view
+        }
+        let safety = PromiseMakerCancel(maker, promise: promise, afterSeconds: Self.safetySeconds)
+        let begun = DispatchTime.now()
+        var cpuReader: CpuReader?
+        if raw {
+            commands.commit()
+            cpuReader = CpuReader(surface)
+        }
+        let render = await MainActor.run { Snapshots.composited(shown) }
+        let compositeEnded = DispatchTime.now()
+        await context.clearStage()
+        var copyEnded = compositeEnded
+        if raw {
+            commands.waitUntilCompleted()
+            copyEnded = DispatchTime.now()
+        }
+        let cpuRead = cpuReader?.wait()
+        let safetyFired = safety.at != nil
+        safety.cancel()
+        let after = try PromiseTotals.read()
+
+        let givenUp = after.abandoned - start.abandoned
+        let compositeMs = Self.ms(begun, compositeEnded)
+        let centre = render.pixel(render.width / 2, render.height / 2)
+        let compositeParked = compositeMs >= Self.boundMs
+        metrics.set("d_abandoned", givenUp)
+        metrics.set("waited_ms", after.lastWaitedMs)
+        metrics.set("composite_ms", String(format: "%.1f", compositeMs))
+        metrics.set(
+            "centre", centre.prefix(3).map { String(Int(($0 * render.levels).rounded())) }.joined(separator: ","))
+        if safetyFired { failures.append("a reader went on only at the safety cancel, \(Self.safetySeconds) s on") }
+        if safety.result != KERN_SUCCESS {
+            failures.append("the maker's cancel after the give-up was refused: \(GPUConnection.hex(safety.result))")
+        }
+        if !compositeParked {
+            PathParts.current?.skip(
+                String(format: "composite: the render server never parked on the promise (%.0f ms)", compositeMs),
+                counters: [])
+        }
+        guard compositeParked || raw else {
+            if givenUp != 0 { failures.append("a promise nobody waited on was given up \(givenUp) times") }
+            return failures
+        }
+        if givenUp != 1 { failures.append("the unkept promise was given up \(givenUp) times, not once") }
+        if Double(after.lastWaitedMs) < Self.boundMs || Double(after.lastWaitedMs) > Self.boundMs + Self.boundLateMs {
+            failures.append(
+                String(
+                    format: "given up %ld ms after its first reader parked (the bound is %.0f, at most %.0f late)",
+                    after.lastWaitedMs, Self.boundMs, Self.boundLateMs))
+        }
+        if compositeParked {
+            failures += Self.late("composite", compositeMs)
+            if centre[0] < 0.8 || centre[1] > 0.2 {
+                failures.append("the composite shows \(centre.prefix(3)), not the frame before (red)")
             }
-            if cpuAfterMs < 0 { failures.append("the CPU lock went on before the cancel") }
-            if cpuAfterMs > PromiseCancelPathTest.goesOnMs {
-                failures.append(String(format: "the CPU lock went on %.0f ms after the cancel", cpuAfterMs))
-            }
-        } else {
-            failures.append("the copy ended before its maker's cancel: it never waited for the promise")
         }
-        if cpuRead.pixel != Self.fill {
-            failures.append("the CPU lock read \(cpuRead.pixel), not the frame before \(Self.fill)")
+        if let cpuRead = cpuRead {
+            let copyMs = Self.ms(begun, copyEnded), cpuMs = Self.ms(begun, cpuRead.woken)
+            metrics.set("copy_ms", String(format: "%.1f", copyMs))
+            metrics.set("cpu_reader_woken_ms", String(format: "%.1f", cpuMs))
+            failures += Self.late("copy", copyMs) + Self.late("CPU lock", cpuMs)
+            let got = Array(UnsafeRawBufferPointer(start: copied.contents(), count: 4))
+            failures += Self.frameBefore(cpuLock: cpuRead.pixel, copy: got, copyStatus: commands.status)
         }
-        if commands.status != .completed { failures.append("the copy ended \(commands.status.rawValue)") }
-        let got = Array(UnsafeRawBufferPointer(start: copied.contents(), count: 4))
-        if got != Self.fill { failures.append("the copy read \(got), not the frame before \(Self.fill)") }
+        return failures
+    }
+
+    /// A reader that went on `ms` after the test began: never before the bound, at most readerLateMs past it
+    static func late(_ reader: String, _ ms: Double) -> [String] {
+        if ms < boundMs { return [String(format: "the %@ went on %.0f ms in, before the bound", reader, ms)] }
+        guard ms > boundMs + readerLateMs else { return [] }
+        return [
+            String(
+                format: "the %@ went on %.0f ms in (the bound is %.0f, at most %.0f late)", reader, ms, boundMs,
+                readerLateMs)
+        ]
+    }
+
+    /// What the copy and the CPU lock read once the promise was given up: the frame before, the copy completed
+    static func frameBefore(cpuLock: [UInt8], copy: [UInt8], copyStatus: MTLCommandBufferStatus) -> [String] {
+        var failures: [String] = []
+        if cpuLock != fill { failures.append("the CPU lock read \(cpuLock), not the frame before \(fill)") }
+        if copyStatus != .completed { failures.append("the copy ended \(copyStatus.rawValue)") }
+        if copy != fill { failures.append("the copy read \(copy), not the frame before \(fill)") }
         return failures
     }
 

@@ -139,6 +139,23 @@ TEST_F(Power, AHoldersBoundRunsOnThroughAPowerDown)
 	EXPECT_EQ(lines.size(), 2u);
 }
 
+// A promise nobody armed, a GPU reader parked on it and the GPU powered down meanwhile: the default bound runs on
+// through the power-down with no register read, as a holder's does
+TEST_F(Power, AnUnarmedPromisesBoundRunsOnThroughAPowerDown)
+{
+	readerSubmits();
+	const uint64_t parked = fake::now;
+	until(parked + 500 * kMs);
+	powerDown();
+	until(parked + 4999 * kMs);
+	EXPECT_TRUE(lines.empty());
+	until(parked + 5000 * kMs);
+	ASSERT_EQ(lines.size(), 1u) << "a reader of a promise nobody armed waits across the power-down";
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue);
+	EXPECT_EQ(probedReaders, 0u);
+	powerUp();
+}
+
 // After the power-up the call reaches the GPU again: a promised job queued behind another is the hang rule's, looked
 // at and waited for, never given up.
 TEST_F(Power, AfterThePowerUpAJobAheadIsTheHangRulesAgain)

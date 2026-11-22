@@ -8,8 +8,11 @@
  * and withdraws the promise, and it hands the same bound to the kernel when the wait begins (method 34 Arm), because
  * Metal's bound is the kernel's: it fires whatever state the app is in, a suspended or stopped one included. A promise
  * past its holder's bound is given up whether or not its maker ran, and a keep that comes later is refused
- * (switch_gpu_giveup_unhold), so the command buffer fails with Metal's timeout and never half-runs. A promise its
- * holder never armed waits for its maker's keep, withdraw, cancel or close.
+ * (switch_gpu_giveup_unhold), so the command buffer fails with Metal's timeout and never half-runs. A promise nobody
+ * armed (its holder stopped between the make and the arm, or a maker with no command buffer) is given up
+ * TegraGM20BPromiseBoundNs after its first reader parked, the same bound, taken at the park so the make costs nothing;
+ * a keep after that is accepted, and its job writes the surface for the frames after. A keep under way ends the bound
+ * (keeping) until the job is kept or refused (switch_gpu_giveup_rehold), and a release ends it.
  *
  * A kept promise is never given up by time. Its job's end releases the word (its fence interrupt's pass finds it
  * moved); a job that does not end is the hang rule's (tgm_chan_check_progress: TGM_HANG_NS without progress, then the
@@ -18,7 +21,7 @@
  * kept promise is the rule's next look. While the GPU is powered down nothing is looked at: the power-down drained every
  * channel first (sleep_fences), and the power-up looks again.
  *
- * One call is armed for the earliest due: a holder's bound, or the hang rule's next look. It is cancelled when every
+ * One call is armed for the earliest due: a promise's bound, or the hang rule's next look. It is cancelled when every
  * word waited on moved or the last reader left, and reads the word again whenever it runs, so a missed cancel costs a
  * run, never a give-up. A promise given up is marked abandoned, its word raised by a plain store with the fence page's
  * owner unchanged, and one line names its maker, its first reader and the time since that reader parked. A present of
@@ -83,13 +86,14 @@ struct switch_gpu_giveup_kept {
 	struct switch_gpu_giveup_job job;
 };
 
-/* The bound a slot's promise of `value` on its page's `owner` has from its holder (method 34 Arm): due_ns on the
- * kernel's clock, given_up once the call took it past that, fails when its command buffer fails there (a keep after it
- * is refused) */
+/* The bound of a slot's promise of `value` on its page's `owner`. `armed`: its holder's (method 34 Arm), at due_ns on
+ * the kernel's clock, `fails` when its command buffer fails there (a keep after it is refused); not armed, the default
+ * from its first reader's park. `keeping` from a keep or a release, which end the bound, until a refused job's
+ * rehold; given_up once the call took the promise past its bound. */
 struct switch_gpu_giveup_held {
 	uint64_t due_ns;
 	uint32_t value, owner;
-	uint32_t given_up, fails;
+	uint8_t armed, fails, keeping, given_up;
 };
 
 /* entry[i], kept[i] and held[i] are promise slot i's (switch_gpu_giveup_ops.slot) */
@@ -137,8 +141,8 @@ struct switch_gpu_giveup_ops {
 	void (*recall)(struct switch_gpu_giveup *e);
 	/* the promised job's channel was killed or destroyed */
 	int (*killed)(const struct switch_gpu_giveup_job *job);
-	/* an unkept entry due at `now`: 1 when its holder's bound passed and no keep came first (it is taken as given up), 0
-	 * when a keep did (its due cleared until the keep reaches it) */
+	/* an unkept entry due at `now`: 1 when its bound passed and no keep came first (it is taken as given up); 0, its due
+	 * set again (0 while a keep is under way) */
 	int (*expire)(struct switch_gpu_giveup *e, uint64_t now);
 };
 
@@ -310,10 +314,11 @@ static inline int switch_gpu_giveup_recall(const struct switch_gpu_giveups *g,
 	return 1;
 }
 
-/* A reader parks on the promise at `now`: a GPU job (reader), or a waiter that leaves itself. The entry has no due until
- * its job is kept (switch_gpu_giveup_due). The entry, or -1 when there is nothing to wait for (no promise slot's word, the
- * word moved, or its page has another owner). A record an earlier promise of the slot left is dropped: its word moved
- * or its page changed hands, or the slot could not have been made again. */
+/* A reader parks on the promise at `now`: a GPU job (reader), or a waiter that leaves itself. Its caller gives a new
+ * entry its due: the promise's bound (switch_gpu_giveup_bound), or the hang rule's look once kept. The entry, or -1 when
+ * there is nothing to wait for (no promise slot's word, the word moved, or its page has another owner). A record an
+ * earlier promise of the slot left is dropped: its word moved or its page changed hands, or the slot could not have been
+ * made again. */
 static inline int switch_gpu_giveup_park(struct switch_gpu_giveups *g,
 					 const struct switch_gpu_giveup_ops *ops, uint32_t offset,
 					 uint32_t value, const char *waiter, const char *who,
@@ -369,57 +374,90 @@ static inline void switch_gpu_giveup_due(struct switch_gpu_giveup *e, uint64_t n
 		e->due_ns = now + SWITCH_GPU_GIVEUP_LOOK_NS;
 }
 
+/* The call's simple lock held: slot `slot`'s record of its promise of `value` on `owner`'s page, made afresh (no bound
+ * armed, no keep) where it held an earlier promise's */
+static inline struct switch_gpu_giveup_held *
+switch_gpu_giveup_held_for(struct switch_gpu_giveups *g, int slot, uint32_t value, uint32_t owner)
+{
+	struct switch_gpu_giveup_held *h = &g->held[slot];
+
+	if (h->value != value || h->owner != owner) {
+		__builtin_memset(h, 0, sizeof(*h));
+		h->value = value;
+		h->owner = owner;
+	}
+	return h;
+}
+
 /* The call's simple lock held: the holder's bound on slot `slot`'s promise of `value` on `owner`'s page, due at
- * `due_ns`. An arm again (a later wait of the same command buffer) replaces it. */
+ * `due_ns`. An arm again (a later wait of the same command buffer) replaces it, and it replaces the default. */
 static inline void switch_gpu_giveup_hold(struct switch_gpu_giveups *g, int slot, uint32_t value,
 					  uint32_t owner, uint64_t due_ns, int fails)
 {
-	struct switch_gpu_giveup_held *h = &g->held[slot];
+	struct switch_gpu_giveup_held *h = switch_gpu_giveup_held_for(g, slot, value, owner);
 
 	h->due_ns = due_ns;
-	h->value = value;
-	h->owner = owner;
-	h->given_up = 0;
+	h->armed = 1;
 	h->fails = fails != 0;
+	h->keeping = 0;
+	h->given_up = 0;
 }
 
-/* The call's simple lock held: the holder's bound on the entry's promise, 0 for none */
-static inline uint64_t switch_gpu_giveup_held_due(const struct switch_gpu_giveups *g,
-						  const struct switch_gpu_giveup *e)
+/* The call's simple lock held: when the entry's unkept promise is given up: its holder's bound, else `fallback` (its
+ * first reader's park and the default bound); 0 while a keep is under way */
+static inline uint64_t switch_gpu_giveup_bound(const struct switch_gpu_giveups *g,
+					       const struct switch_gpu_giveup *e, uint64_t fallback)
 {
 	const struct switch_gpu_giveup_held *h = &g->held[e - g->entry];
 
-	return h->due_ns && !h->given_up && h->value == e->value && h->owner == e->owner ? h->due_ns
-											  : 0;
+	if (h->value != e->value || h->owner != e->owner)
+		return fallback;
+	if (h->keeping)
+		return 0;
+	return h->armed ? h->due_ns : fallback;
 }
 
-/* The call's simple lock held: the keep (or a release) of slot `slot`'s promise of `value` on `owner`'s page at `now`
- * ends its holder's bound. 1 when a bound its command buffer fails at passed first: the promise was given up, or is
- * due to be, and a keep of it is refused. */
+/* The call's simple lock held: a keep of slot `slot`'s promise of `value` on `owner`'s page at `now`, or its release,
+ * ends its bound. 1 when a bound its command buffer fails at passed first: the promise was given up, or is due to be,
+ * and a keep of it is refused. */
 static inline int switch_gpu_giveup_unhold(struct switch_gpu_giveups *g, int slot, uint32_t value,
 					   uint32_t owner, uint64_t now)
 {
-	struct switch_gpu_giveup_held *h = &g->held[slot];
-	int past = 0;
+	struct switch_gpu_giveup_held *h = switch_gpu_giveup_held_for(g, slot, value, owner);
 
-	if (!h->due_ns || h->value != value || h->owner != owner)
-		return 0;
-	past = h->fails && (h->given_up || (int64_t)(now - h->due_ns) >= 0);
-	h->due_ns = 0;
-	return past;
+	h->keeping = 1;
+	return h->armed && h->fails && (h->given_up || (int64_t)(now - h->due_ns) >= 0);
 }
 
-/* The call's simple lock held: the call takes the entry's promise past its holder's bound at `now`. 1: given up; 0: a
- * keep ended the bound first. */
-static inline int switch_gpu_giveup_held_expire(struct switch_gpu_giveups *g,
-						const struct switch_gpu_giveup *e, uint64_t now)
+/* The call's simple lock held: the job that was to keep slot `slot`'s promise of `value` on `owner`'s page was refused,
+ * so the promise is unkept again and its bound runs again. 1 when a keep was under way. */
+static inline int switch_gpu_giveup_rehold(struct switch_gpu_giveups *g, int slot, uint32_t value,
+					   uint32_t owner)
 {
-	struct switch_gpu_giveup_held *h = &g->held[e - g->entry];
+	struct switch_gpu_giveup_held *h = &g->held[slot];
 
-	if (!h->due_ns || h->value != e->value || h->owner != e->owner)
+	if (h->value != value || h->owner != owner || !h->keeping)
 		return 0;
-	if ((int64_t)(now - h->due_ns) < 0)
+	h->keeping = 0;
+	return 1;
+}
+
+/* The call's simple lock held: the call takes the entry's unkept promise at its due `now`. 1: given up, past its
+ * holder's bound or the default one; 0: it waits on, its due set again (0 while a keep is under way). */
+static inline int switch_gpu_giveup_held_expire(struct switch_gpu_giveups *g,
+						struct switch_gpu_giveup *e, uint64_t now)
+{
+	struct switch_gpu_giveup_held *h =
+		switch_gpu_giveup_held_for(g, (int)(e - g->entry), e->value, e->owner);
+
+	if (h->keeping) {
+		e->due_ns = 0;
 		return 0;
+	}
+	if (h->armed && (int64_t)(now - h->due_ns) < 0) {
+		e->due_ns = h->due_ns;
+		return 0;
+	}
 	h->given_up = 1;
 	return 1;
 }
@@ -430,8 +468,9 @@ static inline int switch_gpu_giveup_in_use(const struct switch_gpu_giveups *g, i
 	return (__atomic_load_n(&g->used[slot / 64], __ATOMIC_ACQUIRE) >> (slot % 64)) & 1;
 }
 
-/* The promise's job is submitted at `now` (remembered first): an entry judges it from now on, and its end is asked for,
- * so the interrupt pass after it finds the word moved and cancels the call. */
+/* The promise's job is submitted at `now` (remembered first): an entry judges it from now on, its bound replaced by the
+ * hang rule's first look, and its end is asked for, so the interrupt pass after it finds the word moved and cancels the
+ * call. */
 static inline void switch_gpu_giveup_kept(struct switch_gpu_giveups *g,
 					  const struct switch_gpu_giveup_ops *ops, uint32_t offset,
 					  uint32_t value, const struct switch_gpu_giveup_job *job,
@@ -445,7 +484,7 @@ static inline void switch_gpu_giveup_kept(struct switch_gpu_giveups *g,
 	e->kept = 1;
 	e->job = *job;
 	e->job_last = last;
-	switch_gpu_giveup_due(e, now);
+	e->due_ns = now + SWITCH_GPU_GIVEUP_LOOK_NS;
 	ops->need(job->uid, last);
 }
 
@@ -526,12 +565,8 @@ static inline int switch_gpu_giveup_judge(const struct switch_gpu_giveup_ops *op
 
 	if (!went_on && (int64_t)(now - e->due_ns) < 0)
 		return 0;
-	if (!e->kept) {
-		if (ops->expire(e, now))
-			return 1;
-		e->due_ns = 0;
-		return 0;
-	}
+	if (!e->kept)
+		return ops->expire(e, now);
 	where = ops->job_ahead(&e->job, e->job_last, &fence, &seqno, &check);
 	if (where == SWITCH_GPU_GIVEUP_GONE)
 		return 1;

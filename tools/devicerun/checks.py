@@ -333,8 +333,9 @@ GROUPS: dict[str, list[Check]] = {
             regex=PROMISE_GIVEN_UP,
             show=('owner', 'waiter'),
             source='drivers/TegraGM20B/gpu_promise_giveup.c giveup_report',
-            note="writer promises given up: each an unkept promise of a held command buffer at its holder's armed "
-            "5 s bound; a kept promise is never given up (its job's end, or the hang rule's kill, releases it)",
+            note="writer promises given up: each an unkept promise at its 5 s bound, its holder's armed one or, when "
+            'nothing armed it (a holder stopped before its wait, gpu.path.promise_unkept), 5 s from its first '
+            "reader's wait; a kept promise is never given up (its job's end, or the hang rule's kill, releases it)",
         ),
         Check(
             'gpu.promise-given-up-after-kill',

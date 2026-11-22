@@ -643,6 +643,7 @@ class AGXDeviceUserClient : public IOUserClient
 	void releasePromises(bool all);
 	IOReturn keepPromises(const TegraGM20BAbiJobPromises *promises,
 			      switch_gpu_release *releases);
+	void reholdPromises(const TegraGM20BAbiJobPromises *promises);
 	void keptPromises(const TegraGM20BAbiJobPromises *promises, uint32_t slot,
 			  const switch_gpu_backing_token &job);
 	IOReturn runJob(const SwitchGpuJobRecord &record, JobScratch &job,

@@ -206,10 +206,10 @@ TEST_P(Call, ASlotMadeAgainHasItsRecordForTheNewPromise)
 	EXPECT_EQ(fake::pool[kOffset / 4], kValue + 1);
 }
 
-// The slot's earlier promise was kept and its word moved; the slot made again is held in its maker's runtime. The new
-// promise's record is its own, with no due, and the earlier keep is not its job: nothing is given up, however long it
-// waits.
-TEST_P(Call, ASlotMadeAgainAfterAKeepIsNeverGivenUpUnkept)
+// The slot's earlier promise was kept and its word moved; the slot made again is held by a maker that never arms it.
+// The new promise's record is its own and the earlier keep is not its job: it is given up at the default bound after
+// its reader parked, as its own unkept promise.
+TEST_P(Call, ASlotMadeAgainAfterAKeepHasTheDefaultBoundForTheNewPromise)
 {
 	readerSubmits();
 	keeps();
@@ -218,16 +218,20 @@ TEST_P(Call, ASlotMadeAgainAfterAKeepIsNeverGivenUpUnkept)
 	until(fake::now + 500 * kMs);
 	tgm_fence_pages.made[0][kOffset / 4 - TGM_FENCE_PROMISE_WORD] = kValue + 1;
 	const switch_gpu_backing_token next = {kValue + 1, 0, SWITCH_GPU_ENGINE_PROMISE, kOffset};
+	const uint64_t parked = fake::now;
 	parkPromises(&reader, &next, 1);
 	reader.submitted += 1;
-	until(fake::now + 60000 * kMs);
+	until(parked + 4999 * kMs);
 	EXPECT_TRUE(lines.empty());
-	EXPECT_EQ(fake::pool[kOffset / 4], kValue) << "the new promise's word is never raised";
+	until(parked + 5000 * kMs);
+	ASSERT_EQ(lines.size(), 1u) << "the new promise's reader still waits";
+	EXPECT_NE(lines[0].find("(value 10)"), std::string::npos) << lines[0];
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue + 1);
 }
 
 // The page's earlier owner kept a promise of the same slot and value; the page then went to another connection,
 // cleared, whose promise of that value nobody keeps. Its reader is not handed the earlier owner's job: nothing is asked
-// of that channel, nothing is armed, and the unkept promise is left to its own maker.
+// of that channel, and the unkept promise has its own bound.
 TEST_P(Call, AKeepOfThePagesEarlierOwnerIsNotTheNewPromisesJob)
 {
 	makerKeeps(1);

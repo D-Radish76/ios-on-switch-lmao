@@ -294,7 +294,8 @@ int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *
 		spin_lock_irqsave(&giveup_lock, flags);
 		recalled = switch_gpu_giveup_recall(&giveups, e);
 		if (!recalled && !e->due_ns)
-			e->due_ns = switch_gpu_giveup_held_due(&giveups, e);
+			e->due_ns = switch_gpu_giveup_bound(&giveups, e,
+							    e->parked_ns + TegraGM20BPromiseBoundNs);
 		spin_unlock_irqrestore(&giveup_lock, flags);
 		if (recalled)
 			giveup_need(e->job.uid, e->job_last);
@@ -338,7 +339,32 @@ void tgm_promise_hold(uint32_t offset, uint32_t value, uint64_t ns, int fails)
 	mutex_unlock(&tgm_live_lock);
 }
 
-/* keepPromises before its job, or a release of the promise: its holder's bound ends. 1 when a bound its command buffer
+/* A job that was to keep the promise of `value` at `offset` was refused after its keep (AGXDeviceUserClient::runJob):
+ * the bound runs again, its holder's or the default from its first reader's park, already past or not */
+void tgm_promise_rehold(uint32_t offset, uint32_t value)
+{
+	const int slot = promise_slot(offset);
+	struct switch_gpu_giveup *e = slot < 0 ? NULL : &giveups.entry[slot];
+	const uint32_t owner = tgm_fence_owner(offset);
+	unsigned long flags;
+	int reopened = 0;
+
+	if (slot < 0)
+		return;
+	mutex_lock(&tgm_live_lock);
+	spin_lock_irqsave(&giveup_lock, flags);
+	reopened = switch_gpu_giveup_rehold(&giveups, slot, value, owner);
+	if (reopened && e->offset == offset && e->value == value && e->owner == owner && !e->kept &&
+	    !e->due_ns)
+		e->due_ns =
+			switch_gpu_giveup_bound(&giveups, e, e->parked_ns + TegraGM20BPromiseBoundNs);
+	spin_unlock_irqrestore(&giveup_lock, flags);
+	if (reopened)
+		giveup_arm();
+	mutex_unlock(&tgm_live_lock);
+}
+
+/* keepPromises before its job, or a release of the promise: its bound ends. 1 when a bound its command buffer
  * fails at passed first, where a keep is refused. The call's simple lock alone: never tgm_live_lock on a submission. */
 int tgm_promise_unhold(uint32_t offset, uint32_t value)
 {

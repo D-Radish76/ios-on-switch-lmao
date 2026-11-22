@@ -1351,8 +1351,12 @@ host_test(
     name = "raw_submit_queue_test",
     srcs = [
         "raw_submit_queue_test.cpp",
+        "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
+        "//drivers/TegraGM20B:TegraGM20BJobABI.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_submit_queue.h",
     ],
+    copts = ["-Idrivers/TegraGM20B"],
     cxx_std = "c++17",
 )
 
@@ -4043,9 +4047,13 @@ host_test(
     name = "raw_event_timeline_test",
     srcs = [
         "raw_event_timeline_test.cpp",
+        "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
+        "//drivers/TegraGM20B:TegraGM20BJobABI.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_event_timeline.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_submit_queue.h",
     ],
+    copts = ["-Idrivers/TegraGM20B"],
     cxx_std = "c++17",
 )
 

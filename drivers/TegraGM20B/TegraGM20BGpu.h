@@ -330,10 +330,12 @@ void tgm_promise_leave(uint32_t offset, uint32_t value, int display);
  * no register meanwhile, and the hang rule looks at every kept promise still waited on from the power-up */
 void tgm_promise_suspend(void);
 void tgm_promise_resume(void);
-/* Method 34 Arm: the holder's bound on a promise (SwitchGpuPromiseGiveUp.h; `fails`: its command buffer fails there), and
- * its end at a keep or a release: 1 when a bound its command buffer fails at passed first, where a keep is refused */
+/* Method 34 Arm: the holder's bound on a promise (SwitchGpuPromiseGiveUp.h; `fails`: its command buffer fails there), in
+ * place of the default every promise has; its end at a keep or a release: 1 when a bound its command buffer fails at
+ * passed first, where a keep is refused; and its return when the job that kept it was refused */
 void tgm_promise_hold(uint32_t offset, uint32_t value, uint64_t ns, int fails);
 int tgm_promise_unhold(uint32_t offset, uint32_t value);
+void tgm_promise_rehold(uint32_t offset, uint32_t value);
 void tgm_promise_kept(uint32_t offset, uint32_t value, struct tgm_chan *chan,
 		      const struct switch_gpu_backing_token *job);
 void tgm_present_promise_kept(uint32_t offset, uint32_t value,
