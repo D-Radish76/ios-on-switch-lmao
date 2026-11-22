@@ -10,8 +10,8 @@ import Metal
 /// surface into a buffer, so its job acquires the promise's fence word on the GPU (ACQ_GEQ) and parks there. 30 ms
 /// later the test cancels the promise, which the kernel writes from the CPU. The copy must complete soon after, with
 /// the surface's CPU fill: a channel parked on ACQ_GEQ reads the word again after a CPU write, which the kernel's
-/// cancel, kill and close releases and the give-up's raise all rely on. Were it not so, the copy would wait for the
-/// give-up a second after it parked (its "writer promise ... was not kept" line).
+/// cancel, kill and close releases and the give-up's raise all rely on. Were it not so, the copy would wait for good:
+/// an unkept promise is never given up (gpu.path.promise_unkept).
 struct PromiseCancelPathTest: GPUPathTest {
     let id = "gpu.path.promise_cancel"
     let name = "A job parked on the GPU for a writer promise goes on once the CPU cancels it"

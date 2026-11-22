@@ -603,7 +603,7 @@ enum GPUPathTests {
         EncodeCostPathTest(), PromiseVICPathTest(), PromiseUnkeptPathTest(), PromiseReleaseOrderPathTest(),
         SetSurvivesTrimPathTest(), SurfaceLocksSideBySideTest.blockLinear, SurfaceLocksSideBySideTest.pitchLinear,
         ImportBesideSubmitsTest(), TransferBesideReadbackTest(), CommitLatencyPathTest(), AheadMovesTest(),
-        FreshSurfaceImportPathTest(), NativeSurfaceRepublishedPathTest(),
+        FreshSurfaceImportPathTest(), NativeSurfaceRepublishedPathTest(), HolderTimeoutPathTest(),
     ]
 }
 

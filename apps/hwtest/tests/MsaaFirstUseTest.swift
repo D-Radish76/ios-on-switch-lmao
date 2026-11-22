@@ -7,7 +7,8 @@ import Metal
 /// attachment's compressed memory when the texture is made (raw_comp.cpp compPrearm), off the frame, so the pass that
 /// first uses it finds it made and clears comptags alone (a ZBC value: 0.2 ms on device) instead of writing all 14.7 MB of
 /// a 720x1280 4x grid into plain memory (1.3 ms, and the poster's first frames took that). Each arm makes its own
-/// texture: "made" uses it after the make has had time, "immediate" right away (whether it is made by then is reported).
+/// texture: "made" uses it once the compression thread settled (CompressionSettled, made_settled_ms), "immediate" right
+/// away (whether it is made by then is reported).
 /// The facade's compression counters (switchRawCompression "misses": passes that took plain memory) tell which it got.
 struct MsaaFirstUseTest: HWTest {
     let id = "gpu.msaa.first_use"
@@ -15,7 +16,6 @@ struct MsaaFirstUseTest: HWTest {
     let subsystem = Subsystem.metal
 
     static let height = 1280
-    static let madeAfterMs: UInt64 = 100
     static let clearBudgetMs = 0.5
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -25,14 +25,20 @@ struct MsaaFirstUseTest: HWTest {
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        for (arm, waitMs) in [("made", Self.madeAfterMs), ("immediate", UInt64(0))] {
+        for arm in ["made", "immediate"] {
             // wider than any earlier test's targets, each arm in a size class of its own: no compressed memory made before
             // fits it by chance
             let width = arm == "made" ? 1024 : 1088
             let before = RawFacade.compression(of: gpu.device)
             let target = try gpu.texture(
                 .bgra8Unorm, width, Self.height, usage: [.renderTarget], samples: 4, storage: .memoryless)
-            if waitMs > 0 { try await Task.sleep(nanoseconds: waitMs * 1_000_000) }
+            if arm == "made" {
+                switch await CompressionSettled.wait(gpu.device) {
+                case .settled(let ms): metrics.set("made_settled_ms", ms, digits: 3)
+                case .never: checks.append(("the compression thread settled within 5 s", false))
+                case .absent: break
+                }
+            }
             let timing = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = target

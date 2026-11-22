@@ -162,7 +162,8 @@ struct CompressedTargetsTest: HWTest {
     }
 
     /// GPU milliseconds of 16 clears of a 4x BGRA8 memoryless 1280x720 target to opaque black (the boot table's) and to
-    /// 0.5 grey (a tie no entry may hold), after warm-up passes made its compressed memory
+    /// 0.5 grey (a tie no entry may hold), after warm-up passes asked for its compressed memory and the compression
+    /// thread settled
     static func clearTimes(_ gpu: GPU) async throws -> (Double, Double) {
         let target = try gpu.texture(.bgra8Unorm, 1280, 720, usage: [.renderTarget], samples: 4, storage: .memoryless)
         func clears(_ colour: MTLClearColor) async throws -> Double {
@@ -181,7 +182,7 @@ struct CompressedTargetsTest: HWTest {
         }
         let black = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         _ = try await clears(black)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await CompressionSettled.settle(gpu.device)
         return (try await clears(black), try await clears(MTLClearColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)))
     }
 }

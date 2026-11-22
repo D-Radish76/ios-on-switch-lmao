@@ -13,11 +13,13 @@ import Metal
 /// the display is on, so the GPU is not rail-gated meanwhile) and every promise word moves by exactly one each round
 /// (promise_words_set 32). Part B, on the app's Metal device: a command buffer behind one waiting for an unsignalled
 /// shared event, rendering into an IOSurface, is held and promises its write (held_promised: this process's
-/// writer_promises path count moved across it), and then a render pass's four stage-boundary timestamp samples lie
-/// inside the sampleTimestamps pair around it (samples_outside 0), the blit's resolve equal to the CPU's
-/// (cpu_blit_differ 0); lead_us reported. A kernel whose promise words lie over the anchor table moves the table's
-/// published count by one a round and the anchors behind it, so Part A fails anchor_bytes_changed and
-/// anchors_published_after, and the app's samples convert with a wrong anchor (samples_outside 4).
+/// writer_promises path count moved across it); the event is signalled 30 ms after the commits, and the writer's
+/// waitUntilScheduled returns no sooner than that, as Metal's does (held 1), both completing; and then a render pass's
+/// four stage-boundary timestamp samples lie inside the sampleTimestamps pair around it (samples_outside 0), the blit's
+/// resolve equal to the CPU's (cpu_blit_differ 0); lead_us reported. A kernel whose promise words lie over the anchor
+/// table moves the table's published count by one a round and the anchors behind it, so Part A fails
+/// anchor_bytes_changed and anchors_published_after, and the app's samples convert with a wrong anchor (samples_outside
+/// 4).
 struct FencePageRegionsTest: HWTest {
     let id = "gpu.kernel.fence_page_regions"
     let name = "Writer promises made and released leave the connection's clock anchors, and samples keep their time"
@@ -154,11 +156,13 @@ struct FencePageRegionsTest: HWTest {
         }
         let after = GPUPaths.read(connection)
         let completed = Int(MTLCommandBufferStatus.completed.rawValue)
-        metrics.set("held", held.held)
-        metrics.set("held_status", "\(held.whenScheduled),\(held.head),\(held.writer)")
+        metrics.set("held", held.scheduledAtSignal)
+        metrics.set("held_status", "\(held.head),\(held.writer)")
         metrics.set("held_paths", "\(held.headPath),\(held.writerPath)")
         checks.append(("the held writer ended \(held.writer), not completed", held.writer == completed))
         checks.append(("the held writer raw (\(held.writerPath))", held.writerPath == "raw"))
+        checks.append(("the head ended \(held.head) (\(held.headPath)), not completed", held.head == completed))
+        checks.append(("the writer's waitUntilScheduled returned before the signal", held.scheduledAtSignal))
         switch (before, after) {
         case (.counts(let first), .counts(let last)):
             let promised = last.taken("writer_promises", since: first)
@@ -166,7 +170,6 @@ struct FencePageRegionsTest: HWTest {
             checks.append(("held_promised=\(promised): no writer promise while it was held", promised >= 1))
         case (.unreadable(let asked, let error), _) where asked == "release_kernel" && error == ENOENT:
             metrics.set("held_promised", "release_kernel")
-            checks.append(("waitUntilScheduled waited for the event: not held", held.held))
         default:
             metrics.set("held_promised", "unreadable")
             checks.append(("the path counters around the hold are unreadable", false))

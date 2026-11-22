@@ -89,14 +89,10 @@ struct StorageCompressedTest: HWTest {
         return line.contains("comptags=1") ? 1 : 0
     }
 
-    /// A private target; compressed memory of a size is made off the render thread after its first ask, so the
-    /// compressed arms make it again until one binds it (or 20 tries pass)
+    /// A private target, on compressed memory in the compressed arms (CompressionSettled.remade)
     func target(_ gpu: GPU, _ facade: NSObject, plain: Bool) async throws -> MTLTexture {
-        var made = try gpu.texture(.bgra8Unorm, Self.side, Self.side, usage: [.renderTarget, .shaderRead])
-        for _ in 0..<20 where !plain && comptags(facade, made) == 0 {
-            try await Task.sleep(nanoseconds: 50_000_000)
-            made = try gpu.texture(.bgra8Unorm, Self.side, Self.side, usage: [.renderTarget, .shaderRead])
-        }
-        return made
+        let make = { try gpu.texture(.bgra8Unorm, Self.side, Self.side, usage: [.renderTarget, .shaderRead]) }
+        if plain { return try make() }
+        return try await CompressionSettled.remade(gpu.device, make)
     }
 }

@@ -40,8 +40,12 @@ public enum ReflectionKinds {
         3: [],
     ]
     public static let reported = ["bufferPointerType", "structType"]
-    /// MTLBindingInternal's: Metal's binding of every kind has a method for each, and asserts on another kind's
-    public static let responding = ["name"] + common + own.keys.sorted().flatMap { own[$0]! } + reported
+    /// An object payload binding's own (MTLBindingType 34): no state here has one, so every binding asks them as
+    /// another type's
+    public static let payload = ["objectPayloadAlignment", "objectPayloadDataSize"]
+    /// MTLBindingInternal's 21: Metal's binding of every type has a method for each, and reports a failure on another
+    /// type's
+    public static let responding = ["name"] + common + own.keys.sorted().flatMap { own[$0]! } + payload + reported
     public static let notResponding = ["dataType", "offset", "elementType", "members"]
     static let objects: Set<String> = ["bufferStructType", "bufferPointerType", "structType"]
     static let flags: Set<String> = ["isUsed", "isActive", "isArgument", "isDepthTexture"]

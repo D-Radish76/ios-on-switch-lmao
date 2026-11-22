@@ -9,15 +9,17 @@ public enum PromiseAnchors {
     public static let side = 64, samples = 4
 
     public struct Held: Sendable {
-        /// The writer's status when its waitUntilScheduled returned, then the head's and the writer's at the end
-        public var whenScheduled = -1, head = -1, writer = -1
+        /// The head's and the writer's status at the end
+        public var head = -1, writer = -1
         public var headPath = "-", writerPath = "-"
-        public var held: Bool { whenScheduled >= 0 && whenScheduled < Int(MTLCommandBufferStatus.scheduled.rawValue) }
+        /// The writer's waitUntilScheduled, called on a thread of its own right after the commits, returned no sooner
+        /// than the event's signal (Metal's: a buffer behind a held head is scheduled once the head goes on)
+        public var scheduledAtSignal = false
     }
 
     /// On a queue of its own, a head that waits for an unsignalled shared event and behind it a command buffer that
-    /// clears and draws a 64x64 BGRA IOSurface's texture; the event is signalled once the writer's waitUntilScheduled
-    /// returns.
+    /// clears and draws a 64x64 BGRA IOSurface's texture; the event is signalled 30 ms after the commits, while the
+    /// writer is held behind the head and has promised its write.
     public static func held(_ gpu: GPU) throws -> Held {
         let rowBytes = side * 4
         let properties: [IOSurfacePropertyKey: Any] = [
@@ -45,12 +47,19 @@ public enum PromiseAnchors {
         encoder.endEncoding()
         head.commit()
         writer.commit()
-        writer.waitUntilScheduled()
-        var out = Held()
-        out.whenScheduled = Int(writer.status.rawValue)
-        event.signaledValue = 1
+        let times = HeldTimes()
+        Thread {
+            writer.waitUntilScheduled()
+            times.note(scheduled: DispatchTime.now())
+        }.start()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.03) {
+            times.note(signalled: DispatchTime.now())
+            event.signaledValue = 1
+        }
         writer.waitUntilCompleted()
         head.waitUntilCompleted()
+        var out = Held()
+        out.scheduledAtSignal = times.scheduledAtSignal()
         out.head = Int(head.status.rawValue)
         out.writer = Int(writer.status.rawValue)
         out.headPath = RawFacade.path(of: head)
@@ -125,5 +134,33 @@ public enum PromiseAnchors {
     static func words(_ data: Data?) -> [UInt64] {
         guard let data else { return [] }
         return data.withUnsafeBytes { Array($0.bindMemory(to: UInt64.self)) }
+    }
+}
+
+/// When a held pair's writer was scheduled and when its event was signalled; read once the writer completed
+private final class HeldTimes: @unchecked Sendable {
+    private let lock = NSLock()
+    private let returned = DispatchSemaphore(value: 0)
+    private var scheduled: DispatchTime?, signalled: DispatchTime?
+
+    func note(scheduled at: DispatchTime) {
+        lock.lock()
+        scheduled = at
+        lock.unlock()
+        returned.signal()
+    }
+
+    func note(signalled at: DispatchTime) {
+        lock.lock()
+        signalled = at
+        lock.unlock()
+    }
+
+    func scheduledAtSignal() -> Bool {
+        _ = returned.wait(timeout: .now() + 1)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let scheduled, let signalled else { return false }
+        return scheduled >= signalled
     }
 }

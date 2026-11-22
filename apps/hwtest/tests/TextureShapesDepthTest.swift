@@ -106,14 +106,12 @@ struct TextureShapesDepthTest: HWTest {
         return gpu.device.makeHeap(descriptor: heap)?.makeTexture(descriptor: d)
     }
 
-    /// A shared Depth32Float made again until it binds compressed memory (StoredDepthTest's tries), whose CPU copies the
-    /// copy engine writes and reads through its compressible kind: comptags_shared 1 where it bound some
+    /// A shared Depth32Float on compressed memory where the device binds some (CompressionSettled.remade), whose CPU
+    /// copies the copy engine writes and reads through its compressible kind: comptags_shared 1 where it bound some
     private func compressedShared(_ arms: ShapeArms) async throws {
         let probe = StoredDepthTest()
-        var made = try arms.gpu.texture(.depth32Float, 64, 64, storage: .shared)
-        for _ in 0..<20 where !probe.facts(arms.gpu, made).contains("comptags=1") {
-            try await Task.sleep(nanoseconds: 50_000_000)
-            made = try arms.gpu.texture(.depth32Float, 64, 64, storage: .shared)
+        let made = try await CompressionSettled.remade(arms.gpu.device) {
+            try arms.gpu.texture(.depth32Float, 64, 64, storage: .shared)
         }
         arms.route("shared_compressed", made, expect: "raw")
         arms.set("comptags_shared", probe.facts(arms.gpu, made).contains("comptags=1") ? 1 : 0)

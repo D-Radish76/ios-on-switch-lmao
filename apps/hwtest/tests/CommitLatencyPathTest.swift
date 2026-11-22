@@ -23,7 +23,10 @@ import simd
 /// contents, so no frame gives an encode ahead back (given_back 0), each keeps all but 5 passes ahead, and its median
 /// commit stays within 10% of the scale arm's. A view of each target taken at its creation keeps it plain where it was
 /// made plain for want of compressed memory (raw_private_comp.h): its move onto that memory gives back an encode ahead,
-/// which no measured round may lose.
+/// which no measured round may lose. Per shape, <shape>_pass_pixel_openings is the median over measured frames of the
+/// passes opened with the pixel-shader barrier instead of a drain (switchRawCounters pass_pixel_openings, counted at
+/// each commit; debug builds), reported: the driver's rule gives passes - 1, less the passes that read a full-size
+/// target an earlier pass of the frame rendered (one pass: 0).
 struct CommitLatencyPathTest: HWTest {
     let id = "gpu.path.commit_latency"
     let name = "A Core Animation shaped command buffer's commit returns at once and its GPU work starts soon after"
@@ -86,9 +89,11 @@ struct CommitLatencyPathTest: HWTest {
             var givenBack = 0, short = 0
             var commitUs: [Double] = [], scheduledUs: [Double] = [], gpuStartUs: [Double] = []
             var pipelined = 0.0, encoders = 0.0, abandons = 0.0, vetoes: UInt64 = 0, measuredCount = 0.0
+            var openings: [Double] = []
             for round in 0..<(Self.warmups + Self.measured) {
                 guard let commands = gpu.queue.makeCommandBuffer() else { return .fail("makeCommandBuffer nil") }
                 let drawable = shape.present ? layer.nextDrawable() : nil
+                let openingsBefore = RawFacade.counters(of: gpu.device)["pass_pixel_openings"]
                 if shape.present && drawable == nil { return .fail("nextDrawable returned nil") }
                 for pass in 0..<shape.passes {
                     let last = pass == shape.passes - 1
@@ -129,6 +134,9 @@ struct CommitLatencyPathTest: HWTest {
                 abandons += ahead["abandons"]?.doubleValue ?? 0
                 vetoes |= ahead["veto"]?.uint64Value ?? 0
                 measuredCount += 1
+                if let before = openingsBefore, let after = RawFacade.counters(of: gpu.device)["pass_pixel_openings"] {
+                    openings.append(Double(after - before))
+                }
                 if shape.geometry {
                     if ahead["given_back"]?.uint64Value ?? 0 != 0 { givenBack += 1 }
                     if (ahead["pipelined"]?.intValue ?? 0) < shape.passes - 5 { short += 1 }
@@ -146,6 +154,7 @@ struct CommitLatencyPathTest: HWTest {
             metrics.set(shape.name + "_encoders", encoders / n, digits: 1)
             metrics.set(shape.name + "_abandons", abandons / n, digits: 2)
             metrics.set(shape.name + "_veto", String(vetoes, radix: 16))
+            if !openings.isEmpty { metrics.set(shape.name + "_pass_pixel_openings", Self.median(openings), digits: 0) }
             if measuredCount == 0 { continue }
             if !shape.event && shape.passes > 3 && pipelined / n < encoders / n - 5 {
                 failures.append(

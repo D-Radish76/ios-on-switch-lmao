@@ -40,15 +40,13 @@ struct StripOverCompressedTest: HWTest {
         var wrong: [String] = []
         var bytes: [String: [UInt8]] = [:]
         for arm in ["control", "indexed", "reference"] {
-            var target: MTLTexture
+            let target: MTLTexture
             if arm == "reference" {
                 target = try gpu.texture(
                     .bgra8Unorm, Self.width, Self.height, usage: [.renderTarget, .shaderRead, .shaderWrite])
             } else {
-                target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
-                for _ in 0..<20 where comptags(facade, target) == 0 {
-                    try await Task.sleep(nanoseconds: 50_000_000)
-                    target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
+                target = try await CompressionSettled.remade(gpu.device) {
+                    try gpu.texture(.bgra8Unorm, Self.width, Self.height)
                 }
             }
             metrics.set("\(arm)_compressed_before", comptags(facade, target))

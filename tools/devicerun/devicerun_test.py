@@ -32,6 +32,29 @@ class Checks(unittest.TestCase):
                 self.assertTrue(not c.against or c.against in names, c.name)
                 self.assertTrue(not c.during or c.during in names, c.name)
                 self.assertTrue(not c.per or c.per in names, c.name)
+                self.assertTrue(not c.preceded or c.preceded in names, c.name)
+
+    def test_zbc_full_lines_are_listed_by_process_and_type(self):
+        full = next(c for c in checks.GROUPS['gpu'] if c.name == 'raw.zbc-full-lines')
+
+        def record(process: str, kind: str) -> dict:
+            return {
+                'timestamp': '2026-11-22 09:00:00.000000-0800',
+                'processImagePath': f'/private/var/containers/Bundle/Application/X/{process}.app/{process}',
+                'subsystem': checks.GPU_METAL_SUBSYSTEM,
+                'category': 'raw',
+                'messageType': 'Error',
+                'eventMessage': f"raw: the GPU's ZBC {kind} table is full (every process's, never emptied): full "
+                'clears of compressed targets to values it lacks write their texels',
+            }
+
+        log = [record('SwitchHWTest27', 'colour'), record('backboardd', 'colour'), record('backboardd', 'depth')]
+        results, _ = devicerun.run_checks(log, [full])
+        self.assertEqual(results[0].verdict, INFO)
+        self.assertIn('SwitchHWTest27/colour x1', results[0].observed)
+        self.assertIn('backboardd/depth x1', results[0].observed)
+        results, _ = devicerun.run_checks([], [full])
+        self.assertEqual(results[0].verdict, NO_DATA)
 
     def test_predicate_escapes_and_covers_every_check(self):
         check = Check('q', 'o', 'say "hi" \\ there', process='kernel', subsystem='a.b', level='error')
@@ -168,60 +191,144 @@ class Rules(unittest.TestCase):
         results, _ = devicerun.run_checks(boot17[2:], [view])
         self.assertEqual(results[0].verdict, PASS)
 
-    def test_a_wrong_kind_reflection_ask_fails_outside_hw_test(self):
-        wrong = next(c for c in checks.GROUPS['refusals'] if c.name == 'raw.reflection-wrong-kind')
-
-        def record(process: str, message: str) -> dict:
-            return {
-                'timestamp': '2026-11-19 09:40:00.000000-0800',
-                'processImagePath': f'/private/var/containers/Bundle/Application/X/{process}.app/{process}',
-                'subsystem': checks.GPU_METAL_SUBSYSTEM,
-                'category': 'raw',
-                'messageType': 'Error',
-                'eventMessage': message,
-            }
-
-        line = 'raw: {who}: bufferAlignment asked of binding t of type 2, where Metal asserts'
-        results, _ = devicerun.run_checks([record('Weather', line.format(who='Weather'))], [wrong])
-        self.assertEqual(results[0].verdict, FAIL)
-        self.assertIn('Weather', results[0].observed)
-        own = record('SwitchHWTest27e', line.format(who='SwitchHWTest27e'))
-        results, _ = devicerun.run_checks([own], [wrong])
-        self.assertEqual(results[0].verdict, PASS)
-
-    def test_driver_lines_are_counted_per_run_of_their_test(self):
-        runs = next(c for c in hwtest.HWTEST if c.name == hwtest.REFLECTION_RUNS)
-        lines = next(c for c in checks.GROUPS['refusals'] if c.name == 'raw.reflection-wrong-kind-hwtest')
+    def test_a_failed_transfers_unreached_line_is_counted_per_run(self):
+        runs = next(c for c in hwtest.HWTEST if c.name == hwtest.TRANSFER_FAILED_RUNS)
+        lines = next(c for c in checks.GROUPS['refusals'] if c.name == 'refusal.texture-unreached-hwtest')
 
         def record(second: int, subsystem: str, message: str) -> dict:
             return {
-                'timestamp': f'2026-11-20 09:00:{second:02d}.000000-0800',
+                'timestamp': f'2026-11-21 09:00:{second:02d}.000000-0800',
                 'bootUUID': 'B00T',
-                'processImagePath': '/private/var/containers/Bundle/Application/X/SwitchHWTest27e.app/SwitchHWTest27e',
+                'processImagePath': '/Applications/SwitchHWTest.app/SwitchHWTest',
                 'subsystem': subsystem,
                 'category': 'raw',
                 'messageType': 'Error',
                 'eventMessage': message,
             }
 
-        ask = 'raw: SwitchHWTest27e: textureType asked of binding b4 of type 0, where Metal asserts'
-        run = 'HWTEST gpu.raw.reflection_kinds PASS wrong_kind_asks=2 wrong_kind_lines_want=2 ms=3000.0'
-        hwtest_line = {**record(0, hwtest.SUBSYSTEM, ''), 'category': 'hwtest', 'messageType': 'Default'}
-        first = [record(1, checks.GPU_METAL_SUBSYSTEM, ask), record(2, checks.GPU_METAL_SUBSYSTEM, ask)]
-        second = [record(11, checks.GPU_METAL_SUBSYSTEM, ask)]
+        unreached = (
+            'SwitchHWTest[512] texture.cpu.unreached: replaceRegion of 16x16 at (0, 0) of block-linear IOSurface 77: '
+            "the copy engine's transfer failed: nothing moved"
+        )
+        run = 'HWTEST gpu.raw.texture_transfer_failed PASS armed_before=0 fired_write=1 ms=2000.0'
         log = [
-            *first,
-            {**hwtest_line, 'timestamp': '2026-11-20 09:00:03.000000-0800', 'eventMessage': run},
-            record(6, checks.GPU_METAL_SUBSYSTEM, ask),
-            *second,
-            {**hwtest_line, 'timestamp': '2026-11-20 09:00:13.000000-0800', 'eventMessage': run},
+            record(1, checks.REFUSAL_SUBSYSTEM, unreached),
+            {**record(2, hwtest.SUBSYSTEM, run), 'category': 'hwtest', 'messageType': 'Default'},
+            {**record(8, hwtest.SUBSYSTEM, run), 'category': 'hwtest', 'messageType': 'Default'},
         ]
         got = {r.check.name: r for r in devicerun.run_checks(log, [runs, lines])[0]}
         self.assertEqual(got[lines.name].verdict, FAIL)
         self.assertIn('2 runs, 1 off', got[lines.name].observed)
-        self.assertIn('1/2', got[lines.name].observed)
-        got = {r.check.name: r for r in devicerun.run_checks(log[:3], [runs, lines])[0]}
+        got = {r.check.name: r for r in devicerun.run_checks(log[:2], [runs, lines])[0]}
         self.assertEqual(got[lines.name].verdict, PASS)
+
+    def test_a_promise_given_up_after_its_makers_kill_fails(self):
+        judged = [c for c in checks.GROUPS['gpu'] if c.name.startswith(('gpu.channel-killed', 'gpu.promise-given-up'))]
+
+        def kernel(second: int, message: str) -> dict:
+            return {
+                'timestamp': f'2026-11-21 09:00:{second:02d}.000000-0800',
+                'bootUUID': 'B00T',
+                'processImagePath': '/kernel',
+                'subsystem': '',
+                'category': '',
+                'messageType': 'Default',
+                'eventMessage': message,
+            }
+
+        killed = kernel(10, 'tegra-gm20b: GPU error in Weather (channel 5): channel killed, GPU running: hang: x')
+
+        def given_up(second: int, maker: str) -> dict:
+            return kernel(
+                second,
+                f"tegra-gm20b: {maker}'s writer promise at fence offset 256 (value 9) was not kept: backboardd waited "
+                '1000 ms for it in a composite; it goes on without the promised writes',
+            )
+
+        def verdicts(*log: dict) -> dict[str, str]:
+            return {r.check.name: r.verdict for r in devicerun.run_checks(list(log), judged)[0]}
+
+        self.assertEqual(verdicts(killed, given_up(11, 'Weather'))['gpu.promise-given-up-after-kill'], FAIL)
+        self.assertEqual(verdicts(killed, given_up(11, 'Maps'))['gpu.promise-given-up-after-kill'], PASS)
+        self.assertEqual(verdicts(killed, given_up(13, 'Weather'))['gpu.promise-given-up-after-kill'], PASS)
+        self.assertEqual(verdicts(given_up(9, 'Weather'), killed)['gpu.promise-given-up-after-kill'], PASS)
+        self.assertEqual(verdicts(killed, given_up(11, 'Maps'))['gpu.promise-given-up'], INFO)
+
+    def test_a_refused_vic_read_and_an_old_vblank_phase_line_fail(self):
+        judged = [c for g in ('gpu', 'display') for c in checks.GROUPS[g] if c.owner == 'lost-work-3']
+
+        def kernel(message: str) -> dict:
+            return {
+                'timestamp': '2026-11-21 09:00:00.000000-0800',
+                'bootUUID': 'B00T',
+                'processImagePath': '/kernel',
+                'subsystem': '',
+                'category': '',
+                'messageType': 'Default',
+                'eventMessage': message,
+            }
+
+        def verdicts(*messages: str) -> dict[str, str]:
+            return {r.check.name: r.verdict for r in devicerun.run_checks([kernel(m) for m in messages], judged)[0]}
+
+        clean = verdicts('SwitchDisplay stats: 1000 ms: 60 DC A interrupts, 60 swaps')
+        self.assertEqual(set(clean.values()), {PASS})
+        refused = verdicts(
+            'tegra-gm20b: MC refused a VIC read at 1001d400: VIC read mapping 10000000 of 30 pages: 0x1400 past its '
+            'last page',
+            'tegra-gm20b: PBDMA0 00000000 ch 0 mthd 00000000 data 00000000, PMC 00000000, MC 00000000 err 6000006c at '
+            '1001d400',
+        )
+        self.assertEqual(refused['gpu.vic-read-refused'], FAIL)
+        self.assertEqual(verdicts('SwitchDisplay: V_PULSE2 never reached the CPU')['display.vblank-phase-gone'], FAIL)
+
+    def test_decode_lines_are_counted_per_run_against_each_runs_want(self):
+        runs = {c.name: c for c in hwtest.HWTEST}
+        lines = {c.name: c for c in checks.GROUPS['refusals']}
+
+        def record(second: int, subsystem: str, message: str) -> dict:
+            return {
+                'timestamp': f'2026-11-22 09:00:{second:02d}.000000-0800',
+                'bootUUID': 'B00T',
+                'processImagePath': '/Applications/SwitchHWTest.app/SwitchHWTest',
+                'subsystem': subsystem,
+                'category': 'raw' if subsystem == checks.REFUSAL_SUBSYSTEM else 'results',
+                'messageType': 'Error' if subsystem == checks.REFUSAL_SUBSYSTEM else 'Default',
+                'eventMessage': message,
+            }
+
+        def refusal(second: int, text: str) -> dict:
+            return record(second, checks.REFUSAL_SUBSYSTEM, 'SwitchHWTest[812] ' + text)
+
+        readback = [
+            refusal(1, 'tex.decoded_readback: getBytes of a format 166 texture: nothing moved (its blocks were ...'),
+            refusal(2, 'tex.decoded_readback: copyFromTexture:toBuffer: of a format 164 texture: nothing moved (...'),
+            record(3, hwtest.SUBSYSTEM, 'HWTEST gpu.decode.readback PASS decode_readback_lines_want=2 ms=2500.0'),
+            record(9, hwtest.SUBSYSTEM, 'HWTEST gpu.decode.readback PASS decode_readback_lines_want=0 ms=2500.0'),
+        ]
+        check = [runs[hwtest.DECODE_READBACK_RUNS], lines['refusal.tex-decoded-readback-hwtest']]
+        got = {r.check.name: r for r in devicerun.run_checks(readback, check)[0]}
+        self.assertEqual(got['refusal.tex-decoded-readback-hwtest'].verdict, PASS)
+        got = {r.check.name: r for r in devicerun.run_checks(readback[1:3], check)[0]}
+        self.assertEqual(got['refusal.tex-decoded-readback-hwtest'].verdict, FAIL)
+
+        view = 'tex.view: no view of format 222, type 2, levels 1, of a 276x4 texture of format 204: a view ...'
+        form = (
+            "tex.decoded_form: no view of format 221 of a format 203 texture: nil, as the identity's Metal makes none"
+        )
+        views = 'HWTEST gpu.decode.views PASS decode_view_lines_want=1 decode_form_lines_want={} ms=1900.0'
+        check = [
+            runs[hwtest.DECODE_VIEWS_RUNS],
+            lines['refusal.tex-view-native-hdr-hwtest'],
+            lines['refusal.tex-decoded-form-hwtest'],
+        ]
+        log17 = [refusal(1, view), refusal(1, form), record(2, hwtest.SUBSYSTEM, views.format(1))]
+        got = {r.check.name: r for r in devicerun.run_checks(log17, check)[0]}
+        self.assertEqual(got['refusal.tex-view-native-hdr-hwtest'].verdict, PASS)
+        self.assertEqual(got['refusal.tex-decoded-form-hwtest'].verdict, PASS)
+        log27 = [refusal(1, view), refusal(1, form), record(2, hwtest.SUBSYSTEM, views.format(0))]
+        got = {r.check.name: r for r in devicerun.run_checks(log27, check)[0]}
+        self.assertEqual(got['refusal.tex-decoded-form-hwtest'].verdict, FAIL)
 
     def test_failed_command_buffers_are_judged_per_process(self):
         failed = [c for c in checks.GROUPS['refusals'] if c.name.startswith('raw.failed')]

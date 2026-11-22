@@ -29,7 +29,7 @@ public enum Registry {
         CompileSharedTest(), CompileFirstDrawTest(), CompileStageLibraryTest(), CompileAnswerLatencyTest(),
         DrawBandsTest(), DispatchPiecesTest(), PosterTargetsTest(),
         PushScanTargetsTest(), ResolveCostTest(), JobRefusalLinesTest(),
-        MsaaFirstUseTest(), StoredDepthTest(),
+        MsaaFirstUseTest(), StoredDepthTest(), ZetaMoveTest(), ZetaKeptTest(), ZcViewFormatsTest(),
         ResolveTwodTest(), FillTextureTest(), StorageCompressedTest(), SharedLayoutTest(), PredicationTest(),
         MPSControlFlowTest(),
         EventReleaseTest(), CoherenceRewriteTest(),
@@ -52,7 +52,10 @@ public enum Registry {
         TextureShapesDepthTest(), TextureShapesSrgbPairTest(), DepthShapesTest(),
         VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(), ReflectionKindsTest(),
         FunctionPointerAnswersTest(), ScratchOrderTest(), FencePageRegionsTest(), Depth16MultisampleResolveTest(),
-        InvalidRequestsTest(), HeapAliasableUsedTest(),
+        InvalidRequestsTest(), HeapAliasableUsedTest(), CompressionSettledTest(), TextureTransferFailedTest(),
+        X1ViewportsTest(), X1ThreadsPerThreadgroupTest(), X1Mme2Test(),
+        DecodePvrtcTest(), DecodeAstcNarrowTest(), DecodeAstcHdrTest(), DecodeNativeAstcPrecisionTest(),
+        DecodeFreshTest(), DecodeReadbackTest(), DecodeViewsTest(), DecodeViewLifetimeTest(), DecodeUploadCostTest(),
     ]
 
     /// Routes the m2v removal moved onto the raw path, each against Apple's GPU
@@ -180,11 +183,13 @@ public enum Registry {
         // Leaves this app for Settings and opens it again: last, so no other test runs while it is away.
         + [LaunchHitchTest()]
 
-    /// Takes the GPU pool's compressed memory down to its floor, which refuses every other process's compressed asks
-    /// while it runs; then programs a unit no other driver here drives (across pass boundaries, then each program
-    /// forced), which kills the channel when its setup is wrong: each app's last.
+    /// A 1.6 GB cube first, where the process has the memory; then fills the GPU pool to its compressed floor and gives
+    /// it back (gpu.raw.compression_giveback), then takes it down to that floor again, which refuses every other
+    /// process's compressed asks while each runs; then fills the GPU's ZBC colour table for the rest of the boot
+    /// (gpu.raw.zbc_full: no test after it counts ZBC hits); then programs a unit no other driver here drives (across
+    /// pass boundaries, then each program forced), which kills the channel when its setup is wrong: each app's last.
     public static let last: [any HWTest] = [
-        CompressedFloorTest(), IteratedBlendPassesTest(), FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3),
+        X1TextureExtentsTest(), CompressionGivebackTest(), CompressedFloorTest(), ZbcFullTest(), IteratedBlendPassesTest(), FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3),
     ]
     /// Reset the copy engine under the present, then kill the app's raw channel: each app runs them after all its other
     /// tests, so a failed recovery spoils none of them.

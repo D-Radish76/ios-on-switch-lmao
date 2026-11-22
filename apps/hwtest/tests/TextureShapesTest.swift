@@ -5,9 +5,10 @@ import Metal
 
 /// newTextureWithDescriptor: shapes that went to m2v, one a group (ShapeArms): each made texture is raw's own (after
 /// its work too), its command buffers are raw's, and it reads back what was put in it; each shape the identity, GM20B
-/// or Metal makes none of answers nil. Cube arrays are the A13's alone: made on iOS 27, nil on iOS 17. ASTC HDR is nil
-/// on both: the A10X makes none, and GM20B decodes ASTC LDR alone. A BC1 3D texture's planes and levels read back as
-/// their solid blocks; a signed normalized target keeps Metal's clear codes.
+/// or Metal makes none of answers nil. Cube arrays are the A13's alone: made on iOS 27, nil on iOS 17. PVRTC is made
+/// on both and ASTC HDR on iOS 27 alone (the A10X makes none): GM20B decodes neither, so their blocks are decoded on
+/// the GPU as they are uploaded (raw_decoded.h). A BC1 3D texture's planes and levels read back as their solid blocks;
+/// a signed normalized target keeps Metal's clear codes.
 struct TextureShapesTest: HWTest {
     let id = "gpu.raw.texture_shapes"
     let name = "Texture shapes are raw's own, or nil where the identity makes none"
@@ -82,9 +83,10 @@ struct TextureShapesTest: HWTest {
             "ms_array", arms.make(.rgba8Unorm, .type2DMultisampleArray, 8, 8, samples: 4, usage: .renderTarget),
             expect: "nil")
         arms.route(
-            "pvrtc", arms.make(MTLPixelFormat(rawValue: 166)!, .type2D, 8, 8, usage: .shaderRead), expect: "nil")
+            "pvrtc", arms.make(MTLPixelFormat(rawValue: 166)!, .type2D, 8, 8, usage: .shaderRead), expect: "raw")
         arms.route(
-            "astc_hdr", arms.make(MTLPixelFormat(rawValue: 222)!, .type2D, 8, 8, usage: .shaderRead), expect: "nil")
+            "astc_hdr", arms.make(MTLPixelFormat(rawValue: 222)!, .type2D, 8, 8, usage: .shaderRead),
+            expect: a13 ? "raw" : "nil")
         try await blockVolumes(arms)
         arms.route(
             "line_levels", arms.make(.rgba8Unorm, .type1D, 16, 1, levels: 3, usage: .shaderRead), expect: "nil")

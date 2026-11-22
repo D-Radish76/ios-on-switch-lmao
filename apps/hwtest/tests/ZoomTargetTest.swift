@@ -5,8 +5,9 @@ import Metal
 
 /// Core Animation's zoom window target of an app opening and closing (boot 21: 1792x1472 BGRA8, cleared and redrawn
 /// every frame, beside a memoryless RGBA16Float second colour), drawn with Core Animation's own fill state
-/// (ZoomTargetScene): a target made plain for want of compressed memory moves there once some is made, its texels with
-/// it (raw_private_comp.h compressedFromPlain); a closed target's memory serves the next one at its creation; the
+/// (ZoomTargetScene): a target made plain for want of compressed memory moves there once some is made (the compression
+/// thread's event, CompressionSettled), its texels with it (raw_private_comp.h compressedFromPlain), at the next
+/// submission; a closed target's memory serves the next one at its creation; the
 /// memoryless second colour's clear covers only the tiles of the draws that see it (raw_clear_box.h). Redrawn: the
 /// first target is sampled by a kernel before its move, and after it a pass loads it and draws a solid rectangle, and
 /// the kernel samples it again: the texture unit reads the redrawn texels through the header the move rewrote in place,
@@ -54,7 +55,7 @@ struct ZoomTargetTest: HWTest {
         } catch {
             wrong.append("early_sample")
         }
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await CompressionSettled.settle(gpu.device)
         let bytes = try await gpu.read(first!, bytesPerPixel: 4)
         let firstAfter = comptags(facade, first!)
         do {

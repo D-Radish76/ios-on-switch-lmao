@@ -229,20 +229,14 @@ struct StoredDepthTest: HWTest {
         return wrong
     }
 
-    /// A private depth target as the device makes it, on compressed memory where it can: compressed memory of a size is
-    /// made off the render thread after its first ask, so the target is made again until it binds some (20 tries; a
-    /// release facade, which answers no facts, keeps the second)
+    /// A private depth target as the device makes it, on compressed memory where it can (CompressionSettled.remade)
     func compressedDepth(
         _ gpu: GPU, _ format: MTLPixelFormat = .depth32Float, _ width: Int = StoredDepthTest.size,
         _ height: Int = StoredDepthTest.size
     ) async throws -> MTLTexture {
-        var made = try gpu.texture(format, width, height, usage: [.renderTarget, .shaderRead])
-        let known = facts(gpu, made) != "-"
-        for attempt in 0..<20 where known ? !facts(gpu, made).contains("comptags=1") : attempt == 0 {
-            try await Task.sleep(nanoseconds: 50_000_000)
-            made = try gpu.texture(format, width, height, usage: [.renderTarget, .shaderRead])
+        try await CompressionSettled.remade(gpu.device) {
+            try gpu.texture(format, width, height, usage: [.renderTarget, .shaderRead])
         }
-        return made
     }
 
     /// The formats besides Depth32Float whose stored one-sample textures bind compressed memory (raw_comp.h

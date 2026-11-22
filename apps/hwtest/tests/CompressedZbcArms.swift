@@ -5,7 +5,9 @@ import Metal
 
 /// gpu.raw.compressed_targets' ZBC arms (drivers/TegraGM20BMetal/raw/runtime/raw_zbc.h zbcColorEntry, zbcDepthEntry): a
 /// private one-sample target of each format (compressed memory once the facade has made some of its shape:
-/// raw_private_comp.h, C32, C64 or C128, so a first texture asks and the arm's own comes after) cleared again and again
+/// raw_private_comp.h, C32, C64 or C128, so a first texture asks and the arm's own comes after:
+/// CompressionSettled.remade; the rounds' 20 ms gaps give the same thread time to add the entry, which no event marks)
+/// cleared again and again
 /// to a value the boot table lacks, read back through the copy engine; for Depth16, a memoryless depth and an
 /// EQUAL-tested quad at the clear depth over a private BGRA8 target. The first round's clear writes texels (the facade
 /// asks for the entry at the third), so every later round must read back the first round's bytes: an entry's L2 texel
@@ -83,9 +85,7 @@ enum CompressedZbcArms {
 
     /// The target's bytes after the first round and after the last
     static func colourRounds(_ gpu: GPU, _ arm: Arm) async throws -> ([UInt8], [UInt8]) {
-        _ = try gpu.texture(arm.format, width, height)
-        try await Task.sleep(nanoseconds: 200_000_000)
-        let target = try gpu.texture(arm.format, width, height)
+        let target = try await CompressionSettled.remade(gpu.device) { try gpu.texture(arm.format, width, height) }
         var first: [UInt8] = []
         for round in 0..<rounds {
             _ = try await gpu.run { commands in

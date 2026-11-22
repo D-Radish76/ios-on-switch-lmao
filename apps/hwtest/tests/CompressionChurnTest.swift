@@ -61,9 +61,7 @@ struct CompressionChurnTest: HWTest {
         }
         // the largest first, as a full-screen layer comes before the smaller ones
         try await sweep(Array(sizes.indices))
-        for _ in 0..<100 where (RawFacade.compression(of: gpu.device)["made"] ?? 0) - (start["made"] ?? 0) < 2 {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
+        try await CompressionSettled.settle(gpu.device)
         let warm = RawFacade.compression(of: gpu.device)
         var held: [Int] = []
         for round in 1..<Self.sweeps {

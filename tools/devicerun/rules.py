@@ -48,7 +48,9 @@ class Check:
     ("killed by <its id>") and left out of the rule. A `process` of '!<name>' matches every process whose name does not
     begin with <name>. `per` names a check whose lines are tests' runs, each a window as `during`'s: the verdict is then
     each window's count of this check's lines in the same boot against `per_count`, that line's field or a number (FAIL
-    where any differs, NO_DATA with no run), and `rule` is not read.
+    where any differs, NO_DATA with no run), and `rule` is not read. `preceded` names a check: only this check's lines
+    that one of its lines came within `within` seconds before, in the same boot (with the same `key` value, when `key`
+    is set), are judged.
     """
 
     name: str
@@ -76,6 +78,7 @@ class Check:
     excusable: str = ''
     per: str = ''
     per_count: str = ''
+    preceded: str = ''
 
     def literals(self) -> tuple[str, ...]:
         return (self.contains,) if isinstance(self.contains, str) else self.contains
@@ -296,6 +299,21 @@ def informational(check: Check, matches: list[dict], minutes: float, by_name: di
     return Result(check, INFO if matches else NO_DATA, observed, matches)
 
 
+def led(check: Check, matches: list[dict], leaders: list[dict]) -> list[dict]:
+    """Return the matches a `preceded` line came within `within` seconds before, in the same boot."""
+    window = timedelta(seconds=check.within)
+    return [
+        fields
+        for fields in matches
+        if any(
+            f['boot'] == fields['boot']
+            and fields['time'] - window <= f['time'] <= fields['time']
+            and (not check.key or f.get(check.key) == fields.get(check.key))
+            for f in leaders
+        )
+    ]
+
+
 def killed_during(check: Check, matches: list[dict], tests: list[dict]) -> tuple[list[dict], list[dict]]:
     """Split `matches` into those `check.during`'s tests do not account for and those they do (each with `killer`)."""
     windows = [
@@ -330,6 +348,8 @@ def evaluate(check: Check, matches: list[dict], minutes: float, by_name: dict[st
     if check.unless:
         excused = {fields['boot'] for fields in by_name.get(check.unless, [])}
         matches = [fields for fields in matches if fields['boot'] not in excused]
+    if check.preceded:
+        matches = led(check, matches, by_name.get(check.preceded, []))
     killed: list[dict] = []
     if check.during:
         matches, killed = killed_during(check, matches, by_name.get(check.during, []))

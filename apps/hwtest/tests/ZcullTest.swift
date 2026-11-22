@@ -8,8 +8,10 @@ import Metal
 /// half keeps the near colour, the right the far one, with LESS and with reversed depth (GREATER from a 0 clear); a
 /// GREATER draw after LESS ones invalidates the region and still draws where it passes. The facade counts the regions
 /// and the invalidation; the same far quads with the region invalidated before every draw give the GPU time zcull saves
-/// (reported). Then the multisampled, layered and loaded arms (ZcullArms.swift), and the info and side_effects arms
-/// (ZcullProbeArms.swift).
+/// (reported). Each of the three passes' own invalidations (`<arm>_invalidations`): 0 for less and reversed, whose
+/// program stores nothing, 1 for flipped (a program wrongly taken as writing memory drops the region: raw_zcull.h
+/// zcullInvalidates, raw_program_stores.h). Then the multisampled, layered and loaded arms (ZcullArms.swift), the info
+/// and side_effects arms (ZcullProbeArms.swift) and fragment_stores (ZcullStoresArm.swift).
 struct ZcullTest: HWTest {
     let id = "gpu.raw.zcull"
     let name = "Zcull rejects hidden quads; a direction flip invalidates it; pixels exact"
@@ -98,7 +100,11 @@ struct ZcullTest: HWTest {
             ("less", less, Self.red), ("reversed", reversed, Self.red),
             ("flipped", flipped, Self.blue),
         ] {
+            let armBefore = RawFacade.counters(of: gpu.device)["zcull_invalidations"] ?? 0
             paths.insert(try await gpu.run(pass).path)
+            let armInvalidations = (RawFacade.counters(of: gpu.device)["zcull_invalidations"] ?? 0) - armBefore
+            metrics.set("\(label)_invalidations", armInvalidations)
+            if armInvalidations != (label == "flipped" ? 1 : 0) { wrong.append("\(label)_invalidations") }
             let raster = try await gpu.raster(target, .bgra8Unorm)
             var bad = 0
             for y in stride(from: 0, to: h, by: 3) {
@@ -125,6 +131,12 @@ struct ZcullTest: HWTest {
         } catch {
             metrics.set("side_effects_error", GPU.describe(error))
             wrong.append("side_effects")
+        }
+        do {
+            try await fragmentStores(gpu, target, &metrics, &wrong, &paths)
+        } catch {
+            metrics.set("fragment_stores_error", GPU.describe(error))
+            wrong.append("fragment_stores")
         }
         var onMs = 0.0, offMs = 0.0, emitted = 0
         for _ in 0..<Self.rounds {

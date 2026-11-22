@@ -11,7 +11,7 @@ import Metal
 /// 5 ms later the test cancels the promise. A release the GPU never saw would leave its copy parked past it, so each
 /// copy must end within lostMs of its cancel (lost: those that did not, judged zero), and the releases counted
 /// (promise_cpu_releases) must equal the copies that ended.
-/// gpu.path.promise_unkept judges the give-up's own raise the same way (raise_to_end_ms).
+/// gpu.path.promise_unkept judges a cancel that comes after a reader waited past a second the same way.
 struct PromiseReleaseOrderPathTest: GPUPathTest {
     let id = "gpu.path.promise_release_order"
     let name = "Every promise word the CPU releases is seen by the GPU acquire parked on it"

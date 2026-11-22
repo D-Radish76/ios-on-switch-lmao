@@ -17,7 +17,7 @@ import Metal
 /// for the surface, are judged by tools/devicerun per run of this test from the pulled log (raw.nocopy-tiled-hwtest 2,
 /// refusal.buf-surface-tiled-hwtest 1); this process's own log, read right after the calls, may not hold them yet, so
 /// surface_nocopy_lines and surface_tiled_lines are reported only. A transfer the copy engine failed
-/// (raw:texture.cpu.unreached) cannot be provoked from here.
+/// (raw:texture.cpu.unreached) is gpu.raw.texture_transfer_failed's.
 extension RawReadbackRoutesTest {
     func surfaceCpu(
         _ gpu: GPU, _ draw: (MTLTexture) async throws -> Void, _ metrics: inout Metrics,

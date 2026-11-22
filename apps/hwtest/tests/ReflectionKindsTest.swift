@@ -8,41 +8,34 @@ import Metal
 /// made with binding and buffer type info, and on the versions whose QuartzCore has them its compute_average_luma and
 /// compute_sum_luma (qc_kernels): every binding answers type, access, index, arrayLength, isUsed, isActive, isArgument
 /// and its own kind's selectors as an M4 Max's Metal does (ReflectionKindsGoldens; mismatches, of them
-/// array_length_mismatches, first_mismatch), responds to MTLBindingInternal's 19 selectors and not to dataType, offset,
+/// array_length_mismatches, first_mismatch), responds to MTLBindingInternal's 21 selectors and not to dataType, offset,
 /// elementType or members (responds_mismatches); a state not made is named apart (unmade); the pointer and struct types
-/// every binding has a method for are reported (kinds_reported_off). wrong_kind: the first binding of each kind of each
-/// state asked the other kinds' selectors, where Metal fails an assertion and aborts the process: each answers
-/// Self.wrongKind's answer (wrong_kind_asks, wrong_kind_off) and logs its error lines ("raw: <process>: <selector>
-/// asked of binding <name> of type <n>, where Metal asserts"): tools/devicerun's raw.reflection-wrong-kind-hwtest
-/// judges their count in this run's window of the pulled log against wrong_kind_lines_want; this process's own log,
-/// read right after the asks, may not hold them yet, so wrong_kind_lines and wrong_kind_lines_other are reported only.
+/// every binding has a method for are reported (kinds_reported_off). wrong_kind (ReflectionWrongKind): the first
+/// binding of each type of each state asked every other type's selector reports one failure through Metal's
+/// MTLReportFailure, type 0, Metal's message, from a function ending " <selector>]", then answers Metal's fixed value
+/// (wrong_kind_asks: 76 on 21H461, 116 on 24B119; wrong_kind_reported equal to it; wrong_kind_off 0,
+/// wrong_kind_first_off); its own type's selectors report none (own_kind_reports 0). Each ask runs with the test's
+/// report block set: with none Metal's default aborts the process. failure_mode and failure_enabled are the device
+/// Metal's error mode and enable of failure type 0, reported (an M4 Max: 6, the abort, and 1).
 struct ReflectionKindsTest: HWTest {
     let id = "gpu.raw.reflection_kinds"
     let name = "Every binding kind's reflection answers as Metal's"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
-    /// What a binding answers another kind's selector, and the error lines each such ask logs
-    static let wrongKind = (answer: 0, linesPerAsk: 1)
     /// The QuartzCore compute kernels each iOS version's library has and this test reflects
     static let systemKernels: [Int: [String]] = [27: ["compute_average_luma", "compute_sum_luma"]]
-    static let assertSuffix = ", where Metal asserts"
-
-    struct Ask {
-        let key: String, line: String
-        let answer: Int
-    }
+    /// The wrong-type asks of each iOS version's states (buffer 7, threadgroup memory 9, texture 8, sampler 11 each)
+    static let wrongKindAsks: [Int: Int] = [17: 76, 27: 116]
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let start = Date()
         let system = Self.systemKernels[context.ios] ?? []
         let made = ReflectionKinds.made(gpu.device, gpu.library, system: system) {
             try gpu.device.makeLibrary(URL: CAState.library)
         }
-        let asks = Self.wrongKinds(made.seen)
         let compared = ReflectionKinds.compare(made.seen, ReflectionKindsGoldens.metal, functions: made.functions)
         var metrics = Metrics()
         metrics.set("unmade", made.unmade.isEmpty ? "-" : made.unmade.joined(separator: ","))
@@ -63,56 +56,25 @@ struct ReflectionKindsTest: HWTest {
             ),
             ("kinds: \(compared.respondsMismatches) respondsToSelector answers off", compared.respondsMismatches == 0),
         ]
-
-        let off = asks.filter { $0.answer != Self.wrongKind.answer }
-        let lines = Self.assertLines(since: start)
-        var left = lines ?? []
-        var matched = 0
-        for ask in asks {
-            guard let at = left.firstIndex(where: { $0.hasPrefix("raw: ") && $0.hasSuffix(": " + ask.line) }) else {
-                continue
-            }
-            left.remove(at: at)
-            matched += 1
+        guard let functions = ReflectionWrongKind.Functions.load() else {
+            checks.append(("wrong_kind: Metal exports no report-failure block: no wrong-type selector asked", false))
+            return .judged(checks, metrics, proof: gpu.proof)
         }
-        let wantLines = asks.count * Self.wrongKind.linesPerAsk
-        metrics.set("wrong_kind_asks", asks.count)
-        metrics.set("wrong_kind_off", off.count)
-        metrics.set("wrong_kind_first_off", off.first.map { "\($0.key):\($0.answer)" } ?? "-")
-        metrics.set("wrong_kind_lines_want", wantLines)
-        metrics.set("wrong_kind_lines", lines == nil ? -1 : matched)
-        metrics.set("wrong_kind_lines_other", left.count)
-        checks.append(
-            (
-                "wrong_kind: \(off.count) of \(asks.count) asks answered other than \(Self.wrongKind.answer)",
-                off.isEmpty && !asks.isEmpty
-            ))
+        let counted = ReflectionWrongKind.asked(made.seen, functions)
+        let want = Self.wrongKindAsks[context.ios] ?? -1
+        metrics.set("wrong_kind_asks", counted.asks)
+        metrics.set("wrong_kind_reported", counted.reported)
+        metrics.set("wrong_kind_off", counted.off)
+        metrics.set("wrong_kind_first_off", counted.firstOff)
+        metrics.set("own_kind_reports", counted.ownReports)
+        metrics.set("failure_mode", Int(functions.mode(0)))
+        metrics.set("failure_enabled", functions.enabled(0))
+        checks += [
+            ("wrong_kind: \(counted.asks) asks, want \(want)", counted.asks == want),
+            ("wrong_kind: \(counted.reported) reports over \(counted.asks) asks", counted.reported == counted.asks),
+            ("wrong_kind: \(counted.off) asks off Metal's report, first \(counted.firstOff)", counted.off == 0),
+            ("wrong_kind: \(counted.ownReports) reports for a binding's own selectors", counted.ownReports == 0),
+        ]
         return .judged(checks, metrics, proof: gpu.proof)
-    }
-
-    /// The first binding of each kind of each state, asked every other kind's selector
-    static func wrongKinds(_ seen: [ReflectionKinds.Seen]) -> [Ask] {
-        var asked: Set<String> = []
-        var asks: [Ask] = []
-        let guarded = ReflectionKinds.own.keys.sorted().flatMap { ReflectionKinds.own[$0]! }
-        for binding in seen {
-            guard asked.insert("\(binding.key.prefix { $0 != "." })/\(binding.type)").inserted else { continue }
-            let own = ReflectionKinds.own[binding.type] ?? []
-            for selector in guarded where !own.contains(selector) {
-                asks.append(
-                    Ask(
-                        key: "\(binding.key).\(selector)",
-                        line: "\(selector) asked of binding \(binding.name) of type \(binding.type)\(assertSuffix)",
-                        answer: ReflectionKinds.answer(binding.object, selector)))
-            }
-        }
-        return asks
-    }
-
-    /// This process's facade lines since `start` that end as a wrong-kind ask's does; nil when its log cannot be read
-    static func assertLines(since start: Date) -> [String]? {
-        ProcessLog.lines(ProcessLog.metal, "raw", containing: assertSuffix, since: start)?.filter {
-            $0.hasSuffix(assertSuffix)
-        }
     }
 }

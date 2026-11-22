@@ -16,8 +16,6 @@ extension PrivateCompressionTest {
         var musts: [(String, Int)] = []  // facts of the compressed run that must read 1
     }
 
-    static let moveSelector = NSSelectorFromString("switchRawProbeMovePlain:")
-
     static let shapeArms = ["mips", "array", "ms4", "shader_write", "view_id"]
     /// Clear colours the boot ZBC table holds (black, white, zero), one a slice
     static let sliceClears = [
@@ -75,14 +73,10 @@ extension PrivateCompressionTest {
         return try await gpu.read(grid, bytesPerPixel: 4)
     }
 
-    /// `make` until what it made binds compressed memory (20 tries), or once where `plain`
+    /// What `make` makes on compressed memory (CompressionSettled.remade), or once where `plain`
     func made(_ facade: NSObject, plain: Bool, _ make: () throws -> MTLTexture) async throws -> MTLTexture {
-        var made = try make()
-        for _ in 0..<20 where !plain && comptags(facade, made) == 0 {
-            try await Task.sleep(nanoseconds: 50_000_000)
-            made = try make()
-        }
-        return made
+        guard let device = facade as? MTLDevice, !plain else { return try make() }
+        return try await CompressionSettled.remade(device, make)
     }
 
     func shapeArm(_ arm: String, _ gpu: GPU, _ facade: NSObject, plain: Bool) async throws -> ShapeRun {
@@ -179,25 +173,20 @@ extension PrivateCompressionTest {
             run.bytes = try await gpu.read(target, bytesPerPixel: 4)
             run.compressed = comptags(facade, target)
         case "view_id":
-            // a view and a gpuResourceID taken while compressed keep it compressed; after the move an m2v twin takes,
-            // work through the view lands in the plain memory and the ID is the same
+            // a view and a gpuResourceID taken while compressed keep it there through the work done through the view
             let target = try await made(facade, plain: plain) { try gpu.texture(.bgra8Unorm, 128, 128) }
             run.made = comptags(facade, target)
             guard let view = target.makeTextureView(pixelFormat: .bgra8Unorm) else {
                 throw TestFailure("no view made")
             }
             let id = target.gpuResourceID._impl
-            run.compressed = comptags(facade, target)
             run.paths.append(try await gpu.run(draw(view, half: true)).path)
             run.bytes += try await gpu.read(target, bytesPerPixel: 4)
-            if !plain {
-                let moved = facade.perform(Self.moveSelector, with: target)?.takeUnretainedValue() as? NSNumber
-                run.musts.append(("moved", moved?.boolValue == true ? 1 : 0))
-                run.musts.append(("id_kept", target.gpuResourceID._impl == id ? 1 : 0))
-            }
             run.paths.append(try await gpu.run(draw(view, half: true, clear: 1)).path)
             run.bytes += try await gpu.read(target, bytesPerPixel: 4)
             run.bytes += try await gpu.read(view, bytesPerPixel: 4)
+            run.compressed = comptags(facade, target)
+            if !plain { run.musts.append(("id_kept", target.gpuResourceID._impl == id ? 1 : 0)) }
         default:
             throw TestFailure("no shape arm \(arm)")
         }
