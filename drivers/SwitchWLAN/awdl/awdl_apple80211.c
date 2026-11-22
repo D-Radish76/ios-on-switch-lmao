@@ -144,10 +144,8 @@ void a80211_awdl_init(struct a80211_awdl *f, struct awdl_core *core, const struc
     memcpy(f->caps, caps, 12);
     f->preferred = f->master_channel = 149;
 #if defined(SWITCH_IPSW_KIND_24B119)
-    if (core && core->switch_service_bytes) {
-        core->switch_service_bytes = 0;
+    if (core && switch_awdl_services_clear(core))
         core->service_update_indicator++;
-    }
 #endif
 }
 
@@ -270,34 +268,6 @@ static void switch_awdl_stop_if_idle(struct a80211_awdl *f, uint64_t now)
         switch_awdl_set_running(f, 0, now);
 }
 
-static uint16_t switch_awdl_service_le16(const uint8_t *data)
-{
-    return (uint16_t)(data[0] | (uint16_t)data[1] << 8);
-}
-
-static int switch_awdl_service_validate(const uint8_t *tlv, size_t length)
-{
-    if (length < 3 || switch_awdl_service_le16(tlv + 1) != length - 3)
-        return EINVAL;
-    switch (tlv[0]) {
-        case AWDL_TLV_SERVICE_REQUEST:
-            if (length < 8)
-                return EINVAL;
-            return switch_awdl_service_le16(tlv + 3) || switch_awdl_service_le16(tlv + 5) ? EOPNOTSUPP : 0;
-        case AWDL_TLV_SERVICE_RESPONSE: {
-            if (length < 11)
-                return EINVAL;
-            const size_t key_bytes = switch_awdl_service_le16(tlv + 3);
-            if (key_bytes < 2 || key_bytes > length - 9 ||
-                switch_awdl_service_le16(tlv + 5 + key_bytes) != length - 9 - key_bytes)
-                return EINVAL;
-            return switch_awdl_service_le16(tlv + 7 + key_bytes) ? EOPNOTSUPP : 0;
-        }
-        default:
-            return EOPNOTSUPP;
-    }
-}
-
 static int switch_awdl_service_request(struct a80211_awdl *f, const void *data, size_t length, uint64_t now)
 {
     struct awdl_core *const c = f->core;
@@ -313,8 +283,7 @@ static int switch_awdl_service_request(struct a80211_awdl *f, const void *data, 
     if (!request.data_len) {
         if (!request.delete_request)
             return EOPNOTSUPP;
-        if (c->switch_service_bytes) {
-            c->switch_service_bytes = 0;
+        if (switch_awdl_services_clear(c)) {
             c->service_update_indicator++;
             switch_awdl_stop_if_idle(f, now);
         }
@@ -322,37 +291,22 @@ static int switch_awdl_service_request(struct a80211_awdl *f, const void *data, 
     }
     if (awdl_native(c))
         return EOPNOTSUPP;
-    const uint8_t *tlv = (const uint8_t *)data + sizeof request;
-    const int error = switch_awdl_service_validate(tlv, request.data_len);
-    if (error)
-        return error;
-
-    for (size_t offset = 0; offset < c->switch_service_bytes;) {
-        uint8_t *saved = c->switch_services + offset;
-        const size_t bytes = 3u + switch_awdl_service_le16(saved + 1);
-        if (bytes == request.data_len && !memcmp(saved, tlv, bytes)) {
-            if (request.delete_request) {
-                memmove(saved, saved + bytes, c->switch_service_bytes - offset - bytes);
-                c->switch_service_bytes = (uint16_t)(c->switch_service_bytes - bytes);
-                if (tlv[0] == AWDL_TLV_SERVICE_RESPONSE)
-                    c->service_update_indicator++;
-                switch_awdl_stop_if_idle(f, now);
-            }
-            return 0;
-        }
-        offset += bytes;
+    const int staged = switch_awdl_service_stage(c, (const uint8_t *)data + sizeof request, request.data_len);
+    if (request.delete_request) {
+        if (!staged && switch_awdl_service_drop(c))
+            switch_awdl_stop_if_idle(f, now);
+        return staged == ENOSPC ? 0 : staged;  // too large to have been kept
     }
-    if (request.delete_request)
+    if (staged)
+        return staged;
+    if (switch_awdl_service_held(c))
         return 0;
-    if (request.data_len > sizeof c->switch_services - c->switch_service_bytes)
+    if (!switch_awdl_service_fits(c))
         return ENOSPC;
     const int start = switch_awdl_request_activity(f, now);
     if (start)
         return start;
-    memcpy(c->switch_services + c->switch_service_bytes, tlv, request.data_len);
-    c->switch_service_bytes += request.data_len;
-    if (tlv[0] == AWDL_TLV_SERVICE_RESPONSE)
-        c->service_update_indicator++;
+    switch_awdl_service_keep(c);
     return 0;
 }
 #endif

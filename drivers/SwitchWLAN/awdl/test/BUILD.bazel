@@ -41,6 +41,7 @@ COPTS = [
             "//drivers/SwitchWLAN:awdl/awdl_native_rx.c",
             "//drivers/SwitchWLAN:awdl/awdl_radio.c",
             "//drivers/SwitchWLAN:awdl/awdl_schedule.c",
+            "//drivers/SwitchWLAN:awdl/awdl_services.c",
             "//drivers/SwitchWLAN:awdl/awdl_tx.c",
             "//drivers/SwitchWLAN:awdl/awdl_wire.c",
         ],
@@ -68,6 +69,7 @@ COPTS = [
             "test_owl.c",
             "test_radio.c",
             "test_sched.c",
+            "test_services.c",
         ],
         copts = COPTS,
         defines = [

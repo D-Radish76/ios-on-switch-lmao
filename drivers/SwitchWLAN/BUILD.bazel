@@ -77,6 +77,7 @@ kernel_driver(
         "awdl/awdl_native_rx.c",
         "awdl/awdl_schedule.c",
         "awdl/awdl_tx.c",
+        "awdl/awdl_services.c",
         "awdl/awdl_bcm.c",
         "awdl/awdl_bcm_trace.c",
         "awdl/awdl_apple80211.c",

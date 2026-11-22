@@ -16,6 +16,7 @@ void test_native_main(void);  // test_native.c
 void test_owl_main(void);     // test_owl.c
 void test_sched_main(void);   // test_sched.c
 void test_radio_main(void);
+void test_services_main(void);  // test_services.c
 #define CHECK(x)                                                         \
     do {                                                                 \
         if (!(x)) {                                                      \
@@ -378,9 +379,13 @@ static void test_build_roundtrip(void)
     const uint32_t want = (1u << AWDL_TLV_SYNC_PARAMS) | (1u << AWDL_TLV_ELECTION_PARAMS) |
                           (1u << AWDL_TLV_CHANNEL_SEQUENCE) | (1u << AWDL_TLV_ELECTION_PARAMS_V2) |
                           (1u << AWDL_TLV_SERVICE_PARAMS) | (1u << AWDL_TLV_HT_CAPS) |
-                          (1u << AWDL_TLV_DATA_PATH_STATE) | (1u << AWDL_TLV_ARPA) | (1u << AWDL_TLV_VERSION);
+                          (1u << AWDL_TLV_DATA_PATH_STATE) | (1u << AWDL_TLV_VERSION);
     CHECK((a.present & want) == want);
-    CHECK(!strcmp(a.hostname, "node0"));
+#if defined(SWITCH_IPSW_KIND_24B119)
+    CHECK(!(a.present & (1u << AWDL_TLV_ARPA)));  // until wifip2pd names the host
+#else
+    CHECK((a.present & (1u << AWDL_TLV_ARPA)) && !strcmp(a.hostname, "node0"));
+#endif
     CHECK(a.sync.seq.count == 16 && a.chanseq.count == 16);
     // the down counter is the TU to the next EAW (OWL's rounding up), exact at target_tx_time, which is at most a TU
     // before the build time in phy_tx_time; the AW number is the current one
@@ -470,7 +475,11 @@ static void test_sync_two_nodes(void)
     CHECK(nodes[0].peers_present == 1 && nodes[1].peers_present == 1);
     CHECK(nodes[1].schedules >= 2);  // resynchronised at least once after starting on its own
     const struct awdl_peer *p = awdl_core_find(nodes[1].core, (const uint8_t[6]){0x02, 0x11, 0x22, 0x33, 0x44, 0x0a});
+#if defined(SWITCH_IPSW_KIND_24B119)
+    CHECK(p && p->reachable && !p->hostname[0] && p->awdl_version == 0x34);
+#else
     CHECK(p && p->reachable && !strcmp(p->hostname, "node0") && p->awdl_version == 0x34);
+#endif
     CHECK(p && p->sync.af_period == 110);
     const struct awdl_peer *follower = awdl_core_find(nodes[0].core, nodes[0].last_peer);
     CHECK(follower && follower->sync.af_period == 440);
@@ -944,8 +953,12 @@ static void test_airdrop_srv_on_scheduled_mif(void)
         ++mifs;
         CHECK(frame->from == 0 && frame->freq == 5745);
         CHECK(af.present & awdl_tlv_bit(AWDL_TLV_SERVICE_RESPONSE));
-        CHECK(frame->len >= sizeof response &&
-              !memcmp(frame->data + frame->len - sizeof response, response, sizeof response));
+        static const uint8_t on_air[] = {
+            2, 35, 0, 16, 0, 12, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 0xc0, 0x07,
+            33, 13, 0, 0, 0, 0, 0, 0, 0, 0x22, 0x42, 4, 'p', 'e', 'e', 'r', 0xc0, 0x0c,
+        };
+        CHECK(frame->len >= sizeof on_air &&
+              !memcmp(frame->data + frame->len - sizeof on_air, on_air, sizeof on_air));
         const struct awdl_rx_meta meta = {deadline, frame->freq, -48};
         CHECK(awdl_core_rx(nodes[1].core, frame->data, frame->len, &meta) == 1);
         const struct awdl_peer *peer = awdl_core_find(nodes[1].core, af.src);
@@ -966,71 +979,6 @@ static void test_airdrop_srv_on_scheduled_mif(void)
 }
 
 #if defined(SWITCH_IPSW_KIND_24B119)
-static void test_peer_service_mif(void)
-{
-    sim_reset(1);
-    sim_node(0, 0x0a, 200, 0, 0);
-    struct a80211_awdl f;
-    const uint8_t caps[12] = {0};
-    const struct a80211_awdl_ops ops = {0};
-    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
-    uint8_t request[] = {1, 7, 0, 0, 0, 0, 0, 0xc0, 0x07, 12};
-    uint8_t response[] = {2, 13, 0, 3, 0, 0xc0, 0x07, 12, 4, 0, 0, 0, 1, 'X', 0xc0, 0x07};
-    uint8_t frame[AWDL_MAX_FRAME];
-    const size_t base_mif = awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
-    const size_t base_psf = awdl_core_build_af(f.core, AWDL_SUBTYPE_PSF, 0, frame, sizeof frame);
-    CHECK(base_mif > 0 && base_psf > 0);
-    CHECK(switch_test_peer_service(&f, request, sizeof request - 1, 0) == EINVAL);
-    request[3] = 1;
-    CHECK(switch_test_peer_service(&f, request, sizeof request, 0) == EOPNOTSUPP);
-    request[3] = 0;
-    response[4] = 1;
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == EINVAL);
-    response[4] = 0;
-    response[8]++;
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == EINVAL);
-    response[8]--;
-    response[10] = 1;
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == EOPNOTSUPP);
-    response[10] = 0;
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif);
-
-    CHECK(switch_test_peer_service(&f, request, sizeof request, 0) == 0);
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == 0);
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == 0);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_PSF, 0, frame, sizeof frame) == base_psf);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) ==
-          base_mif + sizeof request + sizeof response);
-    CHECK(!memcmp(frame + base_mif, request, sizeof request));
-    CHECK(!memcmp(frame + base_mif + sizeof request, response, sizeof response));
-    CHECK(f.enabled && awdl_core_running(f.core));
-
-    response[13] = 'Y';
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 1) == 0);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) ==
-          base_mif + sizeof request + sizeof response);
-    response[13] = 'X';
-    CHECK(switch_test_peer_service(&f, response, sizeof response, 1) == 0);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif + sizeof request);
-    CHECK(!memcmp(frame + base_mif, request, sizeof request));
-    CHECK(switch_test_peer_service(&f, NULL, 0, 1) == 0);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif);
-
-    uint8_t large[AWDL_MAX_FRAME - 320u] = {1};
-    const uint16_t body = sizeof large - 3;
-    large[1] = (uint8_t)body;
-    large[2] = (uint8_t)(body >> 8);
-    large[7] = 0x22;
-    CHECK(switch_test_peer_service(&f, large, sizeof large, 0) == 0);
-    CHECK(switch_test_peer_service(&f, request, sizeof request, 0) == ENOSPC);
-    CHECK(switch_test_peer_service(&f, large, sizeof large, 0) == 0);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif + sizeof large);
-    CHECK(!memcmp(frame + base_mif, large, sizeof large));
-    awdl_core_stop(f.core);
-    a80211_awdl_init(&f, f.core, &ops, "awdl0", "en0", caps);
-    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif);
-}
-
 static void test_discovery_demand(void)
 {
     sim_reset(1);
@@ -1235,7 +1183,7 @@ int main(int argc, char **argv)
     test_peer_service_clear();
     test_airdrop_srv_on_scheduled_mif();
 #if defined(SWITCH_IPSW_KIND_24B119)
-    test_peer_service_mif();
+    test_services_main();
     test_discovery_demand();
     test_parent_state_feedback();
 #endif

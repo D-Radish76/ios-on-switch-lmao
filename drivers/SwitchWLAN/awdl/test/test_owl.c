@@ -93,9 +93,13 @@ static const char *const kOwlBody =
     // service params: 3 unknown, SUI 0, bitmask 0
     " 06 0900 000000 0000 00000000";
 static const char *const kOwlMifOnly =
-    // HT capabilities: 0x11ce, A-MPDU 0x1b, one stream's MCS 0-7; arpa "owl.local"
+    // HT capabilities: 0x11ce, A-MPDU 0x1b, one stream's MCS 0-7; arpa "owl.local", which 24B119 sends only once
+    // wifip2pd names the host
     " 07 0800 0000 ce11 1b ff 0000"
-    " 10 0700 03 03 6f776c c00c";
+#if !defined(SWITCH_IPSW_KIND_24B119)
+    " 10 0700 03 03 6f776c c00c"
+#endif
+    "";
 static const char *const kOwlTail =
     // data path state: flags 0x8f24, "X0", social map 149, AWDL address, extension flags; version 3.4, macOS
     " 0c 0f00 248f 583000 0400 021122334401 0000"

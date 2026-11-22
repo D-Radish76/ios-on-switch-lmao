@@ -33,6 +33,12 @@ extern "C" {
 #if defined(SWITCH_IPSW_KIND_24B119)
 // Reserve room for the management header and all mandatory MIF attributes.
 #define SWITCH_AWDL_SERVICE_BYTES (AWDL_MAX_FRAME - 320u)
+#define SWITCH_AWDL_NAME_MAX      0x1ffu  // Apple's driver refuses longer expanded or compressed names
+
+struct switch_awdl_dns_name {
+    uint8_t bytes[SWITCH_AWDL_NAME_MAX];
+    size_t length;
+};
 #endif
 
 struct awdl_writer {
@@ -92,8 +98,14 @@ struct awdl_core {
     unsigned txq_head, txq_count;
     uint16_t data_seq, mgmt_seq, service_update_indicator;
 #if defined(SWITCH_IPSW_KIND_24B119)
-    uint16_t switch_service_bytes;
+    // wifip2pd's records (awdl_services.c), each the key's hash, 1 for the reverse-lookup record, the on-air TLV
+    uint16_t switch_service_bytes, switch_staged_bytes;
     uint8_t switch_services[SWITCH_AWDL_SERVICE_BYTES];
+    uint8_t switch_staged[SWITCH_AWDL_SERVICE_BYTES];
+    uint8_t switch_staged_hash, switch_staged_arpa;
+    uint8_t switch_service_bloom[32];
+    struct switch_awdl_dns_name switch_service_key, switch_service_target;
+    uint8_t switch_refused_pointers[32], switch_unsent_types[32];  // logged once each
 #endif
     uint8_t seq_fixed;  // awdl_core_set_sequence named the sequence: no schedule rebuilds
 #if DEVELOPMENT || DEBUG
@@ -154,6 +166,19 @@ void awdl_handle_af(struct awdl_core *c, const struct awdl_af *a, const struct a
 
 // awdl_tx.c: the TLVs beyond sync and election (OWL's order; `mif` adds HT capabilities and arpa).
 void awdl_write_extras(struct awdl_core *c, struct awdl_writer *w, int mif);
+
+#if defined(SWITCH_IPSW_KIND_24B119)
+// awdl_services.c: one of wifip2pd's service TLVs is converted to its on-air form and staged, then kept or dropped.
+int switch_awdl_service_stage(struct awdl_core *c, const uint8_t *tlv, size_t length);
+int switch_awdl_service_held(const struct awdl_core *c);
+int switch_awdl_service_fits(const struct awdl_core *c);
+void switch_awdl_service_keep(struct awdl_core *c);
+int switch_awdl_service_drop(struct awdl_core *c);  // 1 when a held record went
+int switch_awdl_services_clear(struct awdl_core *c);  // 1 when any were held
+void switch_awdl_write_service_bloom(struct awdl_core *c, struct awdl_writer *w);
+void switch_awdl_write_arpa(struct awdl_core *c, struct awdl_writer *w);
+void switch_awdl_write_service_responses(struct awdl_core *c, struct awdl_writer *w);
+#endif
 
 // awdl_schedule.c: the sequence for the mode, the infra channel and the learnt social channel, shared by both backends.
 void awdl_sched_start(struct awdl_core *c);

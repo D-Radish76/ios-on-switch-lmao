@@ -719,7 +719,12 @@ static void test_flow_ifc_v3(void)
     phone_frame(core, phone, phone_addr, AWDL_SUBTYPE_MIF, 5100000, 2000000);
     NCHECK(presents == 1 && !memcmp(last_presence, phone_addr, 6));
     const struct awdl_peer *p = awdl_core_find(core, phone_addr);
-    NCHECK(p && p->reachable && p->rssi == -60 && !strcmp(p->hostname, "iPhone") && p->has_seq && p->has_ht);
+#if defined(SWITCH_IPSW_KIND_24B119)
+    const char *const phone_host = "";  // the soft phone sends no ARPA TLV until wifip2pd names its host
+#else
+    const char *const phone_host = "iPhone";
+#endif
+    NCHECK(p && p->reachable && p->rssi == -60 && !strcmp(p->hostname, phone_host) && p->has_seq && p->has_ht);
     NCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER && !memcmp(awdl_core_election(core)->root, phone_addr, 6));
     const struct fw_call *add = NULL, *slave = NULL, *tree = NULL;
     for (int i = before; i < ncalls; ++i) {
