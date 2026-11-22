@@ -25,9 +25,10 @@ struct FakeGpu {
     TegraGM20BAbiFence fence{};
     TegraGM20BAbiFenceSemantic semantic{};
     std::mutex lock;  // held through each kernel call but its hook (onWait, onClose): a test's threads call in at once
-    uint32_t sequence = 0, allocations = 0, waits = 0, submissions = 0, set = 0, registrations = 0;
+    uint32_t sequence = 0, allocations = 0, waits = 0, submissions = 0, set = 0, registrations = 0, channelAsks = 0;
     uint64_t handle = 0;
-    bool reject = false, completeOnSubmit = false, refuseWait = false;
+    bool reject = false, completeOnSubmit = false, refuseWait = false, refuseChannel = false;
+    uint32_t channelEpoch = 0;  // TegraGM20BChannelEpochWord as the fence page holds it
     uint32_t semanticOnSubmit = 0;
     std::function<void()> onWait, onClose;
     std::unordered_map<uint64_t, std::unique_ptr<uint8_t[]>> memory;
@@ -154,6 +155,9 @@ bool Kernel::channel(uint32_t engines, uint32_t &channel, const volatile uint32_
 {
     EXPECT_EQ(engines, uint32_t(TegraGM20BEngineCopy));
     std::lock_guard<std::mutex> l(fake->lock);
+    ++fake->channelAsks;
+    if (fake->refuseChannel)
+        return false;
     channel = 7;
     fake->fence.error = 0;
     fake->semantic = {};
@@ -161,8 +165,14 @@ bool Kernel::channel(uint32_t engines, uint32_t &channel, const volatile uint32_
     return true;
 }
 
+const volatile uint32_t *Kernel::channelEpoch()
+{
+    return &fake->channelEpoch;
+}
+
 void Kernel::closeChannel(uint32_t)
 {
+    __atomic_fetch_add(&fake->channelEpoch, 1u, __ATOMIC_RELEASE);
     if (fake->onClose)
         fake->onClose();
     std::lock_guard<std::mutex> l(fake->lock);

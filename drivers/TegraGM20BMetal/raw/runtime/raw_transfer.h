@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include "raw_lock.h"
+#include "raw_channel_recovery.h"
 #include "raw_kernel.h"
 #include "raw_resource_set.h"
 #include <atomic>
@@ -88,6 +89,7 @@ private:
     // channels reset() closed: a copy that waited without lock_ checks no other thread closed its one meanwhile
     uint32_t resets_ = 0;
     const volatile uint32_t *fence_ = nullptr;
+    ChannelRefusal refusal_;
 };
 
 }  // namespace raw

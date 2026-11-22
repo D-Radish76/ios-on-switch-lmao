@@ -217,9 +217,14 @@ TextureTransfers::Claim TextureTransfers::open(Kernel &kernel, std::unique_lock<
     if (channel_ && (killed || kernel.lost(channel_) || (!retire(kernel, serial, *slot) && slot->pending)))
         reset(kernel);
     if (!channel_) {
-        std::lock_guard<raw::Mutex> allocate(allocationLock);
-        if (!kernel.channel(TegraGM20BEngineCopy, channel_, fence_))
+        if (!refusal_.mayAsk(kernel))
             return nullptr;
+        std::lock_guard<raw::Mutex> allocate(allocationLock);
+        if (!kernel.channel(TegraGM20BEngineCopy, channel_, fence_)) {
+            refusal_.refused(false);
+            return nullptr;
+        }
+        refusal_.made();
     }
     if (slot->memory.bytes < bytes) {
         std::lock_guard<raw::Mutex> allocate(allocationLock);

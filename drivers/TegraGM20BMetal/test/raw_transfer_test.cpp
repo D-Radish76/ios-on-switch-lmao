@@ -204,6 +204,26 @@ TEST_F(RawTransfer, FailedSubmissionIsNotPublishedOrAllowedToAlterOutput)
     EXPECT_EQ(gpu.waits, 0u);
 }
 
+// The kernel refuses the copy channel (the connection's channel slots all held): the copies fail, and the kernel is asked
+// again only once the channel epoch moved (a channel of the connection destroyed), not at every copy
+TEST_F(RawTransfer, ARefusedCopyChannelIsAskedForAgainOnlyOnceTheEpochMoves)
+{
+    std::array<uint8_t, 4> target{}, bytes{1, 2, 3, 4};
+    const raw::TextureTransfer region{{reinterpret_cast<uint64_t>(target.data()), 4}, 1, 1, 1, 4};
+    gpu.refuseChannel = true;
+    EXPECT_FALSE(copy(region, bytes.data(), 4, true));
+    EXPECT_FALSE(copy(region, bytes.data(), 4, false));
+    gpu.refuseChannel = false;
+    EXPECT_FALSE(copy(region, bytes.data(), 4, true));
+    EXPECT_EQ(gpu.channelAsks, 1u) << "a refused copy channel was asked for again with no channel destroyed since";
+    __atomic_fetch_add(&gpu.channelEpoch, 1u, __ATOMIC_RELEASE);
+    ASSERT_TRUE(copy(region, bytes.data(), 4, true));
+    EXPECT_EQ(gpu.channelAsks, 2u);
+    EXPECT_EQ(gpu.submissions, 1u);
+    gpu.complete(gpu.sequence);
+    EXPECT_EQ(target, bytes);
+}
+
 TEST_F(RawTransfer, VolumePlanesPreserveTheirPhysicalBlockDepthAndCallerImageStride)
 {
     for (bool view2d : {false, true}) {
