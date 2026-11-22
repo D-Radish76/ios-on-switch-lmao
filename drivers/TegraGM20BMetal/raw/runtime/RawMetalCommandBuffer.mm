@@ -338,13 +338,19 @@ template <typename Done> static void waitFor(RMCommandBuffer *cb, Done &&done)
     cb->_changes.waitFor(done);
 }
 
+// On the thread that let go of the last reference, which may not be the one that completed it. The completion's last
+// write is its turn's mark (completeBuffer: its recording given back before), and its reference went after it; read
+// with acquire before anything here, so this dealloc and whoever takes the block from the pool next come after that
+// write through the command buffer's own atomic, not only through libobjc's reference count
 static void commandBufferDropped(void *object)
 {
     RMCommandBuffer *__unsafe_unretained b = (__bridge RMCommandBuffer *)object;
+    const bool completed = b->_turn.ran();
     if (RMEncoder *__unsafe_unretained e = (RMEncoder *)b->_active)
         e->_cb = nil;
     b->_active = nil;
-    rmRecordingDone(b);
+    if (!completed)
+        rmRecordingDone(b);
 }
 
 // Command-buffer objects use the same instance pool as encoders (raw_object_pool.h). Dealloc returns an unsubmitted

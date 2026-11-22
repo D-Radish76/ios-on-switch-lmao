@@ -5,13 +5,15 @@
 // range it waits for, while other work keeps the worker from going idle (an idle worker would wake the completion
 // thread on its own and hide a lost wake), measured draws' timings handed over and learned on the submit worker alone
 // while the completion thread finishes the command buffers before them, and another thread's move of a texture's memory
-// run by the submit worker between its submissions. Every command buffer is kept until all completed: libobjc's release
-// orders a dealloc after the completion thread's last touch where TSAN cannot see it.
+// run by the submit worker between its submissions, and a command buffer freed on its recording thread after its
+// completion let go of it, made again there (RawMetalCommandBuffer.mm commandBufferDropped).
 #include "raw_scale_frames.h"
 #include "../raw/runtime/raw_stamps.h"
 #include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
 
 #include <gtest/gtest.h>
+#include <mach/mach.h>
+#include <objc/runtime.h>
 #include <pthread.h>
 #include <atomic>
 #include <chrono>
@@ -196,6 +198,68 @@ TEST(RawFacadeHandlers, AnotherThreadsMoveRunsOnTheSubmitWorker)
     [kept.lastObject waitUntilCompleted];
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     EXPECT_EQ(onWorker, kMoves) << "a move ran on the thread that asked for it";
+}
+
+pthread_t gSentinelFreedOn = nullptr;
+
+}  // namespace
+
+// Its dealloc says on which thread the object it is associated with went
+@interface RMFreedOnSentinel : NSObject
+@end
+
+@implementation RMFreedOnSentinel
+- (void)dealloc
+{
+    gSentinelFreedOn = pthread_self();
+}
+@end
+
+namespace {
+
+// A command buffer whose last reference goes on the thread that recorded it, after the completion thread let go of it,
+// gives its block to the next command buffer made there. The completion's last write to it, its turn's mark, comes
+// after the waitUntilCompleted wake; what orders the dealloc and the reuse after that write is libobjc's reference
+// count, which the sanitizer does not see, and here a Mach semaphore, which it does not model either: only the command
+// buffer's own atomic, read in its dealloc, shows it that order, every time
+TEST(RawFacadeHandlers, ACommandBufferFreedAfterItsCompletionLetGoIsMadeAgainAfterThatCompletion)
+{
+    ASSERT_TRUE(opened().device != nil && opened().state != nil);
+    id<MTLCommandQueue> first = [opened().device newCommandQueue], second = [opened().device newCommandQueue];
+    const scale_frames::Shape shape{1, 6, 1};
+    const auto into = scale_frames::targets(opened().device, shape);
+    semaphore_t letGo = MACH_PORT_NULL;
+    ASSERT_EQ(semaphore_create(mach_task_self(), &letGo, SYNC_POLICY_FIFO, 0), KERN_SUCCESS);
+    static char sentinelKey;
+    id<MTLCommandBuffer> done = nil, after = nil;
+    @autoreleasepool {
+        done = scale_frames::record(first, opened().state, into, shape, 0);
+        objc_setAssociatedObject(done, &sentinelKey, [RMFreedOnSentinel new], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [done commit];
+        [done waitUntilCompleted];
+        // the completion thread takes `after` once it is through with `done`; its handler runs after that. Kept to the
+        // end, so no other command buffer's block goes back to the pool meanwhile
+        after = scale_frames::record(second, opened().state, into, shape, 1);
+        [after addCompletedHandler:^(id<MTLCommandBuffer>) {
+            semaphore_signal(letGo);
+        }];
+        [after commit];
+    }
+    ASSERT_EQ(semaphore_wait(letGo), KERN_SUCCESS);
+    const void *block = (__bridge const void *)done;
+    gSentinelFreedOn = nullptr;
+    done = nil;
+    ASSERT_EQ(gSentinelFreedOn, pthread_self()) << "the last reference went here";
+    @autoreleasepool {
+        id<MTLCommandBuffer> next = scale_frames::record(first, opened().state, into, shape, 2);
+        EXPECT_EQ((__bridge const void *)next, block) << "the pool hands the block back";
+        [next commit];
+        [next waitUntilCompleted];
+        EXPECT_EQ(next.status, MTLCommandBufferStatusCompleted);
+    }
+    [after waitUntilCompleted];
+    after = nil;
+    semaphore_destroy(mach_task_self(), letGo);
 }
 
 }  // namespace
