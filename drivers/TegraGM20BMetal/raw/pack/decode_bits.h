@@ -80,20 +80,10 @@ static inline int maxInt(int a, int b)
     return a > b ? a : b;
 }
 
-// The bits of the float nearest k / 4095 (k 0..4095), exactly: k / 4095 is k's 12 bits repeated past the binary point,
-// so the 24 bits from its leading one and the one after them round it (what follows is never exactly half). The
-// texture unit then reads Apple's value back unchanged, where a shader's division is not correctly rounded.
-static inline uint32_t unorm12Float(uint32_t k)
+// The 16-bit UNORM code nearest k / 4095 (k 0..4095): k * 65535 / 4095 is 16k + k / 273, never a tie
+static inline uint32_t unorm12To16(uint32_t k)
 {
-    if (!k)
-        return 0;
-    if (k >= 4095)
-        return 0x3f800000u;
-    const int length = msb32(k) + 1, s = 12 - length;
-    const uint32_t window = ((k << (13 + s)) | (((k << 12) | k) >> (11 - s))) & 0x1ffffffu;
-    const uint32_t significand = (window >> 1) + (window & 1);
-    const uint32_t biased = uint32_t(length + 114) + (significand >> 24);
-    return biased << 23 | (significand & 0x7fffffu);
+    return 16 * k + (k + 136) / 273;
 }
 
 // Selects, not an indexed array: a thread array a fragment indexes at run time lives in local memory

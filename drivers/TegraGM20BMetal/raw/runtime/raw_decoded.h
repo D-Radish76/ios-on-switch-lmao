@@ -14,7 +14,7 @@ namespace raw {
 enum class DecodeState : uint8_t {
     Pvrtc,
     AstcUnorm8,
-    AstcUnorm12,
+    AstcUnorm16,
     AstcHalf
 };
 
@@ -28,8 +28,8 @@ struct DecodedFormat {
     uint32_t fresh[4];
 };
 
-constexpr uint32_t kRgba8Unorm = 70, kRgba8UnormSrgb = 71, kRgba16Float = 115, kRgba32Float = 125;
-constexpr uint32_t kOne = 0x3f800000u, kMagenta8 = 0xffff00ffu, kNanHalves = 0xffffffffu;
+constexpr uint32_t kRgba8Unorm = 70, kRgba8UnormSrgb = 71, kRgba16Unorm = 110, kRgba16Float = 115;
+constexpr uint32_t kMagenta8 = 0xffff00ffu, kNanHalves = 0xffffffffu;
 
 // clang-format off
 inline constexpr DecodedFormat kDecodedFormats[] = {
@@ -43,8 +43,8 @@ inline constexpr DecodedFormat kDecodedFormats[] = {
     {167, kRgba8UnormSrgb, 4, 4, 8, DecodeState::Pvrtc, false, {0}},
     {185, kRgba8UnormSrgb, 4, 2, 16, DecodeState::AstcUnorm8, false, {kMagenta8}},
     {191, kRgba8UnormSrgb, 8, 4, 16, DecodeState::AstcUnorm8, false, {kMagenta8}},
-    {203, kRgba32Float, 4, 2, 16, DecodeState::AstcUnorm12, false, {kOne, 0, kOne, kOne}},
-    {209, kRgba32Float, 8, 4, 16, DecodeState::AstcUnorm12, false, {kOne, 0, kOne, kOne}},
+    {203, kRgba16Unorm, 4, 2, 16, DecodeState::AstcUnorm16, false, {0x0000ffffu, 0xffffffffu}},
+    {209, kRgba16Unorm, 8, 4, 16, DecodeState::AstcUnorm16, false, {0x0000ffffu, 0xffffffffu}},
     {221, kRgba16Float, 4, 2, 16, DecodeState::AstcHalf, false, {kNanHalves, kNanHalves}},
     {222, kRgba16Float, 4, 4, 16, DecodeState::AstcHalf, false, {kNanHalves, kNanHalves}},
     {223, kRgba16Float, 5, 4, 16, DecodeState::AstcHalf, false, {kNanHalves, kNanHalves}},
@@ -75,7 +75,7 @@ constexpr const DecodedFormat *decodedFormat(uint32_t format)
 // The stored format's words as the integers a decode state writes them in: R32Uint, RGBA32Uint, RGBA16Uint
 constexpr uint32_t decodeTargetFormat(DecodeState s)
 {
-    return s == DecodeState::AstcUnorm12 ? 123 : s == DecodeState::AstcHalf ? 113 : 53;
+    return s == DecodeState::AstcUnorm16 || s == DecodeState::AstcHalf ? 113 : 53;
 }
 
 constexpr const char *decodeStateName(DecodeState s)
@@ -85,8 +85,8 @@ constexpr const char *decodeStateName(DecodeState s)
         return "raw.decode.decode_pvrtc_frag";
     case DecodeState::AstcUnorm8:
         return "raw.decode.decode_astc_unorm8_frag";
-    case DecodeState::AstcUnorm12:
-        return "raw.decode.decode_astc_unorm12_frag";
+    case DecodeState::AstcUnorm16:
+        return "raw.decode.decode_astc_unorm16_frag";
     case DecodeState::AstcHalf:
         return "raw.decode.decode_astc_half_frag";
     }
@@ -180,10 +180,11 @@ inline uint64_t keptBytes(const DecodedFormat &f, uint32_t width, uint32_t heigh
 inline DecodeStep decodeStep(const DecodedFormat &f, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                              uint32_t rowBytes, uint32_t first)
 {
-    // astc_texel.h kAstcUnorm8, kAstcUnorm12, kAstcHalf; PVRTC: 1 for a format without alpha
+    // astc_texel.h kAstcUnorm8, kAstcUnorm12 (the state stores its 16-bit code), kAstcHalf; PVRTC: 1 for a format
+    // without alpha
     const uint32_t form = f.state == DecodeState::Pvrtc         ? (f.opaque ? 1u : 0u)
                           : f.state == DecodeState::AstcUnorm8  ? 0u
-                          : f.state == DecodeState::AstcUnorm12 ? 1u
+                          : f.state == DecodeState::AstcUnorm16 ? 1u
                                                                 : 2u;
     return {x,        y,    f.blockW, f.blockH, decodedBlocks(width, f.blockW), decodedBlocks(height, f.blockH),
             rowBytes, form, first};

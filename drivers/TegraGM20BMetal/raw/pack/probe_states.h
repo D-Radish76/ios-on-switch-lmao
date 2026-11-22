@@ -545,7 +545,7 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
     // the formats decoded on upload (runtime/raw_decoded.h): each decode state into its stored format's integer view
     for (const char *out :
          {"53 | v decode_vert | f decode_pvrtc_frag", "53 | v decode_vert | f decode_astc_unorm8_frag",
-          "123 | v decode_vert | f decode_astc_unorm12_frag", "113 | v decode_vert | f decode_astc_half_frag"}) {
+          "113 | v decode_vert | f decode_astc_unorm16_frag", "113 | v decode_vert | f decode_astc_half_frag"}) {
         std::string o = out;
         const size_t bar = o.find(' ');
         lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=" + o.substr(0, bar) + ":15:0:1:0:0:1:0:0" +

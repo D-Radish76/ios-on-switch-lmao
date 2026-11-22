@@ -2,7 +2,9 @@
 // blocks (ASTC: of every block mode the footprint takes, one in 16 a void extent; PVRTC: any words) decoded by Apple's
 // texture unit (a texture of the format filled by a blit from a buffer, PVRTC's rows by MTLBlitOptionRowLinearPVRTC) and
 // by the decode state from that buffer into the stored format's integer view, each texel compared as the stored format
-// samples it (an sRGB code through this Mac's own sRGB table). Exact: 0 channels differ for every format.
+// samples it (an sRGB code through this Mac's own sRGB table). Exact for every format but the linear 4x2 and 8x4 ones,
+// whose 16-bit codes are held to the driver's rule (the nearest code of Apple's k / 4095), their distance from Apple
+// reported: the largest in codes, and the texels an 8-bit target would hold otherwise.
 // usage: decodeoracle <decode metallib> <format> <blocks across> <blocks down> <seed>
 //   the metallib: xcrun -sdk macosx metal -c raw/pack/decode.metal -I raw/pack -fno-fast-math, then xcrun metallib
 //   build: clang++ -std=c++17 -fobjc-arc -I raw/pack decodeoracle.mm -framework Foundation -framework Metal
@@ -78,10 +80,8 @@ int main(int, char **argv)
         const char *frag = pvrtc  ? "decode_pvrtc_frag"
                            : hdr  ? "decode_astc_half_frag"
                            : srgb ? "decode_astc_unorm8_frag"
-                                  : "decode_astc_unorm12_frag";
-        const MTLPixelFormat view = pvrtc || (srgb && !hdr) ? MTLPixelFormatR32Uint
-                                    : hdr                   ? MTLPixelFormatRGBA16Uint
-                                                            : MTLPixelFormatRGBA32Uint;
+                                  : "decode_astc_unorm16_frag";
+        const MTLPixelFormat view = pvrtc || (srgb && !hdr) ? MTLPixelFormatR32Uint : MTLPixelFormatRGBA16Uint;
         MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
         pd.vertexFunction = [lib newFunctionWithName:@"decode_vert"];
         pd.fragmentFunction = [lib newFunctionWithName:@(frag)];
@@ -164,19 +164,26 @@ int main(int, char **argv)
                 srgbTable[k] = ((const float *)so.contents)[4 * k];
         }
         const float *a = (const float *)out.contents;
-        long bad = 0;
+        long bad = 0, off8 = 0;
+        double farthest = 0;
         for (size_t k = 0; k < size_t(w) * h; k++) {
             float m[4];
             for (int ch = 0; ch < 4; ch++) {
                 if (texel == 4) {
                     const uint32_t code = mine[k * 4 + ch];
                     m[ch] = srgb && ch < 3 ? srgbTable[code] : float(code) / 255.0f;
-                } else if (texel == 8) {
+                } else if (hdr) {
                     _Float16 hv;
                     memcpy(&hv, &mine[k * 8 + ch * 2], 2);
                     m[ch] = float(hv);
                 } else {
-                    memcpy(&m[ch], &mine[k * 16 + ch * 4], 4);
+                    uint16_t code;
+                    memcpy(&code, &mine[k * 8 + ch * 2], 2);
+                    const float apple = a[k * 4 + ch];
+                    const uint32_t twelve = uint32_t(std::lround(apple * 4095.0f));
+                    farthest = std::max(farthest, std::fabs(double(code) - double(apple) * 65535.0));
+                    off8 += std::lround(code / 65535.0 * 255.0) != std::lround(double(apple) * 255.0);
+                    m[ch] = float(twelve) / 4095.0f == apple && code == unorm12To16(twelve) ? apple : -1.0f;
                 }
                 const bool same = m[ch] == a[k * 4 + ch] || (std::isnan(m[ch]) && std::isnan(a[k * 4 + ch]));
                 if (!same && bad++ < 4)
@@ -185,6 +192,10 @@ int main(int, char **argv)
         }
         printf("format %u %ux%u: %ld of %zu channels differ (the pack's %s on this GPU vs Apple's decode)\n", f, w, h,
                bad, size_t(w) * h * 4, frag);
+        if (!pvrtc && !srgb && !hdr)
+            printf("  16-bit codes: at most %.4f of a code from Apple's value; %ld channels an 8-bit target holds "
+                   "otherwise\n",
+                   farthest, off8);
         return bad != 0;
     }
 }

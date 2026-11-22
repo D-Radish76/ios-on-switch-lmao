@@ -249,7 +249,7 @@ inline constexpr const char *kOwnStates[] = {
     "fmt_vert | f fmt_mip_3d_rgb9e5_frag",
     "decode_vert | f decode_pvrtc_frag",
     "decode_vert | f decode_astc_unorm8_frag",
-    "decode_vert | f decode_astc_unorm12_frag",
+    "decode_vert | f decode_astc_unorm16_frag",
     "decode_vert | f decode_astc_half_frag",
 };
 

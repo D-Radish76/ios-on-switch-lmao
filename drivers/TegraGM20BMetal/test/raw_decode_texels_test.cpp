@@ -6,6 +6,7 @@
 // Morton bytes into rows, the step's forms and what a never-written texel reads.
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -105,16 +106,18 @@ TEST(DecodeTexels, APvrtcLevelInRowsDecodesAsItsMortonBytes)
     }
 }
 
-// The linear 4x2 and 8x4 formats' texels are k / 4095, written as the nearest float's bits: the texture unit reads them
-// back as Apple's division
-TEST(DecodeTexels, TwelveBitTexelsAreTheNearestFloats)
+// The linear 4x2 and 8x4 formats' texels: Apple's 12-bit k / 4095 held as its nearest 16-bit code, at most half a code
+// from Apple's value, so no texel of an 8-bit target rounds otherwise. The owner chose RGBA16Unorm (half RGBA32Float's
+// memory) over Apple's exact floats, accepting that difference.
+TEST(DecodeTexels, LinearTexelsAreTheNearest16BitCodes)
 {
     for (uint32_t k = 0; k <= 4095; k++) {
-        const float want = float(k) / 4095.0f;
-        uint32_t bits;
-        memcpy(&bits, &want, 4);
-        EXPECT_EQ(unorm12Float(k), bits) << k;
+        const uint32_t code = unorm12To16(k);
+        const double exact = double(k) * 65535.0 / 4095.0;
+        EXPECT_LE(std::abs(double(code) - exact), 0.5) << k;
+        EXPECT_EQ(std::lround(double(code) / 65535.0 * 255.0), std::lround(double(k) / 4095.0 * 255.0)) << k;
     }
+    EXPECT_EQ(unorm12To16(4095), 65535u);
 }
 
 // What a texture of a decoded format reads before anything is uploaded: its blocks of zeros' decode, in its stored format
@@ -131,9 +134,9 @@ TEST(DecodeTexels, ANeverWrittenTexelIsItsZeroBlocksDecode)
             const Texel t = astcTexel({0, 0, 0, 0}, f.blockW, f.blockH, 0, 0, formOf(f.format));
             if (f.state == raw::DecodeState::AstcUnorm8) {
                 want[0] = t.r | t.g << 8 | t.b << 16 | t.a << 24;
-            } else if (f.state == raw::DecodeState::AstcUnorm12) {
-                want[0] = unorm12Float(t.r), want[1] = unorm12Float(t.g), want[2] = unorm12Float(t.b);
-                want[3] = unorm12Float(t.a);
+            } else if (f.state == raw::DecodeState::AstcUnorm16) {
+                want[0] = unorm12To16(t.r) | unorm12To16(t.g) << 16, want[1] = unorm12To16(t.b) | unorm12To16(t.a)
+                                                                                                      << 16;
             } else {
                 want[0] = t.r | t.g << 16, want[1] = t.b | t.a << 16;
             }

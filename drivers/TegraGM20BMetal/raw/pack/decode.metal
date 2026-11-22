@@ -59,13 +59,13 @@ fragment uint decode_astc_unorm8_frag(Out in [[stage_in]], constant DecodeStep &
     return t.r | t.g << 8 | t.b << 16 | t.a << 24;
 }
 
-// Linear 4x2 and 8x4: k / 4095 as the float nearest it, into RGBA32Float's words viewed as RGBA32Uint
-fragment uint4 decode_astc_unorm12_frag(Out in [[stage_in]], constant DecodeStep &s [[buffer(0)]],
+// Linear 4x2 and 8x4: Apple's 12-bit k / 4095 as its nearest 16-bit code, into RGBA16Unorm's words viewed as RGBA16Uint
+fragment uint4 decode_astc_unorm16_frag(Out in [[stage_in]], constant DecodeStep &s [[buffer(0)]],
                                         device const uint *words [[buffer(1)]])
 {
     const raw::decode::Texel t = astcTexelAt(in, s, words);
-    return uint4(raw::decode::unorm12Float(t.r), raw::decode::unorm12Float(t.g), raw::decode::unorm12Float(t.b),
-                 raw::decode::unorm12Float(t.a));
+    return uint4(raw::decode::unorm12To16(t.r), raw::decode::unorm12To16(t.g), raw::decode::unorm12To16(t.b),
+                 raw::decode::unorm12To16(t.a));
 }
 
 // HDR: the half bits, into RGBA16Float's words viewed as RGBA16Uint
