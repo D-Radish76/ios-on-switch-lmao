@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: MIT
 // See RawMetalReflection.h: a blob's nodes as objects of one class per kind, as Metal's are. A binding answers
-// MTLArgument's selectors and each type class its own, so a selector Metal's class lacks is unrecognized here too. A
-// binding asked another binding type's selector (a texture's bufferAlignment) answers 0, NO or nil with one error line:
-// Metal fails an assertion there, which aborts the process and no caller can catch.
+// MTLArgument's and the MTLBinding protocols' selectors and each type class its own, so a selector Metal's class lacks
+// is unrecognized here too. A binding asked another binding type's selector (a texture's bufferAlignment) fails as
+// Metal's MTLBindingInternal does: Metal's failed assertion, then 0, NO, nil or MTLTextureType2D.
 #import "RawMetalReflection.h"
 
 #import <objc/runtime.h>
 #include <iterator>
-#include "RawMetalInternal.h"
 #include "raw_reflection_blob.h"
+
+// Metal's own failure report, exported by both builds' Metal and declared by no SDK header. A failed assertion aborts
+// the process unless a report-failure block (MTLSetReportFailureBlock) or Metal's error mode for it says otherwise,
+// and returns where they do.
+extern "C" void MTLReportFailure(uint64_t type, const char *function, int line, NSString *format, ...)
+    NS_FORMAT_FUNCTION(4, 5);
+static constexpr uint64_t kFailedAssertion = 0;
 
 @interface RMReflectionNode : NSObject {
 @public
@@ -39,14 +45,9 @@
 @interface RMReflectionBinding : RMReflectionNode
 @end
 
-static bool asked(RMReflectionBinding *b, MTLBindingType type, SEL selector)
+static bool ofType(RMReflectionBinding *b, MTLBindingType type)
 {
-    if (b->_node.values[0] == uint64_t(type))
-        return true;
-    os_log_error(rawLog(), "raw: %{public}s: %{public}s asked of binding %{public}s of type %llu, where Metal asserts",
-                 getprogname(), sel_getName(selector), b->_name.UTF8String ?: "-",
-                 (unsigned long long)b->_node.values[0]);
-    return false;
+    return b->_node.values[0] == uint64_t(type);
 }
 
 @implementation RMReflectionBinding
@@ -110,22 +111,38 @@ static bool asked(RMReflectionBinding *b, MTLBindingType type, SEL selector)
 
 - (NSUInteger)bufferAlignment
 {
-    return asked(self, MTLBindingTypeBuffer, _cmd) ? _node.values[5] : 0;
+    if (ofType(self, MTLBindingTypeBuffer))
+        return _node.values[5];
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying buffer alignment on an argument that is not a buffer");
+    return 0;
 }
 
 - (NSUInteger)bufferDataSize
 {
-    return asked(self, MTLBindingTypeBuffer, _cmd) ? _node.values[6] : 0;
+    if (ofType(self, MTLBindingTypeBuffer))
+        return _node.values[6];
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying buffer data size on an argument that is not a buffer");
+    return 0;
 }
 
 - (MTLDataType)bufferDataType
 {
-    return asked(self, MTLBindingTypeBuffer, _cmd) ? MTLDataType(_node.values[3]) : MTLDataTypeNone;
+    if (ofType(self, MTLBindingTypeBuffer))
+        return MTLDataType(_node.values[3]);
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying buffer data type on an argument that is not a buffer");
+    return MTLDataTypeNone;
 }
 
 - (id)bufferStructType
 {
-    return asked(self, MTLBindingTypeBuffer, _cmd) ? _children[0] : nil;
+    if (ofType(self, MTLBindingTypeBuffer))
+        return _children[0];
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying buffer struct type on an argument that is not a buffer");
+    return nil;
 }
 
 - (id)bufferPointerType
@@ -140,27 +157,62 @@ static bool asked(RMReflectionBinding *b, MTLBindingType type, SEL selector)
 
 - (NSUInteger)threadgroupMemoryAlignment
 {
-    return asked(self, MTLBindingTypeThreadgroupMemory, _cmd) ? _node.values[5] : 0;
+    if (ofType(self, MTLBindingTypeThreadgroupMemory))
+        return _node.values[5];
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying threadgroup memory alignment on an argument that is not a threadgroup memory");
+    return 0;
 }
 
 - (NSUInteger)threadgroupMemoryDataSize
 {
-    return asked(self, MTLBindingTypeThreadgroupMemory, _cmd) ? _node.values[6] : 0;
+    if (ofType(self, MTLBindingTypeThreadgroupMemory))
+        return _node.values[6];
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying threadgroup memory data size on an argument that is not a threadgroup memory");
+    return 0;
 }
 
 - (MTLTextureType)textureType
 {
-    return asked(self, MTLBindingTypeTexture, _cmd) ? MTLTextureType(_node.values[5]) : MTLTextureType1D;
+    if (ofType(self, MTLBindingTypeTexture))
+        return MTLTextureType(_node.values[5]);
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying texture type on an argument that is not a texture");
+    return MTLTextureType2D;
 }
 
 - (MTLDataType)textureDataType
 {
-    return asked(self, MTLBindingTypeTexture, _cmd) ? MTLDataType(_node.values[6]) : MTLDataTypeNone;
+    if (ofType(self, MTLBindingTypeTexture))
+        return MTLDataType(_node.values[6]);
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying texture data type on an argument that is not a texture");
+    return MTLDataTypeNone;
 }
 
 - (BOOL)isDepthTexture
 {
-    return asked(self, MTLBindingTypeTexture, _cmd) && (_node.flags & 4);
+    if (ofType(self, MTLBindingTypeTexture))
+        return (_node.flags & 4) != 0;
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying isDepthTexture on an argument that is not a texture");
+    return NO;
+}
+
+// No state of this device has an object or mesh stage (it refuses mesh pipelines), so no binding is an object payload
+- (NSUInteger)objectPayloadAlignment
+{
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying object payload alignment on an argument that is not an object payload");
+    return 0;
+}
+
+- (NSUInteger)objectPayloadDataSize
+{
+    MTLReportFailure(kFailedAssertion, __func__, __LINE__,
+                     @"Querying object payload size on an argument that is not an object payload");
+    return 0;
 }
 
 @end

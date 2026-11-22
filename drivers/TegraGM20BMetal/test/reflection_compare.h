@@ -22,11 +22,11 @@ namespace reflection_compare {
 // per binding type and type class; the first object's kind picks the set, and raw is asked the same set.
 struct Selectors {
     std::vector<const char *> counts, flags, objects;
-    bool named = false, members = false, binding = false;
+    bool named = false, members = false;
 };
 
-// Every selector of the reflection classes' public API, MTLArgument's and the type classes': an object responds to
-// those of its own class alone
+// Every selector of the reflection classes' public API, MTLArgument's, the MTLBinding protocols' and the type classes':
+// an object responds to those of its own class alone
 inline const std::vector<std::string> &everySelector()
 {
     static const std::vector<std::string> all = [] {
@@ -37,7 +37,7 @@ inline const std::vector<std::string> &everySelector()
             "isDepthTexture dataType offset argumentIndex arrayType textureReferenceType pointerType "
             "members memberByName: elementType stride argumentIndexStride elementStructType "
             "elementArrayType elementTextureReferenceType elementPointerType alignment dataSize "
-            "elementIsArgumentBuffer");
+            "elementIsArgumentBuffer objectPayloadAlignment objectPayloadDataSize");
         return std::vector<std::string>(std::istream_iterator<std::string>(names), {});
     }();
     return all;
@@ -50,7 +50,6 @@ inline Selectors selectorsOf(id metal)
                     {"isUsed", "isActive", "isArgument"},
                     {"structType", "bufferPointerType"},
                     true};
-        s.binding = true;
         switch (((NSUInteger (*)(id, SEL))objc_msgSend)(metal, @selector(type))) {
         case MTLBindingTypeBuffer:
             s.counts.insert(s.counts.end(), {"bufferAlignment", "bufferDataSize", "bufferDataType"});
@@ -86,13 +85,6 @@ inline Selectors selectorsOf(id metal)
     if ([metal isKindOfClass:[MTLTextureReferenceType class]])
         return {{"dataType", "textureType", "textureDataType", "access"}, {"isDepthTexture"}, {}};
     return {};
-}
-
-inline bool among(const std::vector<const char *> &selectors, const char *s)
-{
-    return std::any_of(selectors.begin(), selectors.end(), [s](const char *x) {
-        return !strcmp(x, s);
-    });
 }
 
 // What a comparison judges. usedOneWay: a binding raw answers used and Metal unused is counted apart, not a difference.
@@ -178,21 +170,6 @@ inline std::string names(NSArray *list)
     return "{" + out + "}";
 }
 
-// A binding's selectors of another binding type, where Metal fails an assertion (an abort no caller can catch): raw
-// answers 0, NO and nil
-inline void neutral(id raw, const Selectors &asked, const std::string &path, Differences &d)
-{
-    for (const char *s : {"bufferAlignment", "bufferDataSize", "bufferDataType", "threadgroupMemoryAlignment",
-                          "threadgroupMemoryDataSize", "textureType", "textureDataType"})
-        if (const NSUInteger n = ((NSUInteger (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s));
-            !among(asked.counts, s) && n)
-            d.add(path, std::string(s) + " (Metal asserts)", "0", number(n));
-    if (!among(asked.flags, "isDepthTexture") && ((BOOL (*)(id, SEL))objc_msgSend)(raw, @selector(isDepthTexture)))
-        d.add(path, "isDepthTexture (Metal asserts)", "NO", "YES");
-    if (!among(asked.objects, "bufferStructType") && ((id (*)(id, SEL))objc_msgSend)(raw, @selector(bufferStructType)))
-        d.add(path, "bufferStructType (Metal asserts)", "nil", "an object");
-}
-
 inline void compare(id metal, id raw, const std::string &path, const Options &o, Differences &d);
 
 inline void compareList(NSArray *metal, NSArray *raw, const std::string &path, const Options &o, Differences &d)
@@ -231,6 +208,12 @@ inline void compare(id metal, id raw, const std::string &path, const Options &o,
         if (const SEL sel = sel_registerName(s.c_str()); [metal respondsToSelector:sel] != [raw respondsToSelector:sel])
             d.add(path, "respondsToSelector " + s, [metal respondsToSelector:sel] ? "YES" : "NO",
                   [raw respondsToSelector:sel] ? "YES" : "NO");
+    // A binding of another type than Metal's would fail Metal's assertion, ending the process, on its type's selectors
+    const auto type = [](id binding) {
+        return ((NSUInteger (*)(id, SEL))objc_msgSend)(binding, @selector(type));
+    };
+    if ([metal conformsToProtocol:@protocol(MTLBinding)] && type(metal) != type(raw))
+        return d.add(path, "type", number(type(metal)), number(type(raw)));
     const Selectors selectors = selectorsOf(metal);
     if (selectors.named && ![[metal name] isEqual:[raw name]] && ([metal name] || [raw name]))
         d.add(path, "name", [metal name] ? [[metal name] UTF8String] : "nil",
@@ -251,8 +234,6 @@ inline void compare(id metal, id raw, const std::string &path, const Options &o,
         else
             d.add(path, s, m ? "YES" : "NO", r ? "YES" : "NO");
     }
-    if (selectors.binding)
-        neutral(raw, selectors, path, d);
     for (const char *s : selectors.objects)
         compare(((id (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
                 ((id (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)), path + "." + s, o, d);

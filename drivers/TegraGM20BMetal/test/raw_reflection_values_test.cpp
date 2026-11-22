@@ -3,19 +3,28 @@
 // answers the same state, laid out as the translator lays out a reflection (metal_reflection_blob.h): every binding
 // type (buffers of a vector, a struct, a union of two anonymous structs, a scalar; textures alone and in arrays,
 // depth, written; samplers alone and in arrays; threadgroup memory; a tile function's imageblock) and type class,
-// compute, render and tile, selector by selector and in which selectors each responds to. A blob that is not one whole
-// gives no reflection.
+// compute, render and tile, selector by selector and in which selectors each responds to. A binding asked another
+// binding type's selector fails as Metal's does: the same failure through Metal's report, then the same answer, and
+// with Metal's default error mode the process aborts. A blob that is not one whole gives no reflection.
 #include "../raw/runtime/RawMetalReflection.h"
 #include "metal_reflection_blob.h"
 #include "reflection_blob_writer.h"
 #include "reflection_compare.h"
 
 #import <objc/message.h>
+#import <objc/runtime.h>
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <csignal>
 #include <iterator>
+#include <set>
 #include <string>
 #include <vector>
+
+// Metal's own, declared by no SDK header: the block its failure reports go to instead of the error mode's action
+using ReportFailure = void (^)(uint64_t type, const char *function, int line, NSString *message);
+extern "C" void MTLSetReportFailureBlock(ReportFailure block);
+extern "C" ReportFailure MTLGetReportFailureBlock(void);
 
 namespace {
 
@@ -84,6 +93,66 @@ std::string renderBlob(MTLRenderPipelineReflection *metal)
     for (NSArray *stage : stages)
         table.stage(stage);
     return table.blob();
+}
+
+// One ask of a binding with a report-failure block set: each failure reported during it (its type and message, and
+// the reporting method where it is not the selector asked), then the answer
+struct Asked {
+    std::string reports, answer;
+};
+
+Asked ask(id binding, const char *selector)
+{
+    __block std::string reports;
+    const std::string asked = std::string(" ") + selector + "]";
+    ReportFailure record = ^(uint64_t type, const char *function, int, NSString *message) {
+        const std::string by = function ?: "";
+        const bool same = by.size() >= asked.size() && !by.compare(by.size() - asked.size(), asked.size(), asked);
+        reports += std::to_string(type) + " " + (message.UTF8String ?: "") + (same ? "" : " by " + by) + "; ";
+    };
+    const ReportFailure before = MTLGetReportFailureBlock();
+    MTLSetReportFailureBlock(record);
+    const SEL sel = sel_registerName(selector);
+    const char returns = method_getTypeEncoding(class_getInstanceMethod([binding class], sel))[0];
+    std::string answer;
+    if (returns == '@')
+        answer = ((id (*)(id, SEL))objc_msgSend)(binding, sel) ? "an object" : "nil";
+    else if (returns == 'B' || returns == 'c')
+        answer = ((BOOL (*)(id, SEL))objc_msgSend)(binding, sel) ? "YES" : "NO";
+    else
+        answer = std::to_string((unsigned long long)((NSUInteger (*)(id, SEL))objc_msgSend)(binding, sel));
+    MTLSetReportFailureBlock(before);
+    return {reports, answer};
+}
+
+// Each binding of `metal` and the same of `raw` asked every reflection selector: where Metal responds and where it
+// reports a failure, raw does the same and then answers what Metal does. Adds each binding's type to `types` and each
+// failure Metal reported to `failures`; returns the asks raw answers otherwise
+std::vector<std::string> askedAsMetal(NSArray *metal, NSArray *raw, std::set<NSUInteger> &types, unsigned &failures)
+{
+    std::vector<std::string> off;
+    if (metal.count != raw.count)
+        return {"bindings: metal " + std::to_string(metal.count) + ", raw " + std::to_string(raw.count)};
+    for (NSUInteger i = 0; i < metal.count; i++) {
+        types.insert(((NSUInteger (*)(id, SEL))objc_msgSend)(metal[i], @selector(type)));
+        for (const std::string &s : reflection_compare::everySelector()) {
+            const std::string at = std::string([[metal[i] name] UTF8String]) + "." + s;
+            const BOOL responds = [metal[i] respondsToSelector:sel_registerName(s.c_str())];
+            if (responds != [raw[i] respondsToSelector:sel_registerName(s.c_str())]) {
+                off.push_back(at + ": responds metal " + (responds ? "YES" : "NO"));
+                continue;
+            }
+            if (!responds)
+                continue;
+            const Asked m = ask(metal[i], s.c_str()), r = ask(raw[i], s.c_str());
+            failures += !m.reports.empty();
+            if (m.reports != r.reports)
+                off.push_back(at + ": reported metal {" + m.reports + "} raw {" + r.reports + "}");
+            else if (!m.reports.empty() && m.answer != r.answer)
+                off.push_back(at + ": answered after the report metal " + m.answer + ", raw " + r.answer);
+        }
+    }
+    return off;
 }
 
 // m2v's table of a buffer binding whose struct holds a float4 and an array of depth textures, through a pointer too; a
@@ -197,4 +266,56 @@ TEST(RawReflection, ABlobThatIsNotOneWholeGivesNone)
     Table kinds;
     kinds.nodes[4].children[1] = 1;  // a member's array is a texture reference
     EXPECT_EQ(rawOf(reflection_blob::of(kinds.nodes, kinds.edges, 1), true), nil);
+}
+
+TEST(RawReflection, ABindingOfEveryTypeAskedAnotherTypesSelectorFailsAsMetals)
+{
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    ASSERT_TRUE(device != nil);
+    id<MTLLibrary> functions = library(device);
+    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+    d.computeFunction = [functions newFunctionWithName:@"k"];
+    MTLComputePipelineReflection *compute = nil;
+    NSError *error = nil;
+    id<MTLComputePipelineState> state =
+        [device newComputePipelineStateWithDescriptor:d options:kReflected reflection:&compute error:&error];
+    ASSERT_TRUE(state != nil) << (error ? error.localizedDescription.UTF8String : "");
+    MTLTileRenderPipelineDescriptor *t = [MTLTileRenderPipelineDescriptor new];
+    t.tileFunction = [functions newFunctionWithName:@"tk"];
+    t.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
+    t.threadgroupSizeMatchesTileSize = YES;
+    MTLRenderPipelineReflection *tile = nil;
+    id<MTLRenderPipelineState> tileState =
+        [device newRenderPipelineStateWithTileDescriptor:t options:kReflected reflection:&tile error:&error];
+    ASSERT_TRUE(tileState != nil) << (error ? error.localizedDescription.UTF8String : "");
+    metal_reflection::Table table;
+    table.stage(compute.bindings);
+
+    std::set<NSUInteger> types;
+    unsigned failures = 0;
+    std::vector<std::string> off =
+        askedAsMetal(compute.bindings, [rawOf(table.blob(), true) bindings], types, failures);
+    const std::vector<std::string> tileOff =
+        askedAsMetal(tile.tileBindings, [rawOf(renderBlob(tile), false) tileBindings], types, failures);
+    off.insert(off.end(), tileOff.begin(), tileOff.end());
+    EXPECT_EQ(types, (std::set<NSUInteger>{MTLBindingTypeBuffer, MTLBindingTypeThreadgroupMemory, MTLBindingTypeTexture,
+                                           MTLBindingTypeSampler, MTLBindingTypeImageblock}));
+    EXPECT_GT(failures, 0u) << "Metal reported no failure: its error mode ignores them";
+    std::string list;
+    for (const std::string &o : off)
+        list += o + "\n";
+    EXPECT_TRUE(off.empty()) << off.size() << " asks answered otherwise than Metal's\n" << list;
+}
+
+TEST(RawReflection, ABindingAskedAnotherTypesSelectorAbortsAsMetalDoes)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    const Table table;
+    id reflection = rawOf(reflection_blob::of(table.nodes, table.edges, raw::kReflectionComputeStages), true);
+    ASSERT_NE(reflection, nil);
+    id shadow = [reflection bindings][1];
+    ASSERT_EQ(((NSUInteger (*)(id, SEL))objc_msgSend)(shadow, @selector(type)), NSUInteger(MTLBindingTypeTexture));
+    EXPECT_EXIT(((NSUInteger (*)(id, SEL))objc_msgSend)(shadow, @selector(bufferAlignment)),
+                ::testing::KilledBySignal(SIGABRT),
+                "failed assertion `Querying buffer alignment on an argument that is not a buffer'");
 }
