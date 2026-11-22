@@ -225,6 +225,7 @@ void RenderEncoder::end()
     advanceChain(cb_->chain_, uses, opened != Opened::Pass);
     cb_->lastEngine_ = BarrierEngine::ThreeD;
     RAW_DIAGNOSTIC(cb_->taken_.count(opened));
+    RAW_DIAGNOSTIC(cb_->pixelOpenings_ += opened == Opened::Pass && pass == PassForm::PixelOrdered);
     for (uint8_t i = 0; i < startStampCount_; i++)
         counters::emit(p, startStamps_[i]);
     if (rot_.turned()) {

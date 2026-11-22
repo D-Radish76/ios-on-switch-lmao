@@ -1985,6 +1985,9 @@ private:
     void foldCounts();
     ProbeForms forms_;
     ProbeTaken taken_;
+    // passes it opened with PIXEL_SHADER_BARRIER, added to Stats::passPixelOpenings at its commit (an abandoned encode
+    // ahead counts none)
+    uint64_t pixelOpenings_ = 0;
 #endif
 #if SWITCH_RAW_DIAGNOSTICS
     Texture glassMemImages_[kGlassMemItems];               // the image each of the probe's rows is read from
@@ -2902,6 +2905,8 @@ public:
         std::atomic<uint64_t> interlockDraws{0}, storageBarriers{0};
         // draws of a state whose raster order groups run in the pixel interlock (PipelineRasterOrdered)
         std::atomic<uint64_t> rasterOrderedDraws{0};
+        // passes committed that opened with PIXEL_SHADER_BARRIER in place of the drain (raw_barrier_forms.h passOpening)
+        std::atomic<uint64_t> passPixelOpenings{0};
         // state segment binds, the inline words they replaced, a pass's first binds of the segment the channel still held
         // from the pass or command buffer before (no words; raw_state_segment.h), and passes that could not keep it because
         // their prologue set back the last state's extras (Pipeline::restore)

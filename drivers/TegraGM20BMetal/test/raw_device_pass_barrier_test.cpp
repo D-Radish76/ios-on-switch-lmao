@@ -85,11 +85,49 @@ protected:
 
 TEST_F(DevicePassBarrier, ASmallTargetSampledByTheNextPassTakesThePixelBarrier)
 {
+    const uint64_t counted = dev.stats.passPixelOpenings.load();
     const auto drained = twoPasses(small, atlas, &small, false);
+    EXPECT_EQ(dev.stats.passPixelOpenings.load(), counted) << "a drained opening was counted";
     const auto relaxed = twoPasses(small, atlas, &small, true);
     EXPECT_EQ(drained.first, 0u);
     EXPECT_EQ(relaxed.first, 1u);
     EXPECT_EQ(relaxed.second + 1, drained.second) << "the drain between the passes is gone";
+    EXPECT_EQ(dev.stats.passPixelOpenings.load(), counted + 1);
+}
+
+// switchRawCounters' pass_pixel_openings over a frame whose passes share one memoryless colour (each pass's scratch):
+// every pass but the first opens with PIXEL_SHADER_BARRIER, and the counter moves once for each
+TEST_F(DevicePassBarrier, PassesSharingAMemorylessAttachmentAreCountedAsPixelOpenings)
+{
+    constexpr uint32_t kPasses = 6, kRgba16f = 115;
+    std::vector<raw::Texture> targets(kPasses);
+    raw::Texture scratch;
+    for (raw::Texture &t : targets)
+        ASSERT_TRUE(dev.createTexture(722, 1282, kBgra8, t, false, true));
+    ASSERT_TRUE(dev.createMemoryless(722, 1282, kRgba16f, scratch));
+    const uint64_t counted = dev.stats.passPixelOpenings.load();
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    for (uint32_t p = 0; p < kPasses; p++) {
+        raw::PassDesc pass;
+        pass.color[0].texture = &targets[p];
+        pass.color[0].load = raw::ColorAttachment::Clear;
+        pass.color[1].texture = &scratch;
+        pass.color[1].load = raw::ColorAttachment::Clear;
+        pass.color[1].store = false;
+        pass.count = 2;
+        raw::RenderEncoder *e = cb->render(pass);
+        ASSERT_NE(e, nullptr);
+        raw::PassUses uses;
+        uses.known = true;
+        e->plan(uses);
+        e->end();
+    }
+    uint32_t seqno = 0;
+    ASSERT_TRUE(cb->commit(seqno));
+    const std::vector<uint32_t> m = methods(kernel_model::model.jobs.back().words);
+    EXPECT_EQ(std::count(m.begin(), m.end(), kPixelShaderBarrier), long(kPasses - 1));
+    EXPECT_EQ(dev.stats.passPixelOpenings.load() - counted, uint64_t(kPasses - 1));
 }
 
 // Rule barrier.entry_no_drain: a job opens with the planner's invalidates, its first pass with nothing, no drain at all

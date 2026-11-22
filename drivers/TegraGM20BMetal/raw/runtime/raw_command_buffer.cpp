@@ -448,6 +448,7 @@ CommandBuffer *Device::begin()
     cb.forms_ = nextForms;
     nextForms = {};
     cb.taken_ = {};
+    cb.pixelOpenings_ = 0;
 #endif
     if (const EntryForm entry = entryFormFor(cb.barrierForms().entry); relaxed(entry)) {
         cb.shaderInvalidate_ = entryOpening(p, entry);
@@ -843,6 +844,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     RAW_DIAGNOSTIC(if (drawTimes_) d.committedDrawTimes(*this, seq));
     releaseNativeReads();
     RAW_DIAGNOSTIC(d.stats.commits++);
+    RAW_DIAGNOSTIC(d.stats.passPixelOpenings.fetch_add(pixelOpenings_, std::memory_order_relaxed));
     notSubmittedLine.submitted = true;
     return true;
 }

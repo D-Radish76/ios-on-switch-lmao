@@ -58,6 +58,7 @@
     d[@"clears_narrowed"] = @(gRM->raw->stats.clearsNarrowed.load());
     d[@"clear_pixels_left"] = @(gRM->raw->stats.clearPixelsLeft.load());
     d[@"interlock_draws"] = @(gRM->raw->stats.interlockDraws.load());
+    d[@"pass_pixel_openings"] = @(gRM->raw->stats.passPixelOpenings.load());
     d[@"raster_ordered_draws"] = @(gRM->raw->stats.rasterOrderedDraws.load());
     d[@"banded_draws"] = @(gRM->raw->stats.bandedDraws.load());
     d[@"bands"] = @(gRM->raw->stats.bands.load());
