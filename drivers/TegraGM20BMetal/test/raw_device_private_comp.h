@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <future>
 #include <mutex>
@@ -58,8 +59,64 @@ inline std::vector<std::pair<uint64_t, uint64_t>> copies(size_t first)
     return out;
 }
 
+// The compressed-memory thread's next compressible BoAlloc held open in the kernel model (kernel_model::arriving,
+// outside callLock) until this object goes. A fixture member declared before the state the model's callbacks reach:
+// C++ destroys a fixture's members, last declared first, before its base's, so the call opens after that state is gone
+// and before the device (harness::DeviceTest::dev) joins the thread held in it.
+class HeldAsk {
+public:
+    void arm()
+    {
+        std::lock_guard<std::mutex> l(lock_);
+        armed_ = true;
+        held_ = open_ = false;
+        kernel_model::arriving.store(&arrive, std::memory_order_release);
+    }
+
+    void awaitHeld()
+    {
+        std::unique_lock<std::mutex> l(lock_);
+        wake_.wait(l, [] {
+            return held_;
+        });
+    }
+
+    ~HeldAsk()
+    {
+        std::lock_guard<std::mutex> l(lock_);
+        if (kernel_model::arriving.load(std::memory_order_acquire) != &arrive)
+            return;
+        kernel_model::arriving.store(nullptr, std::memory_order_release);
+        open_ = true;
+        wake_.notify_all();
+    }
+
+private:
+    static int arrive(uint32_t method, const void *input)
+    {
+        if (method != TegraGM20BMethodBoAlloc ||
+            !(static_cast<const TegraGM20BAbiBoAlloc *>(input)->flags & TegraGM20BBoCompressible))
+            return KERN_SUCCESS;
+        std::unique_lock<std::mutex> l(lock_);
+        if (!armed_)
+            return KERN_SUCCESS;
+        armed_ = false;
+        held_ = true;
+        wake_.notify_all();
+        wake_.wait(l, [] {
+            return open_;
+        });
+        return KERN_SUCCESS;
+    }
+
+    static inline std::mutex lock_;
+    static inline std::condition_variable wake_;
+    static inline bool armed_ = false, held_ = false, open_ = false;
+};
+
 class DevicePrivateComp : public harness::DeviceTest {
 protected:
+    HeldAsk held;
     std::mutex kindsLock;
     std::vector<uint32_t> kinds;  // each VmBind's kind, the compressed-memory thread's among them
 
@@ -73,6 +130,17 @@ protected:
         };
         std::string err;
         ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
+    }
+
+    // The device's threads outlive this fixture's members (its base's `dev` goes after them) and bind through the
+    // model, which calls `bound` under callLock: taken here, no call reaches kindsLock once the teardown begins
+    void TearDown() override
+    {
+        {
+            std::lock_guard<std::mutex> l(kernel_model::callLock);
+            kernel_model::model.bound = nullptr;
+        }
+        harness::DeviceTest::TearDown();
     }
 
     bool bound(uint32_t kind)

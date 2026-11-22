@@ -302,6 +302,16 @@ TEST_F(DevicePrivateComp, AChainMadePlainWantsNoMemory)
     dev.destroyTexture(t);
 }
 
+// A test that ends with an ask in flight, its kernel call held open until the fixture's own members are gone, then
+// let go on to bind as the device's teardown begins: that bind reaches none of them
+TEST_F(DevicePrivateComp, ATestEndingWithAnAskInFlightLeavesTheDeviceNothingGoneToReach)
+{
+    held.arm();
+    raw::Texture t;
+    ASSERT_FALSE(dev.createCompressedTexture(512, 512, kBGRA8, raw::kCompKindC32, t)) << "none made yet: asked";
+    held.awaitHeld();
+}
+
 // A want whose ask the kernel refused for a shortage asks again when this process gives compressed memory back (the
 // only event that changes the kernel's answer), and the memory then made serves it: no later texture of its size is
 // needed
