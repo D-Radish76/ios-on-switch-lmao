@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalFresh.h"
+#include "raw_decoded.h"
 #include "raw_fresh.h"
 #include "raw_fresh_fill.h"
 #include "raw_fresh_queue.h"
@@ -35,6 +36,12 @@ uint64_t writeFresh(raw::BlitEncoder &b, RMTexture *t)
     const uint8_t zeros[16] = {};
     raw::CopyFill zero, pattern;
     raw::FreshTexel texel;
+    // a decoded format's texture reads its blocks of zeros' decode, as a new one of Apple's does (raw_decoded.h)
+    if (const raw::DecodedFormat *f = raw::decodedFormat(uint32_t(d.pixelFormat))) {
+        if (!raw::copyFillOf(reinterpret_cast<const uint8_t *>(f->fresh), x.bpp, zero))
+            return 0;
+        return raw::fillFresh(b, x, 0, zero, zero);
+    }
     if (!raw::copyFillOf(zeros, x.bpp, zero))
         return 0;
     const bool hasPattern = patterned && raw::freshPatternTexel(x.format, texel) && texel.size == x.bpp &&
@@ -105,7 +112,7 @@ FirstUse firstUse(RMCommandBuffer *cb, size_t from, size_t to, RMTexture *t)
 bool freshFills(RMTexture *t, MTLTextureDescriptor *d)
 {
     return t->_rawOk && t->_kind == RMTexturePool && !t->_heap && !t->_raw.memoryless && !t->_raw.arena &&
-           !t->_raw.zeta && d.storageMode == MTLStorageModePrivate;
+           !t->_raw.zeta && (d.storageMode == MTLStorageModePrivate || raw::decodedFormat(uint32_t(d.pixelFormat)));
 }
 
 void establishFresh(RMTexture *t, MTLTextureDescriptor *d)

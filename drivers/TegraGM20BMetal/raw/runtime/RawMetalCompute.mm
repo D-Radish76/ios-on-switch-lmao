@@ -5,6 +5,7 @@
 #include "raw_compute.h"
 #include "raw_compute_key.h"
 #include "raw_compute_lookup.h"
+#include "raw_decoded.h"
 #include "raw_kernel_texture.h"
 #import "RawMetalComputeState.h"
 #import "RawMetalResolveAsk.h"
@@ -102,6 +103,9 @@ static bool storableStandIn(RMTexture *t)
 // slot is taken as stored, and keyed again when one is set. The two are never keyed together.
 static MTLPixelFormat kernelFormat(RMTexture *t, RMComputeState *state, uint32_t slot)
 {
+    // a decoded format's texture is read as its stored image (raw_decoded.h)
+    if (const raw::DecodedFormat *f = raw::decodedFormat(uint32_t(t->_descriptor.pixelFormat)))
+        return MTLPixelFormat(f->stored);
     if (heldInPlanes(t))
         return t->_descriptor.pixelFormat;
     const bool storable = storableStandIn(t) ? !state || (rmComputeTexturesWritten(state) >> slot & 1)

@@ -4,6 +4,7 @@
 #import "RawMetalBlitImages.h"
 #import "RawMetalBlitRules.h"
 #import "RawMetalCopyClamp.h"
+#import "RawMetalDecoded.h"
 #import "RawMetalStandIns.h"
 #import "RawMetalXrCopies.h"
 #include "raw_format_standin.h"
@@ -303,6 +304,23 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         RMTexture *t = (__bridge RMTexture *)c.obj2;
         useBuffer(rc, s, false);
         useTexture(rc, t, true);
+        if (rmDecoded(t)) {
+            const uint64_t x = c.x, o = extra(cb, x + 8);
+            const uint32_t size[3] = {uint32_t(extra(cb, x + 3)), uint32_t(extra(cb, x + 4)),
+                                      uint32_t(extra(cb, x + 5))};
+            const uint32_t origin[3] = {uint32_t(o), uint32_t(o >> 32), uint32_t(extra(cb, x + 9))};
+            if (!fresh.empty())
+                fresh.erase(t);
+            standInFresh.erase(t);
+            be->end();
+            const bool decoded =
+                rmEncodeDecodedCopy(rc, s, t, extra(cb, x), extra(cb, x + 1), extra(cb, x + 2), size,
+                                    uint32_t(extra(cb, x + 6)), uint32_t(extra(cb, x + 7)), origin, why);
+            be = rc->blit();
+            if (!decoded)
+                return false;
+            break;
+        }
         be->access(memoryOf(s), memoryOf(t));
         const uint64_t x = c.x, o = extra(cb, x + 8), so = extra(cb, x), row = extra(cb, x + 1),
                        image = extra(cb, x + 2);

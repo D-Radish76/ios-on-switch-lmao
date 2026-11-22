@@ -447,8 +447,8 @@ bool RMRangeEncode::command(size_t at)
         RAW_ENCODE_SPAN(Blit);
         blitTexelRows(c, true);
         if (!encodeBlit(cb, c, rc, be_, fresh_, standInFresh_, why_)) {
-            constexpr const char *clamp =
-                "no memory, header or pack state for a copy's alpha clamp (RawMetalCopyClamp.h)";
+            constexpr const char *clamp = "no memory, header or pack state for a copy's alpha clamp (RawMetalCopyClamp.h) "
+                                          "or a decoded format's upload (raw_decode_pass.h)";
             if (!ahead_) {
                 SWITCH_REFUSE("raw", "copy.clamp", "%s (%s): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)",
                               clamp, *why_ ? *why_ : "");

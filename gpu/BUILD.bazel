@@ -252,6 +252,7 @@ PLUGIN_CC_SRCS = [
     GM20B_METAL + ":raw/runtime/raw_zeta_colour.cpp",
     GM20B_METAL + ":raw/runtime/raw_turned_pass.cpp",
     GM20B_METAL + ":raw/runtime/raw_format_standin.cpp",
+    GM20B_METAL + ":raw/runtime/raw_decode_pass.cpp",
     GM20B_METAL + ":raw/runtime/raw_area_load.cpp",
     GM20B_METAL + ":raw/runtime/raw_reach.cpp",
     GM20B_METAL + ":raw/runtime/raw_comp.cpp",

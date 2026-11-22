@@ -2,6 +2,7 @@
 // newTextureViewWithPixelFormat: of a raw texture: the same memory under another format's header, or nil with one line
 #import "RawMetalInternal.h"
 #import "RawMetalXrPlanes.h"
+#include "raw_decoded.h"
 #include "raw_ycbcr.h"
 
 int viewHeaderType(MTLTextureType type)
@@ -40,6 +41,10 @@ static const char *viewFormatRefusal(uint32_t source, uint32_t view)
     const auto extended = [](uint32_t f) { return f >= 550 && f <= 555; };
     if ((extended(source) || extended(view)) && view != source && view != (source ^ 1))
         return "an extended-range format views as itself and its sRGB twin alone";
+    // Metal makes these (an M4 Max: ASTC sRGB and linear, LDR and HDR of one footprint), each reading the blocks by
+    // another decode, of which the texture keeps no image, nor the blocks to make one
+    if (!raw::decodedViewShared(source, view))
+        return "a view decoding the texture's blocks another way than it does: the texture holds its own decode alone";
     return nullptr;
 }
 
@@ -62,6 +67,8 @@ static uint32_t viewRawFormat(RMTexture *owner, MTLPixelFormat format)
 {
     if (xrWordsTexture(owner) && raw::twoPlaneXr(uint32_t(format)))
         return xrWordsFormat(uint32_t(format));
+    if (const raw::DecodedFormat *f = raw::decodedFormat(uint32_t(format)))
+        return f->stored;
     return format == owner->_descriptor.pixelFormat ? owner->_raw.format : uint32_t(format);
 }
 

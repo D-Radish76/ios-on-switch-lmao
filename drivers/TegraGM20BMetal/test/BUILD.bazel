@@ -4649,6 +4649,7 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_compute",
     "raw_compute_indirect",
     "raw_compute_loops",
+    "raw_decode_pass",
     "raw_direct",
     "raw_direct_compute",
     "raw_draw",

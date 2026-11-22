@@ -2,6 +2,7 @@
 // replaceRegion: and getBytes: of a raw texture: its memory reached by the CPU in place, through the copy engine, or nothing
 // moved with one line
 #import "RawMetalInternal.h"
+#import "RawMetalDecoded.h"
 #import "RawMetalFresh.h"
 #import "RawMetalMultisample.h"
 #import "RawMetalXrPlanes.h"
@@ -239,6 +240,8 @@ RMTexture *cpuOwner(RMTexture *t)
                                bytesPerImage:image];
         return;
     }
+    if (rmDecodedReplace(self, r, level, slice, bytes, row, image))
+        return;
 #if SWITCH_RAW_DIAGNOSTICS
     _raw.probeWritten = true;
 #endif
@@ -336,7 +339,7 @@ RMTexture *cpuOwner(RMTexture *t)
                                   slice:_slicesBase + slice];
         return;
     }
-    if (packedPlaneMovesNothing(self))
+    if (packedPlaneMovesNothing(self) || rmDecodedReadback(self, "getBytes"))
         return;
     freshBeforeTransfer(self);
     if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, false))

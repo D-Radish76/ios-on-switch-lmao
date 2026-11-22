@@ -5,6 +5,7 @@
 #import "RawMetalResolveAsk.h"
 #import "RawMetalBlitImages.h"
 #import "RawMetalBlitRules.h"
+#import "RawMetalDecoded.h"
 #import "RawMetalXrCopies.h"
 #include "raw_blit_planes.h"
 
@@ -82,6 +83,13 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
     if (!t) {
         notRawTexture(cb, d);
         return false;
+    }
+    if (rmDecoded(t)) {
+        if (!intoTexture) {
+            rmDecodedReadback(t, call);
+            return false;
+        }
+        return rmDecodedCopyRecorded(cb, call, a, t, slice, level, o, size, offset, row, image);
     }
     raw::Texture plane;
     if (t->_raw.converted() && !raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), plane)) {
