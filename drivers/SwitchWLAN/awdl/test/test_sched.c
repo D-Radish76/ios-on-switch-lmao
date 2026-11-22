@@ -357,7 +357,7 @@ static void switch_test_legal_channels(void)
         requested[i] = (struct awdl_chan){149, 0x80};
     awdl_core_set_sequence(core, requested, 0);
     switch_awdl_core_set_channels(core, 3, 0);
-    SCHECK(!awdl_social_map(switch_installed));
+    SCHECK(awdl_social_map(switch_installed) == 1 && switch_installed[0].number == 6);
     switch_awdl_core_set_channels(core, 7, 0);
     SCHECK(switch_installed[0].number == 149 && switch_installed[0].opclass == 124);
     awdl_core_stop(core);
@@ -428,7 +428,7 @@ static void switch_test_search_windows(uint16_t infra_mhz)
             if (home_six) {
                 switch_check_home_six(mask, away, pass);
             } else {
-                SCHECK(away == 4);
+                SCHECK(away == (pass % 4u ? 5u : 4u));
                 SCHECK(switch_installed[2].number == primary || switch_installed[10].number == primary);
                 SCHECK(switch_installed[8].number == secondary || switch_installed[0].number == secondary);
             }
@@ -496,6 +496,77 @@ static void switch_test_search_windows(uint16_t infra_mhz)
         }
         awdl_core_stop(core);
         free(core);
+    }
+}
+
+static unsigned switch_first_slot_illegal(const struct awdl_core *core, unsigned mask)
+{
+    const uint8_t first = awdl_core_sequence(core)[0].number;
+    const unsigned bit = first == 6 ? 1u : first == 44 ? 2u : first == 149 ? 4u : 0u;
+    return !(bit & mask);
+}
+
+static struct awdl_core *switch_first_slot_core(uint16_t infra, unsigned mask)
+{
+    struct awdl_core *core = make(0x0f, 60, m_tx, switch_schedule);
+    awdl_core_set_infra(core, infra, 0);
+    switch_awdl_core_set_channels(core, (uint16_t)mask, 0);
+    awdl_core_start(core, 0);
+    return core;
+}
+
+static void switch_hear_peer_on(struct awdl_core *core, uint8_t channel, uint64_t now)
+{
+    struct awdl_core *peer = make(0x10, 520, m_tx, NULL);
+    struct awdl_chan seq[AWDL_SEQ_SLOTS];
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        seq[i] = (struct awdl_chan){channel, awdl_opclass_20mhz(channel)};
+    awdl_core_set_sequence(peer, seq, 0);
+    awdl_core_start(peer, 0);
+    awdl_core_timer(peer, now);
+    uint8_t frame[AWDL_MAX_FRAME];
+    const size_t bytes = awdl_core_build_af(peer, AWDL_SUBTYPE_PSF, now, frame, sizeof frame);
+    const struct awdl_rx_meta meta = {now, awdl_chan_freq(seq[0]), -45};
+    awdl_core_rx(core, frame, bytes, &meta);
+    awdl_core_stop(peer);
+    free(peer);
+}
+
+// Every search pass idle and in transfer, then a timed peer's sequence idle and in transfer.
+static void switch_test_first_slot(void)
+{
+    const uint64_t period = 2 * AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
+    for (unsigned channel = 0; channel <= 177; ++channel) {
+        if (channel && !awdl_opclass_20mhz((uint8_t)channel))
+            continue;
+        const uint16_t infra = awdl_chan_freq((struct awdl_chan){(uint8_t)channel, 0});
+        for (unsigned mask = 1; mask <= 7; ++mask) {
+            unsigned illegal = 0;
+            for (unsigned transfer = 0; transfer < 2; ++transfer) {
+                struct awdl_core *core = switch_first_slot_core(infra, mask);
+                for (unsigned pass = 0; pass < 48; ++pass) {
+                    if (transfer)
+                        awdl_core_traffic_registered(core, "com.apple.airdrop", period * pass);
+                    awdl_core_timer(core, period * pass);
+                    illegal += switch_first_slot_illegal(core, mask);
+                }
+                awdl_core_stop(core);
+                free(core);
+            }
+            struct awdl_core *core = switch_first_slot_core(infra, mask);
+            switch_hear_peer_on(core, mask & 1u ? 6 : mask & 2u ? 44 : 149, period);
+            SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER);
+            illegal += switch_first_slot_illegal(core, mask);
+            awdl_core_traffic_registered(core, "com.apple.airdrop", period);
+            SCHECK(awdl_core_mode(core) == AWDL_MODE_TRANSFER);
+            illegal += switch_first_slot_illegal(core, mask);
+            awdl_core_stop(core);
+            free(core);
+            if (illegal)
+                fprintf(stderr, "  slot 0 outside the legal channels %u times: AP channel %u, legal mask %u\n", illegal,
+                        channel, mask);
+            SCHECK(!illegal);
+        }
     }
 }
 
@@ -633,6 +704,7 @@ void test_sched_main(void)
     switch_test_legal_channels();
     switch_test_search_windows(2462);
     switch_test_search_windows(2437);
+    switch_test_first_slot();
     switch_test_acquisition();
 #if DEVELOPMENT || DEBUG
     switch_test_home_trial();

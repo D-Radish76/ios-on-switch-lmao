@@ -76,6 +76,11 @@ static uint16_t social_bit(uint8_t channel)
     return channel == 6 ? 1u : channel == 44 ? 2u : channel == 149 ? 4u : 0u;
 }
 
+static uint8_t secondary_social(uint16_t legal)
+{
+    return (legal & 1u) ? 6 : (legal & 2u) ? 44 : 149;
+}
+
 // A full advertised sequence takes 1.048576 s. Two cycles leave a full peer cycle after schedule installation.
 #define SWITCH_AWDL_SEARCH_US (2 * AWDL_SEQ_US)
 
@@ -109,7 +114,7 @@ static void search_away(struct awdl_core *c, const uint8_t channels[3], unsigned
     const unsigned channel = (first + pass / 8u) % count;
     const unsigned legal = c->switch_legal_channels;
     const uint8_t primary = (legal & 4u) ? 149 : (legal & 2u) ? 44 : 6;
-    const uint8_t secondary = (legal & 1u) ? 6 : (legal & 2u) ? 44 : primary;
+    const uint8_t secondary = secondary_social((uint16_t)legal);
     unsigned anchor = primary == 44 ? 10u : 2u;
     if (first == anchor || second == anchor)
         anchor ^= 8u;
@@ -117,7 +122,8 @@ static void search_away(struct awdl_core *c, const uint8_t channels[3], unsigned
     // The captured Mac schedules use 2/10 for 5 GHz and 8/0 for 2.4 GHz. Stagger the searches to keep an anchor in each pair.
     memset(c->cfg.seq, 0, sizeof c->cfg.seq);
     c->cfg.seq[anchor].number = primary;
-    c->cfg.seq[second == 8 ? 0 : 8].number = secondary;
+    c->cfg.seq[0].number = secondary;
+    c->cfg.seq[8].number = secondary;
     c->cfg.seq[first].number = channels[channel];
     c->cfg.seq[second].number = channels[(channel + 1) % count];
 }
@@ -247,6 +253,11 @@ static void build(struct awdl_core *c)
             c->cfg.seq[i] = (bit & c->switch_legal_channels)
                                ? (struct awdl_chan){channel, awdl_opclass_20mhz(channel)}
                                : (struct awdl_chan){0, 0};
+        }
+        // macOS drops a peer's whole frame when slot 0 of its sequence is empty; other empty slots are accepted.
+        if (!c->cfg.seq[0].number && c->switch_legal_channels) {
+            const uint8_t channel = secondary_social(c->switch_legal_channels);
+            c->cfg.seq[0] = (struct awdl_chan){channel, awdl_opclass_20mhz(channel)};
         }
     }
 }
