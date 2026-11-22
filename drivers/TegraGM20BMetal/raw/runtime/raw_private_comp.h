@@ -8,11 +8,15 @@
 // (raw_storage_form.h rule storage.compressed). Raw views and gpuResourceIDs name the compressed memory through headers
 // of their own over the same binding, and nothing else binds its pages, so it stays on that memory until it goes.
 //
-// A private 2D target made plain because no compressed memory of its size was ready at its creation wants that memory
-// (Device::wantCompressed). Where memory that serves it is made or kept, the submit worker's next raw range submission
-// moves it, before that range's encode and whether or not the range uses it (Device::compressedFromPlain): the copy
-// engine copies it in a raw job of its own, which then rewrites its header and those made from it in place (ticAt), so
-// a gpuResourceID or view handed out before keeps its index, and its plain memory goes once that job completed. The
+// A private stored one-sample depth/stencil texture of one layer and level binds its format's compressible kind on the
+// same terms (raw_comp.h storedZetaKind, Device::createOwnedZeta).
+//
+// A private target or depth texture made plain because no compressed memory of its size was ready at its creation wants
+// that memory (Device::wantCompressed): any of the shapes above but a mip chain, whose level headers no move rewrites.
+// Where memory that serves it is made or kept, the submit worker's next raw range submission moves it, before that
+// range's encode and whether or not the range uses it (Device::compressedFromPlain): the copy engine copies it in a raw
+// job of its own, every layer and sample, which then rewrites its header and those made from it in place (ticAt), so a
+// gpuResourceID or view handed out before keeps its index, and its plain memory goes once that job completed. The
 // worker alone writes its memory's fields, under lock_; no other thread reads them but under lock_ (view creation). One
 // with a raw view stays plain: a view may go, and its header index be reused, before the job runs.
 #pragma once
@@ -40,6 +44,8 @@ struct PrivateTextureFacts {
     // storage.compressed), nothing else (not Unknown)
     bool compressibleUsage = false;
     bool plainColour = false;  // a colour format the 3D engine renders, no extended-range or planar form
+    uint32_t zeta = 0;         // a depth/stencil texture's Metal format (raw_zeta.h), else 0
+    uint32_t layers = 1;       // an array's or a cube's (six a cube)
     uint32_t bpp = 0;
     bool compression = false;  // the kernel compresses (TegraGM20BInfoCompression)
 };
@@ -62,7 +68,11 @@ constexpr bool privateShapeCompresses(const PrivateTextureFacts &f)
 // The compressed kind such a texture binds, or 0
 inline uint32_t privateCompressedKind(const PrivateTextureFacts &f)
 {
-    if (!f.compression || !f.privateStorage || !privateShapeCompresses(f) || !f.compressibleUsage || !f.plainColour)
+    if (!f.compression || !f.privateStorage || !f.compressibleUsage)
+        return 0;
+    if (f.zeta)
+        return f.levels == 1 ? storedZetaKind(true, f.zeta, f.samples, f.layers) : 0;
+    if (!privateShapeCompresses(f) || !f.plainColour)
         return 0;
     const uint32_t kind = compressedKind(f.bpp, 0, std::max(f.samples, 1u));
     return copyEngineReadsCompressed(kind) ? kind : 0;

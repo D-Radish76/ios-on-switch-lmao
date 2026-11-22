@@ -167,8 +167,8 @@ TEST_F(DevicePrivateComp, APrivateTextureAsksItsOwnCompTagLines)
 }
 
 // raw_comp.h storedZetaKind: a stored one-sample Depth32Float texture on ZF32_2CZ memory the compressed-memory thread
-// made, given back with the texture
-TEST_F(DevicePrivateComp, AStoredDepth32FloatTakesZF32_2CZAndGivesItBack)
+// made, kept made for the next of its kind when the texture goes, as a colour target's is
+TEST_F(DevicePrivateComp, AStoredDepth32FloatTakesZF32_2CZAndKeepsItForTheNext)
 {
     raw::Texture first, zeta;
     compressedSecond(
@@ -179,9 +179,14 @@ TEST_F(DevicePrivateComp, AStoredDepth32FloatTakesZF32_2CZAndGivesItBack)
         false);
     EXPECT_TRUE(bound(raw::kCompKindZF32));
     EXPECT_NE(zeta.tic, 0u);
-    const size_t freedBefore = kernel_model::model.freed.size();
+    const size_t freedBefore = kernel_model::model.freed.size(), ready = raw::DeviceHarness::compReady(dev);
     dev.destroyTexture(zeta);
-    EXPECT_GT(kernel_model::model.freed.size(), freedBefore);
+    EXPECT_EQ(kernel_model::model.freed.size(), freedBefore);
+    EXPECT_EQ(raw::DeviceHarness::compReady(dev), ready + 1) << "made for the next depth texture of its kind";
+    raw::Texture next;
+    ASSERT_TRUE(dev.createOwnedZeta(64, 64, 252, 1, true, next));
+    EXPECT_TRUE(next.comptags);
+    dev.destroyTexture(next);
     dev.destroyTexture(first);
 }
 

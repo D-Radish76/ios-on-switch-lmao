@@ -44,6 +44,9 @@ uint32_t privateCompressedKind(MTLTextureDescriptor *d)
         !(d.usage & ~NSUInteger(MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite));
     facts.plainColour =
         f && f->rt && !raw::blockCompressed(f) && raw::xrForm(uint32_t(d.pixelFormat)) == raw::XrForm::None;
+    facts.zeta = raw::zetaFormatIndex(uint32_t(d.pixelFormat)) < raw::kZetaFormats ? uint32_t(d.pixelFormat) : 0;
+    const bool cube = d.textureType == MTLTextureTypeCube || d.textureType == MTLTextureTypeCubeArray;
+    facts.layers = uint32_t(std::max<NSUInteger>(d.arrayLength, 1)) * (cube ? 6 : 1);
     facts.bpp = f ? f->bpp : 0;
     facts.compression = (gRM->raw->kernelInfo().flags & TegraGM20BInfoCompression) != 0;
     return raw::privateCompressedKind(facts);

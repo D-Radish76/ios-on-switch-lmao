@@ -96,7 +96,7 @@ bool Device::createCompressedZeta(uint64_t bytes, uint32_t kind, Texture &t)
     t.va = bo.va;
     t.storage = {bo.va, bytes, false};
     t.comptags = true;
-    compZeta_[bo.va] = bo;
+    compZeta_[bo.va] = {bo, kind};
     writeTic(t);
     privateMade_.store(privateMade_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     return true;
@@ -107,12 +107,9 @@ void Device::freeCompressedZeta(uint64_t va)
     const auto it = compZeta_.find(va);
     if (it == compZeta_.end())
         return;
-    RAW_DIAGNOSTIC(stats.compHeld.store(stats.compHeld.load(std::memory_order_relaxed) - 1, std::memory_order_relaxed));
-    RAW_DIAGNOSTIC(stats.compHeldBytes.store(stats.compHeldBytes.load(std::memory_order_relaxed) - it->second.bytes,
-                                             std::memory_order_relaxed));
-    k_.free(it->second);
+    const PrivateComp comp = it->second;
     compZeta_.erase(it);
-    compGaveBack();
+    compRelease(comp);
 }
 
 bool Device::privateCompressed(const Texture &t)
@@ -127,7 +124,7 @@ void Device::noteView(const Texture &of, Texture &view)
     if (of.comptags)
         return;
     for (auto &[texture, w] : privateWants_)
-        if (of.va >= texture->va && of.va - texture->va < texture->span.bytes) {
+        if (of.va >= texture->va && of.va - texture->va < texture->storageRange().bytes) {
             w.views.push_back(&view);
             return;
         }
@@ -148,10 +145,16 @@ void Device::releasePrivateCompressed(const Texture &t)
     auto it = privateComp_.find(&t);
     if (it == privateComp_.end())
         return;
-    PrivateComp comp = it->second;
+    const PrivateComp comp = it->second;
     privateComp_.erase(it);
+    compRelease(comp);
+}
+
+void Device::compRelease(PrivateComp comp)
+{
     // Core Animation makes its large targets again at each app open and close (boot 21: its 1792x1472 BGRA8 zoom window
-    // target): the memory stays made for the next target of its kind until compTrim finds it idle
+    // target), an app its depth texture at each resize: the memory stays made for the next texture of its kind until
+    // compTrim finds it idle
     if (comp.kind && !stopping_ && comp_.servesRefusals(comp.bo.bytes, comp.kind)) {
         compReadyPush(comp.bo, comp.kind);
         backingsChanged();
@@ -192,18 +195,18 @@ void Device::compReadyPush(const Bo &bo, uint32_t kind)
 
 bool Device::wantCompressed(const Texture &t, uint32_t kind, void *owner)
 {
-    tgm_layout bl;
-    if (!kind || t.comptags || memoryOf(t) != Memory::Bl || !t.span.valid() || t.lease ||
-        !tgm_layout_tiled(t.width, t.height, t.bpp, &bl) || t.pitch != bl.row_bytes || t.blockHeight != bl.y_log2)
+    if (!kind || t.comptags || t.chain || !t.blockLinear || t.lease)
         return false;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     if (probePlainPrivate.load(std::memory_order_relaxed) || probePlainMemory.load(std::memory_order_relaxed))
         return false;
 #endif
     std::lock_guard<raw::Mutex> l(lock_);
+    if (t.zeta ? !ownedZeta_.count(t.va) : memoryOf(t) != Memory::Bl || !t.span.valid())
+        return false;
     PrivateWant &w = privateWants_[&t];
     w.kind = kind;
-    w.bytes = bl.bytes;
+    w.bytes = t.storageRange().bytes;
     w.owner = owner;
     if (comp_.fit(compBytes(w.bytes), kind) != comp_.ready.end())
         privateMoveDue_.store(true, std::memory_order_relaxed);
@@ -313,14 +316,23 @@ bool Device::compressedFromPlain(Texture &t)
                      t.width, t.height, t.format);
         return false;
     }
-    movedPlain_.push_back({&t, t.span, headers, std::move(tics), seq, channelGeneration()});
+    MovedPlain moved{&t, t.span, headers, std::move(tics), seq, channelGeneration()};
+    if (t.zeta) {
+        const auto owned = ownedZeta_.find(t.va);
+        moved.zeta = owned->second.first;
+        moved.span = owned->second.second;
+        ownedZeta_.erase(owned);
+        compZeta_[bo.va] = {bo, kind};
+    } else {
+        privateComp_[&t] = {bo, kind};
+    }
+    movedPlain_.push_back(std::move(moved));
     const uint64_t from = t.va;
     t.va = bo.va;
     t.cpu = nullptr;
     t.span = {};
     t.storage = comp.storage;
     t.comptags = true;
-    privateComp_[&t] = {bo, kind};
     // made on another thread while the job was built, so no work names them yet: their headers change here
     for (Texture *v : views) {
         ticAt(reinterpret_cast<uint32_t *>(tic_.cpu + 32 * v->tic), v->va - from + t.va);
@@ -351,7 +363,10 @@ void Device::freeMovedPlain()
             for (size_t i = 0; i < it->tics.size(); i++)
                 memcpy(tic_.cpu + 32 * it->tics[i], it->headers.cpu + 32 * i, 32);
         Lease *none = nullptr;
-        freeSpan(it->span, Memory::Bl, none);
+        if (it->zeta < kZetaFormats)
+            tiledFree(zChunks_[it->zeta], it->span);
+        else
+            freeSpan(it->span, Memory::Bl, none);
         freeSpan(it->headers.span, it->headers.wc ? Memory::Wc : Memory::Pool, it->headers.lease);
         it = movedPlain_.erase(it);
     }

@@ -504,8 +504,8 @@ static void announceTexture(raw::shapes::Route route, const raw::shapes::Texture
     }
     if (route != Route::Block)
         establishFresh(t, d);
-    if (route == Route::Plain && kind && !t->_raw.comptags)
-        t->_movableBytes = t->_raw.span.bytes;
+    if (kind && !t->_raw.comptags && !t->_raw.chain)
+        t->_movableBytes = t->_raw.storageRange().bytes;
     return (id<MTLTexture>)t;
 }
 

@@ -3555,8 +3555,8 @@ private:
     // createOwnedZeta's memory by its address: its format's index and span, outside Texture::span, which alias() and
     // freeSpan() take for block-linear colour memory
     std::map<uint64_t, std::pair<uint32_t, Span>> ownedZeta_;
-    // createCompressedZeta's memory by its address
-    std::map<uint64_t, Bo> compZeta_;
+    // createCompressedZeta's memory, or a moved zeta's (compressedFromPlain), by its address
+    std::map<uint64_t, PrivateComp> compZeta_;
     void freeCompressedZeta(uint64_t va);  // lock_ held
 
     void freeOwnedZeta(uint64_t va)  // lock_ held
@@ -3795,6 +3795,9 @@ private:
     // written under lock_, read without it by the counters
     std::atomic<uint64_t> privateMade_{0};
     void releasePrivateCompressed(const Texture &t);  // lock_ held
+    // A closed private texture's compressed memory, lock_ held: kept made for the next of its kind where that holds
+    // back no ask refused for a shortage, else given back
+    void compRelease(PrivateComp comp);
 
     // plain private textures wanting compressed memory (wantCompressed), lock_
     struct PrivateWant {
@@ -3826,6 +3829,7 @@ private:
         std::vector<uint32_t> tics;
         uint32_t seqno = 0;
         uint64_t generation = 0;
+        uint32_t zeta = kZetaFormats;  // a zeta's format index: its span is zChunks_[zeta]'s
     };
 
     std::vector<MovedPlain> movedPlain_;

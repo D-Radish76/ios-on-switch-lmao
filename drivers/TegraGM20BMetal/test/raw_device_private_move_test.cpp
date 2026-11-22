@@ -208,6 +208,101 @@ TEST_F(DevicePrivateComp, APlainTargetWithARawViewStaysPlain)
     dev.destroyTexture(t);
 }
 
+// The texels a move copied from `plain` (launches since job `jobs`): each of `layers` layers, `stride` apart
+void expectLayersMoved(size_t jobs, uint64_t plain, uint64_t to, uint64_t stride, uint32_t layers)
+{
+    const auto launched = copies(jobs);
+    for (uint32_t layer = 0; layer < layers; layer++)
+        EXPECT_NE(std::find(launched.begin(), launched.end(),
+                            std::make_pair(plain + layer * stride, to + layer * stride)),
+                  launched.end())
+            << "layer " << layer;
+}
+
+// A stored one-sample Depth32Float texture made plain for want of ZF32_2CZ memory moves onto it once it is made, as a
+// colour target does: its zeta memory copied by the copy engine, its header rewritten in place, its plain zeta memory
+// given back once the job completed and its compressed memory kept for the next of its kind when it goes
+TEST_F(DevicePrivateComp, AStoredDepthTextureMadePlainMovesOntoCompressedMemory)
+{
+    raw::Texture z;
+    ASSERT_TRUE(dev.createOwnedZeta(96, 80, 252, 1, true, z));
+    ASSERT_FALSE(z.comptags) << "none ready at its creation: asked for";
+    ASSERT_TRUE(dev.wantCompressed(z, raw::kCompKindZF32, &z));
+    awaitMade();
+    EXPECT_TRUE(dev.privateMoveDue());
+    EXPECT_EQ(look(dev), std::vector<void *>{&z});
+    commitEmpty();
+    const uint64_t plainVa = z.va;
+    const uint32_t tic = z.tic;
+    const size_t jobs = kernel_model::model.jobs.size();
+    ASSERT_TRUE(dev.compressedFromPlain(z));
+    EXPECT_TRUE(z.comptags);
+    EXPECT_TRUE(z.zeta);
+    EXPECT_EQ(z.tic, tic);
+    EXPECT_TRUE(bound(raw::kCompKindZF32));
+    expectLayersMoved(jobs, plainVa, z.va, 0, 1);
+    EXPECT_EQ(z.storageRange().va, z.va);
+    EXPECT_EQ(raw::DeviceHarness::movedPlain(dev), 1u);
+    commitEmpty();
+    EXPECT_EQ(raw::DeviceHarness::movedPlain(dev), 0u) << "the plain zeta memory went once the move's job completed";
+    const size_t freed = kernel_model::model.freed.size(), ready = raw::DeviceHarness::compReady(dev);
+    dev.destroyTexture(z);
+    EXPECT_EQ(kernel_model::model.freed.size(), freed);
+    EXPECT_EQ(raw::DeviceHarness::compReady(dev), ready + 1);
+}
+
+// A one-level array made plain wants memory for every layer, and its move copies each
+TEST_F(DevicePrivateComp, AnArrayMadePlainMovesEveryLayer)
+{
+    raw::Texture t;
+    ASSERT_TRUE(dev.createArray(128, 128, 3, kBGRA8, raw::fx::kTexTwoDArray, t, 1, nullptr, raw::kCompKindC32));
+    ASSERT_FALSE(t.comptags);
+    ASSERT_TRUE(dev.wantCompressed(t, raw::kCompKindC32, &t));
+    awaitMade();
+    EXPECT_EQ(look(dev), std::vector<void *>{&t});
+    commitEmpty();
+    const uint64_t plainVa = t.va, stride = t.layerBytes;
+    const size_t jobs = kernel_model::model.jobs.size();
+    ASSERT_TRUE(dev.compressedFromPlain(t));
+    EXPECT_TRUE(t.comptags);
+    EXPECT_GE(t.storage.bytes, 3 * stride) << "its storage names every layer";
+    expectLayersMoved(jobs, plainVa, t.va, stride, 3);
+    commitEmpty();
+    dev.destroyTexture(t);
+}
+
+// A stored multisampled target made plain moves as the grid of its samples
+TEST_F(DevicePrivateComp, AStoredMultisampledTargetMadePlainMovesItsSampleGrid)
+{
+    raw::Texture t;
+    const uint32_t kind = raw::compressedKind(4, 0, 4);
+    ASSERT_TRUE(dev.createStoredMultisample(64, 64, kBGRA8, 4, t, nullptr, kind));
+    ASSERT_FALSE(t.comptags);
+    ASSERT_TRUE(dev.wantCompressed(t, kind, &t));
+    awaitMade();
+    EXPECT_EQ(look(dev), std::vector<void *>{&t});
+    commitEmpty();
+    const uint64_t plainVa = t.va;
+    const size_t jobs = kernel_model::model.jobs.size();
+    ASSERT_TRUE(dev.compressedFromPlain(t));
+    EXPECT_TRUE(t.comptags);
+    EXPECT_EQ(t.samples, 4u);
+    EXPECT_TRUE(bound(kind)) << "C32_MS4_2CRA";
+    expectLayersMoved(jobs, plainVa, t.va, 0, 1);
+    commitEmpty();
+    dev.destroyTexture(t);
+}
+
+// A mip chain stays plain: no move rewrites its level headers
+TEST_F(DevicePrivateComp, AChainMadePlainWantsNoMemory)
+{
+    raw::Texture t;
+    ASSERT_TRUE(dev.createMipTexture(256, 256, kBGRA8, 4, t, nullptr, raw::kCompKindC32));
+    ASSERT_FALSE(t.comptags);
+    EXPECT_FALSE(dev.wantCompressed(t, raw::kCompKindC32, &t));
+    dev.destroyTexture(t);
+}
+
 // A want whose ask the kernel refused for a shortage asks again when this process gives compressed memory back (the
 // only event that changes the kernel's answer), and the memory then made serves it: no later texture of its size is
 // needed

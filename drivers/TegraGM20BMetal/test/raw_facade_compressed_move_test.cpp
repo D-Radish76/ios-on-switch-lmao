@@ -93,4 +93,52 @@ TEST(RawFacadeCompressedMove, ARecordingThreadUsesATargetWhileTheWorkerMovesIt)
     EXPECT_EQ(counted(device, "switchRawCounters", @"private_compressed_moves"), moves + 1);
 }
 
+// A private Depth32Float texture made plain for want of ZF32_2CZ memory moves onto it on the submit worker while
+// another thread records passes that clear, load and store it as their depth attachment: the move writes its memory
+// fields under the device lock and the recording reads none of them (the thread-sanitized build's check)
+TEST(RawFacadeCompressedMove, ARecordingThreadAttachesADepthTextureWhileTheWorkerMovesIt)
+{
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        kernel_model::model.infoFlags |= TegraGM20BInfoCompression;
+    }
+    ASSERT_TRUE(opened().device != nil);
+    id<MTLDevice> device = opened().device;
+    const uint64_t made = counted(device, "switchRawCompression", @"made");
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                                                                  width:200
+                                                                                 height:120
+                                                                              mipmapped:NO];
+    td.storageMode = MTLStorageModePrivate;
+    td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    id<MTLTexture> depth = [device newTextureWithDescriptor:td];
+    ASSERT_TRUE([facts(device, depth) containsString:@"comptags=0"]) << "none of its size made: asked for";
+    for (int i = 0; i < 500 && counted(device, "switchRawCompression", @"made") == made; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_GT(counted(device, "switchRawCompression", @"made"), made) << "no compressed memory was made";
+    const auto target = scale_frames::targets(device, scale_frames::Shape{1, 4, 1, 200, 120});
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLCommandBuffer> last = nil;
+    std::thread recorder([&] {
+        for (int round = 0; round < kRounds; round++) {
+            id<MTLCommandBuffer> cb = [queue commandBuffer];
+            MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+            rp.colorAttachments[0].texture = target[0];
+            rp.colorAttachments[0].loadAction = MTLLoadActionClear;
+            rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+            rp.depthAttachment.texture = depth;
+            rp.depthAttachment.loadAction = round ? MTLLoadActionLoad : MTLLoadActionClear;
+            rp.depthAttachment.storeAction = MTLStoreActionStore;
+            rp.depthAttachment.clearDepth = 1.0;
+            [[cb renderCommandEncoderWithDescriptor:rp] endEncoding];
+            [cb commit];
+            last = cb;
+        }
+    });
+    recorder.join();
+    [last waitUntilCompleted];
+    EXPECT_EQ(last.status, MTLCommandBufferStatusCompleted) << last.error.description.UTF8String;
+    EXPECT_TRUE([facts(device, depth) containsString:@"comptags=1"]) << facts(device, depth).UTF8String;
+}
+
 }  // namespace

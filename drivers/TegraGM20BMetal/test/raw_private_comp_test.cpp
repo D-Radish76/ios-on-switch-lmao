@@ -107,6 +107,35 @@ TEST(RawPrivateComp, AMultisampledTextureMovesAsItsSampleGrid)
     EXPECT_EQ(sy, 1u);
 }
 
+// A private depth texture of one sample, layer and level takes its stored zeta kind (raw_comp.h storedZetaKind), which
+// its want asks for where none was ready at its creation
+TEST(RawPrivateComp, APrivateDepthTextureTakesItsStoredZetaKind)
+{
+    raw::PrivateTextureFacts f;
+    f.privateStorage = f.compressibleUsage = f.compression = true;
+    f.shape = raw::PrivateShape2D::Plain;
+    f.zeta = 252;
+    EXPECT_EQ(raw::privateCompressedKind(f), uint32_t(raw::kCompKindZF32));
+    f.zeta = 260;
+    EXPECT_EQ(raw::privateCompressedKind(f), uint32_t(raw::kCompKindZeta));
+    f.zeta = 250;
+    EXPECT_EQ(raw::privateCompressedKind(f), uint32_t(raw::kCompKindZ16));
+    f.zeta = 253;
+    EXPECT_EQ(raw::privateCompressedKind(f), 0u) << "Stencil8 has no compressible kind";
+    f.zeta = 252;
+    f.layers = 6;
+    EXPECT_EQ(raw::privateCompressedKind(f), 0u) << "a cube";
+    f.layers = 1;
+    f.levels = 2;
+    EXPECT_EQ(raw::privateCompressedKind(f), 0u);
+    f.levels = 1;
+    f.samples = 4;
+    EXPECT_EQ(raw::privateCompressedKind(f), 0u) << "a multisampled one stays plain";
+    f.samples = 1;
+    f.privateStorage = false;
+    EXPECT_EQ(raw::privateCompressedKind(f), 0u) << "a shared one: no want, as a CPU copy may reach it";
+}
+
 TEST(RawPrivateComp, EveryLaidOutShapeTakesCompressedMemoryAtItsCreation)
 {
     const std::string laid = Body(SourceText("../raw/runtime/raw_textures.cpp"), "bool Device::createLaidOut(");
