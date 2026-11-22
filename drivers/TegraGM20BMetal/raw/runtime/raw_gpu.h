@@ -2978,6 +2978,12 @@ public:
     // form (4); a blended storage form's barrier twin (5 a barrier a triangle, 6 one a draw: raw_fetch_rungs.h); 0: the
     // rules decide (raw_fetch_free.h fetchFreeTaken)
     std::atomic<uint8_t> probeFetchRung{0};
+#if SWITCH_RAW_DIAGNOSTICS
+    // HW Test's wait for the compression thread (RawMetalProbe.mm switchRawProbeCompressionSettled:): `settled` runs once
+    // no compressed memory asked of compThread_ is left to make, each made or refused, on that thread with lock_ dropped;
+    // at once, on the caller's thread, when none is asked
+    void compWhenSettled(std::function<void()> settled);
+#endif
     std::map<uint64_t, Bo> probeCompressed;  // lock_
     std::atomic<uint64_t> unflushed_{0};     // signalsUnflushed
 #endif
@@ -3769,6 +3775,10 @@ private:
     // compThread_ started where it is not: it trims what an idle process holds when it turns stale (compDeadline)
     void compStart();
     bool compRearm_ = false;  // shared plain memory was made: compThread_ takes its deadline (lock_)
+#if SWITCH_RAW_DIAGNOSTICS
+    std::vector<std::function<void()>> compSettled_;  // lock_
+    void compSettledRun(std::unique_lock<raw::Mutex> &l);
+#endif
     void compFree(Backing &b);
     // This process gave compressed memory back, lock_ held: the asks refused for a shortage may be made again, and each
     // a plain private texture still wants is (the one event that can change the kernel's answer that this process sees;

@@ -246,6 +246,9 @@ void Device::compMake(std::unique_lock<raw::Mutex> &l)
                          shortage ? "those backings stay uncompressed until this process gives compressed memory back"
                                   : "that backing stays uncompressed");
     }
+#if SWITCH_RAW_DIAGNOSTICS
+    compSettledRun(l);
+#endif
 }
 
 void Device::compStop()
@@ -253,7 +256,38 @@ void Device::compStop()
     compWake_.notify_all();
     if (compThread_.joinable())
         compThread_.join();
+#if SWITCH_RAW_DIAGNOSTICS
+    std::unique_lock<raw::Mutex> l(lock_);
+    compSettledRun(l);
+#endif
 }
+
+#if SWITCH_RAW_DIAGNOSTICS
+void Device::compWhenSettled(std::function<void()> settled)
+{
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        if (!comp_.wanted.empty() && !stopping_) {
+            compSettled_.push_back(std::move(settled));
+            return;
+        }
+    }
+    settled();
+}
+
+// `l` holds lock_, dropped around the calls: a caller may make textures, which take it
+void Device::compSettledRun(std::unique_lock<raw::Mutex> &l)
+{
+    if (compSettled_.empty())
+        return;
+    std::vector<std::function<void()>> settled;
+    settled.swap(compSettled_);
+    l.unlock();
+    for (const auto &f : settled)
+        f();
+    l.lock();
+}
+#endif
 
 void Device::compFree(Backing &b)
 {

@@ -83,6 +83,19 @@ static raw::ProbeSurface probeSurface(const raw::Texture &t, uint32_t fmt2d)
     return nil;
 }
 
+// `settled` called once every compressed memory the device was asked for so far is made or refused (raw_gpu.h
+// compWhenSettled): on the compression thread with no driver lock held, or on this thread before the call returns when
+// none is asked. Nil, else why not.
+- (NSString *)switchRawProbeCompressionSettled:(void (^)(void))settled
+{
+    if (!settled)
+        return @"a block to call";
+    gRM->raw->compWhenSettled([settled] {
+        settled();
+    });
+    return nil;
+}
+
 // While `on`: the calling thread's next getBytes or replaceRegion the copy engine moves fails as the kernel's refusal of
 // its submission does (raw_transfer.h failNextTransfer). @YES where the arm before this call fired.
 - (NSNumber *)switchRawProbeFailTransfer:(NSNumber *)on
