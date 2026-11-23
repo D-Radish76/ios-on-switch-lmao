@@ -776,10 +776,12 @@ static void test_flow_ifc_v3(void)
     NCHECK(delivered == 1 && awdl_core_stats(core)->data_not_awdl == 1);
     awdl_core_timer(core, 4100000);
     NCHECK(absents == 0);
+    awdl_core_timer(core, 4000000 + 5000000);
+    NCHECK(absents == 0);
 
-    // silence: lost after 3 s, deleted from the firmware (9 bytes), PEER_PRESENCE absent; we are master again
+    // silence: lost after AWDL_PEER_TIMEOUT_US, deleted from the firmware (9 bytes), PEER_PRESENCE absent; we are master again
     before = ncalls;
-    awdl_core_timer(core, 7200000);
+    awdl_core_timer(core, 4000000 + AWDL_PEER_TIMEOUT_US + 200000);
     NCHECK(absents == 1);
     const struct fw_call *del = NULL;
     for (int i = before; i < ncalls; ++i)
@@ -793,7 +795,7 @@ static void test_flow_ifc_v3(void)
 
     // off: awdl 0 and interface_remove on the AWDL interface
     before = ncalls;
-    sync_enabled(&f, 0, 8000000);
+    sync_enabled(&f, 0, 4000000 + AWDL_PEER_TIMEOUT_US + 1000000);
     NCHECK(!awdl_core_running(core) && ncalls == before + 2 && !strcmp(calls[before].name, "awdl") &&
            rd32(calls[before].buf) == 0 && calls[before].ifidx == 2 &&
            !strcmp(calls[before + 1].name, "interface_remove") && calls[before + 1].len == 0 &&
@@ -1001,7 +1003,7 @@ static void switch_test_configuration(void)
         phone_frame(core, phone, peer, AWDL_SUBTYPE_MIF, 5100000, 1200000);
         if (deleting) {
             switch_reject_name = "awdl_peer_op";
-            awdl_core_timer(core, 5000000);
+            awdl_core_timer(core, 1200000 + AWDL_PEER_TIMEOUT_US + 1000000);
         }
         NCHECK(!awdl_core_running(core) && presents == deleting && absents == 1 && !memcmp(last_presence, peer, 6));
         awdl_core_stop(phone);

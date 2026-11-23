@@ -18,13 +18,12 @@ extern int vsnprintf(char *, size_t, const char *, va_list) __attribute__((forma
 extern "C" {
 #endif
 
-#define AWDL_AW_US             ((uint64_t)AWDL_AW_TU * AWDL_TU_US)            // 16384
-#define AWDL_EAW_US            (AWDL_AW_US * AWDL_EAW_AWS)                    // 65536
-#define AWDL_SEQ_US            (AWDL_EAW_US * AWDL_SEQ_SLOTS)                 // 1048576
-// An admitted datagram outlives its peer's longest tolerated silence by a full rendezvous cycle.
-#define AWDL_TXQ_LIFETIME_US   (AWDL_PEER_TIMEOUT_US + AWDL_SEQ_US)
-#define AWDL_PSF_FOLLOWER_TU   440u  // Stute et al. §7.4
-#define AWDL_ROOT_COUNTER_US   3140000u  // a root's self counter ticks every π s (OWL's reading of IO80211Family)
+#define AWDL_AW_US           ((uint64_t)AWDL_AW_TU * AWDL_TU_US)  // 16384
+#define AWDL_EAW_US          (AWDL_AW_US * AWDL_EAW_AWS)          // 65536
+#define AWDL_SEQ_US          (AWDL_EAW_US * AWDL_SEQ_SLOTS)       // 1048576
+#define AWDL_TXQ_LIFETIME_US (3000000u + AWDL_SEQ_US)
+#define AWDL_PSF_FOLLOWER_TU 440u      // Stute et al. §7.4
+#define AWDL_ROOT_COUNTER_US 3140000u  // a root's self counter ticks every π s (OWL's reading of IO80211Family)
 // The installed schedule may sit this far from the parent's clock: its countdown is in whole TU, and the slot guard
 // (2 TU) still covers the rest.
 #define AWDL_RESYNC_US 1536
@@ -62,7 +61,7 @@ void awdl_w_chanseq(struct awdl_writer *w, const struct awdl_chan seq[AWDL_SEQ_S
 
 // len 0: retired, removed at the next flush. In flight: handed to the radio for the window that ends at `closes`.
 struct awdl_txq_entry {
-    uint64_t expires, closes;
+    uint64_t expires, closes, retry_after;
     uint16_t len;
     uint8_t group, in_flight;
     uint8_t dst[6];

@@ -32,7 +32,7 @@ extern "C" {
 #define AWDL_EAW_TU            64u    // AWDL_AW_TU * AWDL_EAW_AWS
 #define AWDL_PSF_INTERVAL_TU   110u   // period of PSFs
 #define AWDL_MAX_PEERS         32u
-#define AWDL_PEER_TIMEOUT_US   3000000u  // a peer silent this long is lost
+#define AWDL_PEER_TIMEOUT_US   10000000u  // a peer silent this long is lost
 #define AWDL_ELECTION_MAX_HOPS 10u
 #define AWDL_ELECTION_RSSI_DBM (-65)  // an election candidate's running-average RSSI, on either band, reaches this
 #define AWDL_TXQ_FRAMES        32u

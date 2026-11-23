@@ -508,9 +508,11 @@ static void test_sync_two_nodes(void)
     memcpy(eth, (const uint8_t[6]){0x02, 0x99, 0x99, 0x99, 0x99, 0x99}, 6);
     CHECK(awdl_core_output(nodes[1].core, eth, sizeof eth, local_of(1, sim_now)) < 0);
 
-    // the master goes quiet: the follower loses it after the timeout and becomes root
+    // the master goes quiet: the follower keeps it past a brief fadeout, then loses it after the timeout and becomes root
     reach[1][0] = 0;
-    sim_run(sim_now + 4000000);
+    sim_run(sim_now + 5000000);
+    CHECK(nodes[1].peers_lost == 0 && awdl_core_role(nodes[1].core) == AWDL_ROLE_FOLLOWER);
+    sim_run(sim_now + AWDL_PEER_TIMEOUT_US);
     CHECK(nodes[1].peers_lost == 1);
     CHECK(awdl_core_role(nodes[1].core) == AWDL_ROLE_ROOT);
     awdl_core_stop(nodes[0].core);
@@ -544,7 +546,7 @@ static void test_election_chain(void)
     CHECK(d > -16 && d < 16);
     // A leaves
     reach[1][0] = reach[0][1] = 0;
-    sim_run(sim_now + 6000000);
+    sim_run(sim_now + AWDL_PEER_TIMEOUT_US + 3000000);
     CHECK(awdl_core_role(nodes[1].core) == AWDL_ROLE_ROOT);
     CHECK(awdl_core_role(nodes[2].core) == AWDL_ROLE_FOLLOWER && awdl_core_election(nodes[2].core)->hops == 1);
     CHECK(!memcmp(awdl_core_election(nodes[2].core)->root, (const uint8_t[6]){0x02, 0x11, 0x22, 0x33, 0x44, 0x0b}, 6));
@@ -744,6 +746,7 @@ static void test_facade(void)
         CHECK(len == sizeof p);
         memcpy(&p, out, sizeof p);
         CHECK(!memcmp(p.address, (const uint8_t[6]){0x02, 0x11, 0x22, 0x33, 0x44, 0x0a}, 6));
+        CHECK(A80211_PEER_PRESENT == 0 && A80211_PEER_ABSENT == 1);
         CHECK(p.state == A80211_PEER_PRESENT);
         presence++;
     }

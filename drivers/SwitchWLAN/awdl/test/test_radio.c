@@ -299,7 +299,7 @@ static void switch_test_bonjour_windows(void)
     RCHECK(!awdl_core_output(core, frame, sizeof frame, now));
     awdl_core_timer(core, (AWDL_SEQ_SLOTS + 8) * slot + guard);
     RCHECK(switch_radio_test.accepted == 2);
-    awdl_core_timer(core, now + AWDL_PEER_TIMEOUT_US + slot * AWDL_SEQ_SLOTS);
+    awdl_core_timer(core, now + 3000000u + slot * AWDL_SEQ_SLOTS);
     RCHECK(switch_radio_test.accepted == 2 && awdl_core_stats(core)->data_drop == 1);
     awdl_core_stop(core);
     free(core);
@@ -314,7 +314,7 @@ static void switch_test_queued_expiry(void)
     switch_radio_test.result = AWDL_TX_BUSY;
     RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000) && switch_radio_test.calls == 1);
     switch_radio_test.result = 0;
-    const uint64_t expiry = 1000 + AWDL_PEER_TIMEOUT_US + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
+    const uint64_t expiry = 1000 + 3000000u + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
     awdl_core_timer(core, expiry);
     switch_awdl_core_tx_ready(core, expiry + 1);
     RCHECK(switch_radio_test.accepted == 0 && awdl_core_stats(core)->data_drop == 1);
@@ -399,20 +399,23 @@ static void switch_test_requeue(void)
     ether[14] = 0xb2;
     RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000));
     RCHECK(switch_radio_test.accepted == 2);
+    const uint64_t first_closes = switch_radio_test.data_deadline;
     const uint16_t a = switch_radio_test.sequence[0], b = switch_radio_test.sequence[1];
     switch_awdl_core_tx_done(core, a, SWITCH_AWDL_TX_EXPIRED, 0, 2000);
     switch_awdl_core_tx_done(core, b, SWITCH_AWDL_TX_CANCELLED, 0, 2000);
     switch_awdl_core_tx_ready(core, 2000);
+    RCHECK(switch_radio_test.accepted == 2);
+    switch_awdl_core_tx_ready(core, first_closes);
     RCHECK(switch_radio_test.accepted == 4 && switch_radio_test.sequence[2] == a && switch_radio_test.sequence[3] == b);
     RCHECK(switch_radio_test.marker[2] == 0xa1 && switch_radio_test.marker[3] == 0xb2);
-    switch_awdl_core_tx_done(core, a, SWITCH_AWDL_TX_ACKED, 0, 3000);
-    switch_awdl_core_tx_done(core, b, SWITCH_AWDL_TX_UNACKED, 0, 3000);
-    switch_awdl_core_tx_ready(core, 3000);
+    switch_awdl_core_tx_done(core, a, SWITCH_AWDL_TX_ACKED, 0, first_closes + 1);
+    switch_awdl_core_tx_done(core, b, SWITCH_AWDL_TX_UNACKED, 0, first_closes + 1);
+    switch_awdl_core_tx_ready(core, first_closes + 1);
     RCHECK(switch_radio_test.accepted == 4);
 
     // A frame out of its window with no word from the radio holds back the next one to the same peer.
     ether[14] = 0xc3;
-    RCHECK(!awdl_core_output(core, ether, sizeof ether, 3000) && switch_radio_test.accepted == 5);
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, first_closes + 1) && switch_radio_test.accepted == 5);
     const uint16_t c = switch_radio_test.sequence[4];
     const uint64_t later = 3 * AWDL_EAW_TU * AWDL_TU_US;
     ether[14] = 0xd4;
@@ -475,30 +478,34 @@ static void switch_test_late_window(void)
            !awdl_core_stats(core)->data_drop);
     const uint64_t closes = switch_radio_test.data_deadline;
 
+    ether[14] = 0xaa;
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000));
     RCHECK(!awdl_core_output(core, other, sizeof other, 1000));
     awdl_core_timer(core, 1000);
-    RCHECK(switch_radio_test.calls == 3 && switch_radio_test.accepted == 1 && switch_radio_test.marker[0] == 0xb2 &&
+    RCHECK(switch_radio_test.calls == 2 && switch_radio_test.accepted == 1 && switch_radio_test.marker[0] == 0xb2 &&
            !awdl_core_stats(core)->data_drop);
 
     memset(switch_radio_test.late, 0, 6);
     awdl_core_timer(core, closes);
-    RCHECK(switch_radio_test.accepted == 2 && switch_radio_test.marker[1] == 0xa1 &&
-           switch_radio_test.sequence[1] == 0 && switch_radio_test.data_deadline > closes);
+    RCHECK(switch_radio_test.accepted == 3 && switch_radio_test.marker[1] == 0xa1 &&
+           switch_radio_test.sequence[1] == 0 && switch_radio_test.marker[2] == 0xaa &&
+           switch_radio_test.sequence[2] == 1 && switch_radio_test.data_deadline > closes);
     switch_awdl_core_tx_done(core, 0, SWITCH_AWDL_TX_ACKED, 0, closes + 1);
     switch_awdl_core_tx_done(core, 1, SWITCH_AWDL_TX_ACKED, 0, closes + 1);
+    switch_awdl_core_tx_done(core, 2, SWITCH_AWDL_TX_ACKED, 0, closes + 1);
 
     memcpy(switch_radio_test.late, ether, 6);
     const uint64_t queued = closes + 2;
-    const uint64_t expires = queued + AWDL_PEER_TIMEOUT_US + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
+    const uint64_t expires = queued + 3000000u + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
     ether[14] = 0xc3;
     RCHECK(!awdl_core_output(core, ether, sizeof ether, queued) && !awdl_core_stats(core)->data_drop);
     switch_radio_learn_peer(core, ether, queued + 2000000);
     const int calls = switch_radio_test.calls;
     awdl_core_timer(core, expires - 1);
-    RCHECK(switch_radio_test.calls > calls && switch_radio_test.accepted == 2 && !awdl_core_stats(core)->data_drop);
+    RCHECK(switch_radio_test.calls > calls && switch_radio_test.accepted == 3 && !awdl_core_stats(core)->data_drop);
     const int offered = switch_radio_test.calls;
     awdl_core_timer(core, expires);
-    RCHECK(switch_radio_test.calls == offered && switch_radio_test.accepted == 2 &&
+    RCHECK(switch_radio_test.calls == offered && switch_radio_test.accepted == 3 &&
            awdl_core_stats(core)->data_drop == 1);
     awdl_core_stop(core);
     free(core);

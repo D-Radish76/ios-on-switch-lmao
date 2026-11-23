@@ -31,14 +31,16 @@ static struct channel_window channel_window(const struct awdl_chan *seq, unsigne
 }
 
 // Both phases are expressed in local radio TSF. Their slot boundaries may fall at different times.
-static uint64_t transmit_window(struct awdl_core *c, const uint8_t *dst, const struct awdl_peer *p, uint64_t now)
+static uint64_t transmit_window(struct awdl_core *c, const uint8_t *dst, const struct awdl_peer *p, uint64_t now,
+                                uint64_t earliest)
 {
     const uint8_t mdns6[6] = {0x33, 0x33, 0, 0, 0, 0xfb};
     const uint8_t mdns4[6] = {1, 0, 0x5e, 0, 0, 0xfb};
     const int bonjour = !p && (awdl_addr_eq(dst, mdns6) || awdl_addr_eq(dst, mdns4));
     const unsigned guard =
         bonjour ? SWITCH_AWDL_MULTICAST_GUARD_US : (p ? SWITCH_AWDL_UNICAST_GUARD_US : AWDL_SLOT_GUARD_US);
-    for (uint64_t at = now; at - now < AWDL_SEQ_US;) {
+    const uint64_t start = earliest > now ? earliest : now;
+    for (uint64_t at = start; at - start < AWDL_SEQ_US;) {
         const uint64_t phase = at - c->base_tsf + (uint64_t)c->base_seq * AWDL_AW_US;
         struct channel_window w = channel_window(c->cfg.seq, AWDL_SEQ_SLOTS, phase, at, guard, bonjour);
         if (p) {
@@ -170,7 +172,11 @@ void switch_awdl_core_tx_done(struct awdl_core *c, uint16_t token, enum switch_a
         if (!e->len || !e->in_flight || !switch_awdl_data_token(e->frame, e->len, &named) || named != token)
             continue;
         e->in_flight = 0;
-        c->next_data = now;
+        if (outcome == SWITCH_AWDL_TX_EXPIRED && e->closes > e->retry_after)
+            e->retry_after = e->closes;
+        const uint64_t ready_at = outcome == SWITCH_AWDL_TX_EXPIRED && e->retry_after > now ? e->retry_after : now;
+        if (ready_at < c->next_data)
+            c->next_data = ready_at;
         const int unsent = outcome == SWITCH_AWDL_TX_EXPIRED || outcome == SWITCH_AWDL_TX_CANCELLED;
 #if DEVELOPMENT || DEBUG
         struct switch_awdl_data_probe *probe = probe_of(c, awdl_core_find(c, e->dst));
@@ -200,14 +206,13 @@ void switch_awdl_core_tx_done(struct awdl_core *c, uint16_t token, enum switch_a
     }
 }
 
-// An earlier frame to this peer is out of its window with no word from the radio yet: whether it went on air decides
-// what goes next.
-static int earlier_unsettled(const struct awdl_core *c, unsigned before, const uint8_t *dst, uint64_t now)
+static int earlier_blocks_peer(const struct awdl_core *c, unsigned before, const uint8_t *dst, uint64_t now)
 {
     for (unsigned i = 0; i < before; ++i) {
         const struct awdl_txq_entry *e = &c->txq[(c->txq_head + i) % AWDL_TXQ_FRAMES];
-        if (e->len && e->in_flight && e->closes <= now && now <= e->closes + SWITCH_AWDL_REPORT_US &&
-            awdl_addr_eq(e->dst, dst))
+        if (!e->len || !awdl_addr_eq(e->dst, dst))
+            continue;
+        if (!e->in_flight || (e->closes <= now && now <= e->closes + SWITCH_AWDL_REPORT_US))
             return 1;
     }
     return 0;
@@ -220,7 +225,7 @@ static int all_in_flight(const struct awdl_core *c, const uint8_t *dst, uint64_t
         if (e->len && !e->in_flight)
             return 0;
     }
-    return !earlier_unsettled(c, c->txq_count, dst, now);
+    return !earlier_blocks_peer(c, c->txq_count, dst, now);
 }
 
 static void handed(struct awdl_core *c, struct awdl_txq_entry *e, const struct awdl_peer *p, uint64_t now,
@@ -284,8 +289,8 @@ void awdl_data_flush(struct awdl_core *c, uint64_t now)
             c->stats.data_drop++;
             continue;
         }
-        const int eligible = !e->in_flight && !blocked && (e->group || !earlier_unsettled(c, kept, e->dst, now));
-        const uint64_t stay = eligible ? transmit_window(c, e->dst, p, now) : 0;
+        const int eligible = !e->in_flight && !blocked && (e->group || !earlier_blocks_peer(c, kept, e->dst, now));
+        const uint64_t stay = eligible ? transmit_window(c, e->dst, p, now, e->retry_after) : 0;
         if (stay) {
             if (!switch_awdl_core_ready(c)) {
                 blocked = 1;
@@ -296,8 +301,8 @@ void awdl_data_flush(struct awdl_core *c, uint64_t now)
                 if (!result) {
                     handed(c, e, p, now, stay);
                 } else if (result == AWDL_TX_LATE) {
-                    if (stay < c->next_data)
-                        c->next_data = stay;
+                    e->retry_after = stay;
+                    transmit_window(c, e->dst, p, now, stay);
                 } else if (result != AWDL_TX_BUSY) {
                     c->stats.data_drop++;
                     continue;
@@ -347,6 +352,7 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
         return -5;
     e->len = (uint16_t)n;
     e->expires = (now > c->last_observation ? now : c->last_observation) + AWDL_TXQ_LIFETIME_US;
+    e->retry_after = 0;
     e->group = (uint8_t)group;
     e->in_flight = 0;
     memcpy(e->dst, eth, 6);
@@ -356,7 +362,7 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
     if (probe)
         ++probe->tx_queued;
 #endif
-    const uint64_t stay = switch_awdl_core_ready(c) ? transmit_window(c, eth, p, now) : 0;
+    const uint64_t stay = switch_awdl_core_ready(c) ? transmit_window(c, eth, p, now, 0) : 0;
     if (stay && all_in_flight(c, eth, now)) {
         const int result = send(c, e->frame, e->len, group, now, stay);
         if (!result) {
@@ -373,10 +379,12 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
             c->stats.data_drop++;
             return result;
         }
-        if (result == AWDL_TX_BUSY)
+        if (result == AWDL_TX_BUSY) {
             c->waiting_credit = 1;
-        else if (stay < c->next_data)
-            c->next_data = stay;
+        } else {
+            e->retry_after = stay;
+            transmit_window(c, eth, p, now, stay);
+        }
     } else if (stay && !c->waiting_credit) {
         c->next_data = now;
     }

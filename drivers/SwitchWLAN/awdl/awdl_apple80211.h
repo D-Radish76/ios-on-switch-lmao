@@ -83,10 +83,10 @@ enum {
     A80211_VIF_ROLE_NAN_DATA = 10
 };
 
-// Both daemons accept state 1 in their PEER_PRESENCE event handlers.
+// Apple80211 event 47: wifip2pd maps state 1 to lostPeer and ignores other values.
 enum {
-    A80211_PEER_ABSENT = 0,
-    A80211_PEER_PRESENT = 1
+    A80211_PEER_PRESENT = 0,
+    A80211_PEER_ABSENT = 1
 };
 
 // ---- payloads (wifip2pd's Swift metadata names; sizes checked against its call sites) ------------------------------
