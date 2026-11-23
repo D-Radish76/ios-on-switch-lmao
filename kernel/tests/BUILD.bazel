@@ -68,6 +68,10 @@
 #                            drop, then only after a change in orders 18000-18200), the dropping session's window
 #                            first; adds and deletes there are logged, then counted; <switch/cryptex_map.h>: a shared
 #                            cache refused for its volume is logged; 10063 has no hook, nothing in release
+#   switch_heartbeat_test    kernel/switch/diag/heartbeat.h: WDT4's interrupt 11.75-12 s and warm reset 47.75-48 s
+#                            after the last beat in the TRM's TMR6/WDT4 words, only on an idle timer block; a running
+#                            core without interrupts as class a, any interrupt as a late beat (class b), no wrap on a
+#                            later sample; held across power steps, a watchdog panic, nothing in release
 #   switch_protection_test   <switch/protection_rules.h>: an unlabelled vnode reads as D before the epoch and as a new one
 #                            after it, a new one is labelled only when it would read otherwise, listxattr loses only
 #                            the label; 12377's hooks label after authorization and the MAC check, a failed label fails
@@ -646,6 +650,30 @@ host_test(
         "//kernel/xnu-10063.141.1/bsd:vm/vm_unix.c",
         "//kernel/xnu-12377.121.6/bsd:net/necp.c",
         "//kernel/xnu-12377.121.6/bsd:vm/vm_unix.c",
+    ],
+    includes = ["."],
+)
+
+copy_file(
+    name = "switch_heartbeat",
+    src = "//kernel/switch:diag/heartbeat.h",
+    out = "switch_heartbeat.h",
+)
+
+host_test(
+    name = "switch_heartbeat_test",
+    srcs = [
+        "switch_heartbeat.h",
+        "switch_heartbeat_test.cpp",
+    ],
+    data = [
+        "//diagnostics/switch:SwitchPanicHeartbeat.c",
+        "//diagnostics/switch:SwitchPanicHeartbeat.h",
+        "//diagnostics/switch:SwitchPanicSave.c",
+        "//diagnostics/switch:SwitchPowerTrail.c",
+        "//drivers/NativeSwitchWatchdog:NativeSwitchWatchdog.cpp",
+        "//kernel/switch:diag/heartbeat.c",
+        "//kernel/switch:include/switch/heartbeat.h",
     ],
     includes = ["."],
 )
