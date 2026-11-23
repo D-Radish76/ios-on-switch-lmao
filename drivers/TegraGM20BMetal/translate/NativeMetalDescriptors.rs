@@ -5,6 +5,7 @@
 
 use metal2vulkan::bind::SamplerDescriptor;
 use metal2vulkan::library::{FunctionConstantValue, FunctionConstantValues};
+use metal2vulkan::metal::format::ExtendedRange;
 use metal2vulkan::metal::{
     AttributeFormat, BlendFactor, BlendOperation, ColorWriteMask, CompareFunction, DataType, IndexType, PixelFormat,
     PrimitiveTopologyClass, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter,
@@ -415,6 +416,24 @@ pub fn stage_linked<F: DescriptorFunction>(
     Ok(linked)
 }
 
+/// The extended-range form an attachment of MTLPixelFormat `raw` (`format`) renders through the RGBA16Float stand-in of
+/// (format_standin.h): Apple's extended-range formats, 550 to 555
+fn stand_in_of(raw: u64, format: PixelFormat) -> Option<ExtendedRange> {
+    (550..=555).contains(&raw).then(|| ExtendedRange::of(format)).flatten()
+}
+
+/// `factor` of a colour (`rgb`) or alpha blend where the destination alpha is 1 (standin_blend.h alphaOneFactor): a
+/// BGR10_XR form's stand-in holds an alpha the format does not
+fn alpha_one(factor: BlendFactor, rgb: bool) -> BlendFactor {
+    match factor {
+        BlendFactor::DestinationAlpha => BlendFactor::One,
+        BlendFactor::OneMinusDestinationAlpha => BlendFactor::Zero,
+        BlendFactor::SourceAlphaSaturated if rgb => BlendFactor::Zero,
+        BlendFactor::SourceAlphaSaturated => BlendFactor::One,
+        f => f,
+    }
+}
+
 pub fn render_descriptor<F: DescriptorFunction>(
     descriptor: *const NmbRenderPipelineDescriptorOf<F>,
 ) -> Result<RenderPipelineDescriptor, String> {
@@ -443,7 +462,14 @@ pub fn render_descriptor<F: DescriptorFunction>(
         if c.format == 0 {
             continue;
         }
-        let mut a = ColorAttachmentDescriptor::new(raw::<PixelFormat>(c.format, "color format")?);
+        let format = raw::<PixelFormat>(c.format, "color format")?;
+        let stand_in = stand_in_of(c.format, format);
+        let mut a = ColorAttachmentDescriptor::new(if stand_in.is_some() {
+            PixelFormat::RGBA16Float
+        } else {
+            format
+        });
+        a.stand_in = stand_in;
         a.write_mask = raw::<ColorWriteMask>(c.write_mask, "write mask")?;
         a.blending_enabled = c.blending != 0;
         a.source_rgb_blend_factor = raw::<BlendFactor>(c.source_rgb, "blend factor")?;
@@ -452,6 +478,12 @@ pub fn render_descriptor<F: DescriptorFunction>(
         a.source_alpha_blend_factor = raw::<BlendFactor>(c.source_alpha, "blend factor")?;
         a.destination_alpha_blend_factor = raw::<BlendFactor>(c.destination_alpha, "blend factor")?;
         a.alpha_blend_operation = raw::<BlendOperation>(c.alpha_operation, "blend operation")?;
+        if matches!(stand_in, Some(ExtendedRange::Bgr10 { .. })) {
+            a.source_rgb_blend_factor = alpha_one(a.source_rgb_blend_factor, true);
+            a.destination_rgb_blend_factor = alpha_one(a.destination_rgb_blend_factor, true);
+            a.source_alpha_blend_factor = alpha_one(a.source_alpha_blend_factor, false);
+            a.destination_alpha_blend_factor = alpha_one(a.destination_alpha_blend_factor, false);
+        }
         *slot = Some(a);
     }
     out.depth_format = optional_format(d.depth_format)?;

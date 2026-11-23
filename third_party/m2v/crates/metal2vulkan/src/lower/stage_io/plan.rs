@@ -1641,6 +1641,7 @@ pub fn entry(cx: &mut SelectCx<'_>) -> Result<(), Error> {
                     color: None,
                     rotated: false,
                     premultiplied: false,
+                    stand_in: None,
                     offset: offset(PushField::AmplificationLayerOffset),
                 });
                 continue;
@@ -1831,6 +1832,10 @@ pub fn entry(cx: &mut SelectCx<'_>) -> Result<(), Error> {
             _ => false,
         };
         let added = raw.and_then(|(_, _, field)| offset(field));
+        // A first output to an extended-range attachment's stand-in carries Metal's clamp.
+        let stand_in = color
+            .and_then(|c| cx.inputs.stand_in_colors.get(&c).copied())
+            .filter(|_| link.form.float_fmt().is_some());
         cx.families.stage_io.outputs.push(PlannedOutput {
             field: o.field,
             link,
@@ -1838,6 +1843,7 @@ pub fn entry(cx: &mut SelectCx<'_>) -> Result<(), Error> {
             color,
             rotated,
             premultiplied,
+            stand_in,
             offset: added,
         });
         if let Some((index, count, _)) = raw {
@@ -1854,6 +1860,7 @@ pub fn entry(cx: &mut SelectCx<'_>) -> Result<(), Error> {
                 color: None,
                 rotated: false,
                 premultiplied: false,
+                stand_in: None,
                 offset: added,
             });
         }
@@ -2608,6 +2615,9 @@ pub fn finish(cx: &mut SelectCx<'_>) -> Result<(), Error> {
                 // clamp, the product (an `Fma` with `-0.0` where the builder writes one so), its
                 // insert, and their constants.
                 + 12 * u64::from(o.premultiplied)
+                // a stand-in's clamp: two bounds and a clamp, alpha's constants, extract, clamp
+                // and insert
+                + 8 * u64::from(o.stand_in.is_some())
         })
         .sum::<u64>()
         // A rotation's second output: its field, two shuffles and a store.

@@ -141,7 +141,6 @@ bool SwitchMetalRangeEncode::endEncoder(size_t at)
     counters_->ended(at);
     re_ = nullptr;
     be_ = nullptr;
-    cb->_xrShadowCurrent = nullptr;
     return true;
 }
 

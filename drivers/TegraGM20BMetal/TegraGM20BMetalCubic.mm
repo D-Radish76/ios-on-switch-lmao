@@ -55,7 +55,7 @@ void packedVariants(SwitchMetalPipeline *p, uint64_t keyHash)
 }
 
 // A variant the compiler refused (`failure` empty) or no compiler made: the command buffers that draw it fail, and its
-// key is named once. A shadowed variant's is named by its pass (TegraGM20BMetalXrShadow.mm reportTwin).
+// key is named once, a shadowed variant's by its pass.
 static void settleUnmade(gm20b::Variant<gm20b::Pipeline> &variant, const std::string &key, bool shadowed,
                          const std::string &failure)
 {
@@ -270,7 +270,6 @@ static gm20b::Variant<gm20b::Pipeline> *preparedVariant(__unsafe_unretained Swit
     _forms.written.clear();
     _forms.fragmentTests = 0;
     _forms.xrSlots = 0;
-    _forms.twoPlane = _xrPlanes;
     if (!base) {
         _formSamplers[0] = _formSamplers[1] = 0;
         return;
@@ -305,11 +304,9 @@ static gm20b::Variant<gm20b::Pipeline> *preparedVariant(__unsafe_unretained Swit
                 gm20b::addSlot(standIns[stage], slot);
             });
     }
-    uint16_t drawnSlots = 0;
     if (_sampledVariant) {
         if (_sampledVariant->state() == gm20b::Variant<gm20b::Pipeline>::State::Ready) {
             variant = _sampledVariant;
-            drawnSlots = _forms.xrSlots;
         } else {
             standIns[1] = _sampledSlots[1];
         }
@@ -320,8 +317,6 @@ static gm20b::Variant<gm20b::Pipeline> *preparedVariant(__unsafe_unretained Swit
         gm20b::forEachSlot(standIns[stage], [&](uint32_t slot) {
             _cb->_xrStandIns.insert(_tex[stage][slot]);
         });
-    gm20bXrShadowDraw(_cb, _pipe, *base, variant, _forms.cubic, _forms.fragmentTests, _forms.twoPlane, drawnSlots,
-                      _forms.written);
     if (base != _drawn || variant != _drawnVariant) {
         Cmd state = cmd(OpPipeline);
         state.obj = (__bridge void *)_pipe;

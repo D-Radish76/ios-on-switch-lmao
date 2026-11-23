@@ -99,9 +99,7 @@ TEST(XrPass, TheAlphaPlanesTargetIsWritten)
     ASSERT_TRUE(
         gm20b::emitState("samples=1 topo=0 ds=0/0 c0=550:15:1:1:5:0:1:5:0", vertex, fragment, regs, why, nullptr, true))
         << why;
-    EXPECT_EQ(registerOf(regs, kCtWrite), 1u);
     EXPECT_EQ(registerOf(regs, kCtWrite + 4), 1u);
-    EXPECT_EQ(registerOf(regs, kBlend), 0u);
     EXPECT_EQ(registerOf(regs, kBlend + 4), 0u);
     ASSERT_TRUE(
         gm20b::emitState("samples=1 topo=0 ds=0/0 c0=550:0:0:1:0:0:1:0:0", vertex, fragment, regs, why, nullptr, true))
@@ -110,6 +108,34 @@ TEST(XrPass, TheAlphaPlanesTargetIsWritten)
     ASSERT_TRUE(gm20b::emitState("samples=1 topo=0 ds=0/0 c0=550:15:0:1:0:0:1:0:0", vertex, fragment, regs, why))
         << why;
     EXPECT_EQ(registerOf(regs, kCtWrite + 4), 0xffffffffu) << "the one-image form has no alpha target";
+}
+
+// An extended-range target renders into its RGBA16Float stand-in, which the ROP blends: Metal's write mask and blend, a
+// format of no alpha's factors of the destination alpha the constants they come to (BGR10_XR: DestinationAlpha one,
+// OneMinusDestinationAlpha zero, SourceAlphaSaturated zero for colour and one for alpha)
+TEST(XrPass, AnExtendedRangeTargetBlendsInItsStandIn)
+{
+    constexpr uint32_t kCtWrite = 0x1a00, kBlend = 0x1360, kPerTarget = 0x1e00;
+    constexpr uint32_t kOne = 0x4001, kZero = 0x4000, kDstAlpha = 0x4304, kOneMinusDstAlpha = 0x4305;
+    const std::array<uint8_t, 80> vs{}, fs = headerWriting(0xf);
+    gm20b::EmitProgram vertex, fragment;
+    vertex.header = vs.data();
+    fragment.header = fs.data();
+    std::vector<gm20b::EmitRegister> regs;
+    std::string why;
+    ASSERT_TRUE(gm20b::emitState("samples=1 topo=0 ds=0/0 c0=554:15:1:8:9:0:10:8:0", vertex, fragment, regs, why))
+        << why;
+    EXPECT_EQ(registerOf(regs, kCtWrite), 0x1111u) << "Metal's write mask, every component of the stand-in";
+    EXPECT_EQ(registerOf(regs, kBlend), 1u);
+    EXPECT_EQ(registerOf(regs, kPerTarget + 8), kOne) << "source colour: DestinationAlpha of a destination alpha of 1";
+    EXPECT_EQ(registerOf(regs, kPerTarget + 12), kZero) << "destination colour: OneMinusDestinationAlpha";
+    EXPECT_EQ(registerOf(regs, kPerTarget + 20), kOne) << "source alpha: SourceAlphaSaturated";
+    EXPECT_EQ(registerOf(regs, kPerTarget + 24), kOne) << "destination alpha: DestinationAlpha";
+    ASSERT_TRUE(gm20b::emitState("samples=1 topo=0 ds=0/0 c0=552:15:1:8:9:0:10:8:0", vertex, fragment, regs, why))
+        << why;
+    EXPECT_EQ(registerOf(regs, kBlend), 1u);
+    EXPECT_EQ(registerOf(regs, kPerTarget + 8), kDstAlpha) << "BGRA10_XR holds its alpha";
+    EXPECT_EQ(registerOf(regs, kPerTarget + 12), kOneMinusDstAlpha);
 }
 
 // nvk_switch_xr_planes.c decode: the read on Metal's grid of 16 steps a code, half up, less the zero code's steps, times

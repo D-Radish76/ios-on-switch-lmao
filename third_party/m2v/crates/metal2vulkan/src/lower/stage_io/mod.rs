@@ -264,6 +264,10 @@ pub struct PlannedOutput {
     /// the image's alpha lane (Metal's blue) holds Metal's blue times Metal's alpha, each clamped
     /// to `[0, 1]` with a NaN taken as 0, multiplied without contraction.
     pub premultiplied: bool,
+    /// A fragment function's first output to an extended-range attachment's `RGBA16Float`
+    /// stand-in (`LoweringInputs::stand_in_colors`): its float lanes clamped as Metal clamps
+    /// them, before their conversion.
+    pub stand_in: Option<crate::pipeline::lower_inputs::StandInColor>,
     /// The `u32` push field added to the part before `below` holds it: under
     /// `LoweringInputs::amplification_draws`, the amplification's offset added to a vertex
     /// function's viewport and render target slice indices, in their builtins and raw varyings
@@ -1768,7 +1772,13 @@ fn output_part(
         }
         Some(color) => match cx.plan.families.stage_io.extended.get(&color).copied() {
             Some(e) => extended_color::encode(cx, fb, e, o.link.form, part)?,
-            None => color_write::round(cx, fb, color, o.link.form, part)?,
+            None => {
+                let part = match o.stand_in {
+                    Some(s) => stand_in_clamped(fb, s, o.link.form, part)?,
+                    None => part,
+                };
+                color_write::round(cx, fb, color, o.link.form, part)?
+            }
         },
         None => part,
     };
@@ -1781,6 +1791,29 @@ fn output_part(
         true => premultiplied_blue(fb, o.link.form, part),
         false => Ok(part),
     }
+}
+
+/// Output `part` (of float form `form`) to an extended-range attachment's stand-in `s`, each color
+/// lane clamped to `s`'s bounds and alpha to `[0, 1]`, a NaN to the low end (`NClamp`).
+fn stand_in_clamped(
+    fb: &mut FunctionBuilder<'_>,
+    s: crate::pipeline::lower_inputs::StandInColor,
+    form: Form,
+    part: SValue,
+) -> BResult<SValue> {
+    let (lo, hi) = s.color_bounds();
+    let lo = ops::fsplat(fb, form, f64::from(lo))?;
+    let hi = ops::fsplat(fb, form, f64::from(hi))?;
+    let clamped = fb.glsl(GlslOp::NClamp, &[part, lo, hi])?;
+    if form.lanes != 4 {
+        return Ok(clamped);
+    }
+    let one = Form { lanes: 1, ..form };
+    let zero = ops::fsplat(fb, one, 0.0)?;
+    let unit = ops::fsplat(fb, one, 1.0)?;
+    let alpha = fb.composite_extract(clamped, &[3])?;
+    let alpha = fb.glsl(GlslOp::NClamp, &[alpha, zero, unit])?;
+    fb.composite_insert(alpha, clamped, &[3])
 }
 
 /// The raw components a write of first output `part` (of `form`) to extended-range attachment

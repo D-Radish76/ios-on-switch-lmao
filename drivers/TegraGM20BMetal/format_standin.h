@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Colour targets of the formats the GM20B renders none of (FormatInfo rt 0) that Metal renders: R8Unorm_sRGB (11),
-// A1BGR5Unorm (41), ABGR4Unorm (42), RGB9E5Float (93), BGRA10_XR_sRGB (553) and BGR10_XR_sRGB (555). A pass renders such an
+// A1BGR5Unorm (41), ABGR4Unorm (42), RGB9E5Float (93) and Apple's extended-range formats (550 to 555, xr.h: the GM20B
+// renders their codes as integers, which it cannot blend, and holds no tile of their halves). A pass renders such an
 // attachment into a block-linear stand-in of the command buffer's (backing tag kFormatStandInTag + slot), its states made
-// for the stand-in's format (TegraGM20BMetalYcbcrTargets.mm standInTargetState), filled from the texture before a pass that does not
+// for the stand-in's format (TegraGM20BMetalYcbcrTargets.mm standInTargetState; an extended-range one's the descriptor's own,
+// which the translator lowers onto the stand-in), filled from the texture before a pass that does not
 // clear it and put back after one that stores it. As an M4 Max renders them (probe/fmt: fmtq, edges):
 //  - R8Unorm_sRGB holds 8-bit sRGB codes after every draw: an RGBA8Unorm_sRGB stand-in, whose first byte the copy engine
 //    moves in and out (BlitEncoder::copyFirstByte); RG8Unorm_sRGB (31) its first two (copyFirstTwoBytes), the GM20B having
@@ -15,12 +17,13 @@
 //  - RGB9E5Float holds its own words after every draw, each mantissa truncated, a clear's rounded: the same stand-in, the store
 //    state truncating, into the words viewed as R32Uint. A pass whose draws do not blend over one another stores Metal's words;
 //    blends over earlier draws lie within the truncations Metal makes between them.
-//  - BGR10_XR_sRGB (555), BGRA10_XR_sRGB (553) and RGB10A8_2P_XR10_sRGB (551): each colour code through Metal's sRGB tables
-//    (xr_srgb.h), which GM20B applies to no 10-bit offset code (nil_formats.csv: 8-bit UNORM channels and sRGB block
-//    formats alone). An RGBA16Float stand-in, Metal's tile (xr.h xrTargetState), filled with Metal's blend read of the codes and
-//    stored through Metal's write encode into the words viewed as R32Uint, RGBA16Uint or RG32Uint (551 over a surface's
-//    two planes: from both and into both, the word plane and the alpha plane two targets of the store's pass); a loaded
-//    pass's store keeps the texels no draw changed.
+//  - the extended-range formats: an RGBA16Float stand-in, Metal's tile (xr.h xrTargetState), which the ROP blends,
+//    filled with Metal's blend read of the codes and stored through Metal's write encode into the words viewed as R32Uint
+//    (BGR10_XR and its twin), RGBA16Uint (BGRA10_XR's fields) or RG32Uint (a descriptor's RGB10A8_2P_XR10, a word and a
+//    byte; one over a surface's two planes from both and into both, the word plane and the alpha plane two targets of the
+//    store's pass); a loaded pass's store keeps the texels no draw changed. The sRGB twins' colour codes go through
+//    Metal's sRGB tables (xr_srgb.h), which GM20B applies to no 10-bit offset code (nil_formats.csv: 8-bit UNORM channels
+//    and sRGB block formats alone).
 //  - BGRA4Unorm (44): ABGR4Unorm's rules over NIL's B4G4R4A4_UNORM (blue in the low bits), its header NIL's.
 //  - ARGB8Unorm (84) and its sRGB form (85): sampled through RGBA8's header with the channels rotated (its alpha byte first:
 //    the header's red source reads alpha); no colour target of that byte order, so an RGBA8 (an sRGB one's RGBA8_sRGB)
@@ -45,6 +48,8 @@ constexpr uint32_t kR8UnormSrgb = 11, kRg8UnormSrgb = 31, kA1Bgr5Unorm = 41, kAb
 // The format a pass renders such an attachment into, 0 for any other
 constexpr uint32_t formatStandIn(uint32_t format)
 {
+    if (xrTarget(format))
+        return kXrStandInFormat;
     switch (format) {
     case kR8UnormSrgb:
     case kRg8UnormSrgb:
@@ -57,10 +62,6 @@ constexpr uint32_t formatStandIn(uint32_t format)
     case kBgra4Unorm:
     case kRgb9e5Float:
         return 125;  // RGBA32Float
-    case kBgra10XrSrgb:
-    case kBgr10XrSrgb:
-    case kRgb10A8XrSrgb:
-        return 115;  // RGBA16Float
     default:
         return 0;
     }
@@ -70,7 +71,7 @@ constexpr uint32_t formatStandIn(uint32_t format)
 // own sampled header
 constexpr bool formatLoadsWords(uint32_t format)
 {
-    return format == kRgb9e5Float || format == kBgra10XrSrgb || format == kBgr10XrSrgb || format == kRgb10A8XrSrgb;
+    return format == kRgb9e5Float || xrTarget(format);
 }
 
 // Whether the copy engine fills and stores the stand-in (no pack state)
@@ -83,7 +84,7 @@ constexpr bool formatStandInCopied(uint32_t format)
 constexpr bool formatHoldsAlpha(uint32_t format)
 {
     return format == kA1Bgr5Unorm || format == kAbgr4Unorm || format == kBgra4Unorm || format == kArgb8Unorm ||
-           format == kArgb8UnormSrgb || format == kBgra10XrSrgb || format == kRgb10A8XrSrgb;
+           format == kArgb8UnormSrgb || (xrTarget(format) && format <= kBgra10XrSrgb);
 }
 
 // Whether the store state of such an attachment reads its codes (texture 1, a surface's alpha plane texture 2) and keeps
@@ -145,10 +146,10 @@ constexpr const char *formatStoreState(uint32_t format, uint32_t samples = 1)
 
 constexpr uint32_t formatStoreView(uint32_t format)
 {
-    return format == kBgra10XrSrgb    ? 113 /* RGBA16Uint */
-           : format == kRgb10A8XrSrgb ? 103 /* RG32Uint */
-           : formatLoadsWords(format) ? 53  /* R32Uint */
-                                      : 23 /* R16Uint */;
+    return format == 552 || format == kBgra10XrSrgb    ? 113 /* RGBA16Uint */
+           : format == 550 || format == kRgb10A8XrSrgb ? 103 /* RG32Uint */
+           : formatLoadsWords(format)                  ? 53  /* R32Uint */
+                                                       : 23 /* R16Uint */;
 }
 
 // A drawn channel's code (pack/fmt.metal drawnCode): its nearest half, a tie to even, clamped, a NaN 0, then the
@@ -222,15 +223,16 @@ inline uint32_t formatStoredWord(uint32_t format, const float v[4])
 // texture Metal keeps losslessly compressed (fresh.h metalCompresses) clears to the clear's own codes: each code the
 // nearest, a tie up, RGB9E5's mantissas rounded; the stand-in holds their floats. Any other clears as a draw of the clear's
 // colour (probe/fmt/clears.mm: every one of 512 clears by one rule or the other, by usage). R8Unorm_sRGB's clear is the
-// RGBA8Unorm_sRGB stand-in's own. BGR10_XR_sRGB's and BGRA10_XR_sRGB's tiles hold a clear as each channel's nearest half,
-// BGR10_XR_sRGB's alpha 1 (m2v ExtendedRange::clear_tile_value), a draw's route: Metal's straight route (a compressed
-// texture's pass that records no draw) is not told apart here, and stores within one code of it.
+// RGBA8Unorm_sRGB stand-in's own. An extended-range format's tile holds a clear as each channel's nearest half, a format
+// of no alpha's alpha 1 (m2v ExtendedRange::clear_tile_value): a draw's route. Metal's straight route (a compressed
+// texture's pass that records no draw) clears BGR10_XR's and BGRA10_XR's codes through the clear registers
+// (TegraGM20BMetalRangeForms.mm formatStandIns); the sRGB twins' is not told apart, and stores within one code of it.
 inline void formatStandInClear(uint32_t format, const float in[4], float out[4], bool compressed)
 {
-    if (format == kBgr10XrSrgb || format == kBgra10XrSrgb || format == kRgb10A8XrSrgb) {
+    if (xrTarget(format)) {
         for (int k = 0; k < 4; k++)
             out[k] = float(_Float16(in[k]));
-        if (format == kBgr10XrSrgb)
+        if (!formatHoldsAlpha(format))
             out[3] = 1.0f;
         return;
     }

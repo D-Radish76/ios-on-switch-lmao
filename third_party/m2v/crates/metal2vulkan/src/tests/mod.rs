@@ -130,6 +130,7 @@ mod engine_srgb_raw;
 mod engine_stage_io;
 mod engine_stage_io_tail;
 mod engine_stage_root_attributes;
+mod engine_stand_in_colors;
 mod engine_stencil;
 mod engine_storage_view_variant;
 mod engine_swizzled_storage;

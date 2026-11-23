@@ -289,22 +289,6 @@ gm20b::Variant<gm20b::Pipeline> *gm20bRenderVariant(SwitchMetalPipeline *p, cons
                                                     const std::vector<gm20b::WrittenTexture> &written,
                                                     uint8_t xrShadows);
 
-// TegraGM20BMetalXrShadow.mm (xr_shadow.h): a render encoder's pass opened, each draw of a state, each state and variant its
-// draws take, an execution of indirect commands, the encoder ended (its held colours' shadowed variants asked); at the queue
-// head, 0 while a shadowed variant of the range is being made (one refused or failed: its pass holds none); a pass's
-// shadows, and filled before it into `p` (false: *why)
-void gm20bXrShadowBegin(SwitchMetalCommandBuffer *cb, SwitchMetalRenderEncoder *e, const SwitchMetalPass &facts);
-void gm20bXrShadowDrew(SwitchMetalCommandBuffer *cb, const gm20b::Pipeline &base);
-void gm20bXrShadowDraw(SwitchMetalCommandBuffer *cb, SwitchMetalPipeline *pipe, const gm20b::Pipeline &base,
-                       gm20b::Variant<gm20b::Pipeline> *variant, const gm20b::CubicBinds &binds, uint8_t tests,
-                       bool planes, uint16_t xrSlots, const std::vector<gm20b::WrittenTexture> &written);
-void gm20bXrShadowBlock(SwitchMetalCommandBuffer *cb);
-void gm20bXrShadowEnd(SwitchMetalCommandBuffer *cb);
-int gm20bXrShadowReadiness(SwitchMetalCommandBuffer *cb, size_t from, size_t to);
-const SwitchMetalXrShadowTwins *gm20bXrShadowTwinsOf(const SwitchMetalCommandBuffer *cb, uint32_t passAt);
-bool gm20bXrShadowFill(gm20b::CommandBuffer *rc, const SwitchMetalPass &pass, gm20b::PassDesc &p,
-                       std::deque<gm20b::Texture> &codes, const char **why);
-
 // TegraGM20BMetalHeap.mm: the purged heaps a committed command buffer's resources lie in, given their pages back before it is encoded
 // (it counts as committed already, so no purge runs meanwhile)
 void restoreArenas(SwitchMetalCommandBuffer *cb);

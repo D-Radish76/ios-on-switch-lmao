@@ -77,7 +77,8 @@ void SwitchMetalRangeEncode::planesBack()
 // A turned one's stand-in, laid out as its plane, is filled and stored straight and drawn turned (TurnedPass)
 // A pass that draws nothing (in no sub-encoder that continues it either) and neither clears nor resolves one keeps its
 // codes: an M4 Max keeps a BGRA10_XR_sRGB alpha code past 894 there, which the tiles its draws touch clamp (m2v-textures4
-// probes/xr553.mm, more.mm corner)
+// probes/xr553.mm, more.mm corner). One that draws nothing and clears a BGR10_XR or BGRA10_XR one renders no stand-in:
+// the clear registers write its codes (xr.h xrClearTexel), Metal's straight route on memory it compresses
 bool SwitchMetalRangeEncode::formatStandIns(const SwitchMetalPass &pass, gm20b::PassDesc &p, const PlanDraws &draws,
                                             bool continued)
 {
@@ -85,8 +86,11 @@ bool SwitchMetalRangeEncode::formatStandIns(const SwitchMetalPass &pass, gm20b::
     for (const auto &[t, j] : formatTargets_) {
         const gm20b::ColorAttachment bound = p.color[j];
         const SwitchMetalPass::Color &a = pass.color[j];
-        const bool kept =
-            !continued && a.load != MTLLoadActionClear && !a.resolve && !(drawn ? *drawn : *(drawn = draws.any()));
+        const bool drawless = !continued && !a.resolve && !(drawn ? *drawn : *(drawn = draws.any()));
+        const uint32_t format = t->_raw.format;
+        if (drawless && a.load == MTLLoadActionClear && (format == 552 || format == 554))
+            continue;
+        const bool kept = drawless && a.load != MTLLoadActionClear;
         const bool fill = !kept && !t->_raw.memoryless && a.load != MTLLoadActionClear;
         gm20b::Texture *standIn = gm20b::formatStandInFor(*d_, *rc_, bound, p.layers, j, fill, why_);
         if (!standIn) {

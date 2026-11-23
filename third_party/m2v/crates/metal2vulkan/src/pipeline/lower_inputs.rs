@@ -328,6 +328,13 @@ pub struct LoweringInputs {
     /// elsewhere.
     #[cfg_attr(feature = "serde", serde(default))]
     pub two_plane_alphas: BTreeMap<u32, u32>,
+    /// The color attachments held in an `RGBA16Float` stand-in of one of Apple's extended-range
+    /// formats, by color index ([`StandInColor`]): the function's color outputs there carry
+    /// Metal's clamp of them. `Device::compile_render_pipeline` sets it for a `Function` fragment
+    /// stage from the pipeline's color attachments (`ColorAttachmentDescriptor::stand_in`). Empty
+    /// for any other function.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub stand_in_colors: BTreeMap<u32, StandInColor>,
     /// The color attachments the fragment function reads (`[[color(n)]]`) that its render
     /// pipeline gives an 8-bit four-channel sRGB format (`RGBA8Unorm_sRGB`, `BGRA8Unorm_sRGB`),
     /// by color index. Read through an input attachment, such an attachment's value is the
@@ -774,6 +781,53 @@ impl ExtendedRangeColor {
             nearest_even: self.form.bfloat()
                 && rounding == metal::TextureWriteRoundingMode::NearestEven,
             ..self
+        }
+    }
+}
+
+/// A color attachment held in an `RGBA16Float` stand-in of one of Apple's extended-range formats
+/// (`LoweringInputs::stand_in_colors`): the stand-in is Metal's tile, which the pipeline's blend
+/// reads and writes in the device's float blender, so the output carries Metal's own clamp (an
+/// Apple M4 under macOS 27.2.1, xr-float probe "write" and "tile"): a blended output's color lanes
+/// to the source range of Metal's blend ([`extended_range::SOURCE_RANGE`],
+/// `BGRA10_XR_sRGB`'s [`extended_range::SRGB_SOURCE_RANGE`]), an unblended one's to the values of
+/// codes 0 and 1023, which its store keeps, and alpha to `[0, 1]`; a NaN to the low end.
+///
+/// [`extended_range::SOURCE_RANGE`]: crate::lower::arith::extended_range::SOURCE_RANGE
+/// [`extended_range::SRGB_SOURCE_RANGE`]: crate::lower::arith::extended_range::SRGB_SOURCE_RANGE
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StandInColor {
+    /// The extended-range format the attachment stands in for.
+    pub form: metal::format::ExtendedRange,
+    /// The pipeline blends the attachment.
+    pub blended: bool,
+}
+
+impl StandInColor {
+    /// The stand-in of an attachment of `form`, blended where `blended`.
+    pub fn new(form: metal::format::ExtendedRange, blended: bool) -> StandInColor {
+        StandInColor { form, blended }
+    }
+
+    /// The lowest and highest value of an output's color lanes.
+    pub(crate) fn color_bounds(self) -> (f32, f32) {
+        use crate::lower::arith::extended_range::{SOURCE_RANGE, SRGB_SOURCE_RANGE};
+        use crate::metal::format::ExtendedRange;
+        let srgb = matches!(
+            self.form,
+            ExtendedRange::Bgr10 { srgb: true }
+                | ExtendedRange::Bgra10 { srgb: true }
+                | ExtendedRange::Planes { srgb: true }
+        );
+        match (self.blended, self.form) {
+            (true, ExtendedRange::Bgra10 { srgb: true }) => SRGB_SOURCE_RANGE,
+            (true, _) => SOURCE_RANGE,
+            // The sRGB codes 0 and 1023 read -0.52734375 and 1.6748046875; the linear ones
+            // -384/510 and 639/510 as halves
+            (false, _) if srgb => (-1080.0 / 2048.0, 1715.0 / 1024.0),
+            (false, _) => (-1542.0 / 2048.0, 1283.0 / 1024.0),
         }
     }
 }

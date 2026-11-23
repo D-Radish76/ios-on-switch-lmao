@@ -663,6 +663,7 @@ fn the_inputs_encoding_is_the_earlier_derived_debug() {
                 .replace(", two_plane_textures: {}", "")
                 .replace(", extended_range_colors: {}", "")
                 .replace(", two_plane_alphas: {}", "")
+                .replace(", stand_in_colors: {}", "")
                 .replace(", srgb_fetches: {}", "")
                 .replace(", zeroed_colors: {}", "")
                 .replace(", dropped_colors: {}", "")

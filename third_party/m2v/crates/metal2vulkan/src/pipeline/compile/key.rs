@@ -227,6 +227,11 @@ pub fn function_key(
             .bytes(format!("{:?}", inputs.two_plane_alphas).as_bytes());
     }
     // Appended only when set, as `storage_view_slots`.
+    if !inputs.stand_in_colors.is_empty() {
+        h.bytes(b"stand-in-colors")
+            .bytes(format!("{:?}", inputs.stand_in_colors).as_bytes());
+    }
+    // Appended only when set, as `storage_view_slots`.
     if !inputs.srgb_fetches.is_empty() {
         h.bytes(b"srgb-fetches")
             .bytes(format!("{:?}", inputs.srgb_fetches).as_bytes());

@@ -404,7 +404,6 @@ SwitchMetalEncoded encodeRaw(SwitchMetalCommandBuffer *cb, size_t from, size_t t
     // what was encoded ahead of the commit goes on: the rest of the range, then the seal; one that stopped submitted
     // nothing, and the range is encoded whole
     if (gm20bPipelineTake(cb, from)) {
-        cb->_xrShadowCurrent = nullptr;
         const bool encoded = encode.resume(to, why) && encode.step(to) && encode.seal(to);
         const bool stopped = !encoded && encode.vetoed();
         const bool waits = encode.producerPending();
@@ -417,7 +416,6 @@ SwitchMetalEncoded encodeRaw(SwitchMetalCommandBuffer *cb, size_t from, size_t t
         if (!stopped)
             return waits ? SwitchMetalEncoded::producerPending : SwitchMetalEncoded::stopped;
     }
-    cb->_xrShadowCurrent = nullptr;
     const bool encoded = encode.open(cb, from, to, true, why) && encode.step(to) && encode.seal(to);
     const bool waits = encode.producerPending();
     encode.reset();
