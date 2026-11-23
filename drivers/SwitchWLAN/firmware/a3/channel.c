@@ -127,7 +127,7 @@ int switch_a3_channel_claim(const struct switch_a3_channel_binding *binding)
     switch_a3_channel.binding = *binding;
     switch_a3_channel.scan = scan;
     switch_a3_channel.private_context = private_context;
-    switch_a3_channel.associated = *((uint8_t *)binding->bsscfg + 16) != 0;
+    switch_a3_channel.associated = *((uint8_t *)binding->bsscfg + 8) != 0;
     for (size_t index = 0; index < 6; ++index)
         switch_a3_channel.ap[index] = *((uint8_t *)binding->bsscfg + 216 + index);
     switch_a3_channel_pm_clear();
@@ -255,7 +255,7 @@ int switch_a3_channel_may_leave(void *wlc, uint32_t chanspec)
         switch_a3_channel.result = SWITCH_A3_CHANNEL_EXPIRED;
     else if (chanspec != binding->target_chanspec ||
              switch_a3_channel_read16((uint8_t *)wlc + 0x466) != binding->home_chanspec ||
-             ((*((uint8_t *)binding->bsscfg + 16) != 0) != switch_a3_channel.associated) ||
+             ((*((uint8_t *)binding->bsscfg + 8) != 0) != switch_a3_channel.associated) ||
              !switch_a3_channel_address((uint8_t *)binding->bsscfg + 216))
         switch_a3_channel.result = SWITCH_A3_CHANNEL_STATION_CHANGED;
     else if (chanspec != binding->home_chanspec && !switch_a3_channel_usable(wlc, (uint16_t)chanspec))

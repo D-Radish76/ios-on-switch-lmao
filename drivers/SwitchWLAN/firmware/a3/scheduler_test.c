@@ -22,7 +22,7 @@ static struct switch_a3_timer *switch_due;
 static struct switch_a3_excursion_request switch_request;
 static switch_a3_excursion_callback switch_callback;
 static void *switch_context;
-uint32_t switch_control_test_results[37];
+uint32_t switch_control_test_results[38];
 volatile uint32_t switch_control_test_done;
 
 #define SWITCH_REQUIRE(condition) \
@@ -144,7 +144,7 @@ int switch_a3_excursion_start(const struct switch_a3_excursion_request *request,
     return switch_start_error;
 }
 
-static void switch_complete(uint32_t reason)
+static void switch_complete_channel(uint32_t reason, uint32_t channel_result)
 {
     struct switch_a3_excursion_result result = {
         .returned_tsf = switch_now,
@@ -152,10 +152,16 @@ static void switch_complete(uint32_t reason)
         .clock_epoch = switch_request.clock_epoch,
         .generation = switch_request.generation,
         .reason = reason,
+        .channel_result = channel_result,
     };
     switch_native_pending = 0;
     switch_phy = switch_home;
     switch_callback(switch_context, SWITCH_A3_EXCURSION_COMPLETED, &result);
+}
+
+static void switch_complete(uint32_t reason)
+{
+    switch_complete_channel(reason, 0);
 }
 
 int switch_a3_excursion_cancel(void *wlc, uint32_t session, uint32_t epoch, uint32_t generation)
@@ -221,7 +227,8 @@ static struct switch_a3_schedule switch_reset(void)
     switch_timer_queue[52] = 1;
     switch_band[4] = (uint32_t)&switch_pi;
     *((uint8_t *)switch_wlc + 25) = 1;
-    *((uint8_t *)switch_bsscfg + 16) = 0;
+    *((uint8_t *)switch_bsscfg + 8) = 0;
+    *((uint8_t *)switch_bsscfg + 16) = 1;
     switch_clock_error = switch_beacon_error = switch_start_error = switch_cancel_deferred = 0;
     switch_ack_error = 0;
     switch_starts = switch_changed = switch_wakes = switch_pending_tx = 0;
@@ -415,7 +422,7 @@ static uint32_t switch_test(unsigned scenario)
         SWITCH_REQUIRE(switch_request.expiry_tsf == 33768 && !switch_request.station_bound_verified);
         return 0;
     }
-    *((uint8_t *)switch_bsscfg + 16) = 1;
+    *((uint8_t *)switch_bsscfg + 8) = 1;
     schedule.period_us = 200000;
     schedule.slots[0].dwell_us = 160000;
     schedule.slots[1].dwell_us = 40000;
@@ -531,7 +538,7 @@ static uint32_t switch_test_adjacent_windows(void)
         schedule.slots[0].chanspec = 0x1006;
         schedule.slots[1].chanspec = which == 1 ? switch_home : 0xd02c;
         if (which == 2) {
-            *((uint8_t *)switch_bsscfg + 16) = 1;
+            *((uint8_t *)switch_bsscfg + 8) = 1;
             switch_tbtt = 30000;
         }
         SWITCH_REQUIRE(!switch_start(&schedule) && switch_starts == 1);
@@ -560,6 +567,37 @@ static uint32_t switch_test_adjacent_windows(void)
     return 0;
 }
 
+static uint32_t switch_test_pm_retry(void)
+{
+    struct switch_a3_schedule schedule = switch_reset();
+    schedule.slots[0].chanspec = 0x1006;
+    schedule.period_us = 200000;
+    schedule.slots[0].dwell_us = 160000;
+    schedule.slots[1].dwell_us = 40000;
+    *((uint8_t *)switch_bsscfg + 8) = 1;
+    SWITCH_REQUIRE(!switch_start(&schedule) && switch_starts == 1 && switch_native_pending);
+    switch_now = 4000;
+    switch_complete_channel(SWITCH_A3_EXCURSION_ENTRY_FAILED, SWITCH_A3_CHANNEL_NO_PM_ACK);
+    SWITCH_REQUIRE(switch_due && switch_due->snapshot.armed && switch_due->snapshot.requested_tsf == 9000);
+    switch_fire(switch_timer_due);
+    SWITCH_REQUIRE(switch_starts == 2 && switch_native_pending);
+    switch_now = 154000;
+    switch_complete_channel(SWITCH_A3_EXCURSION_ENTRY_FAILED, SWITCH_A3_CHANNEL_NO_PM_ACK);
+    SWITCH_REQUIRE(switch_due && switch_due->snapshot.armed && switch_due->snapshot.requested_tsf == 161000);
+
+    schedule = switch_reset();
+    schedule.slots[0].chanspec = 0x1006;
+    schedule.period_us = 200000;
+    schedule.slots[0].dwell_us = 160000;
+    schedule.slots[1].dwell_us = 40000;
+    *((uint8_t *)switch_bsscfg + 8) = 1;
+    SWITCH_REQUIRE(!switch_start(&schedule) && switch_starts == 1);
+    switch_now = 4000;
+    switch_complete_channel(SWITCH_A3_EXCURSION_ENTRY_FAILED, SWITCH_A3_CHANNEL_RESTRICTED);
+    SWITCH_REQUIRE(switch_due && switch_due->snapshot.armed && switch_due->snapshot.requested_tsf == 161000);
+    return 0;
+}
+
 void switch_control_test_run(void)
 {
     for (unsigned index = 0; index < 29; ++index)
@@ -568,6 +606,7 @@ void switch_control_test_run(void)
         switch_control_test_results[index - 1] = switch_test(index);
     switch_control_test_results[34] = switch_test_phase();
     switch_control_test_results[35] = switch_test_adjacent_windows();
-    switch_control_test_results[36] = switch_test(29);
+    switch_control_test_results[36] = switch_test_pm_retry();
+    switch_control_test_results[37] = switch_test(29);
     switch_control_test_done = 0x53574133;
 }

@@ -177,7 +177,7 @@ int switch_a3_excursion_start(const struct switch_a3_excursion_request *request,
         return status;
     if (request->expiry_tsf <= now || request->expiry_tsf - now > 65535u * 1000u)
         return -29;
-    if (*((uint8_t *)request->bsscfg + 16) && request->target_chanspec != request->home_chanspec &&
+    if (*((uint8_t *)request->bsscfg + 8) && request->target_chanspec != request->home_chanspec &&
         (!request->station_bound_verified || !request->station_return_tsf ||
          request->expiry_tsf > request->station_return_tsf))
         return -23;

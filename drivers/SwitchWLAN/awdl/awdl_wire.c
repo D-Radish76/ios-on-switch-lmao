@@ -427,10 +427,10 @@ size_t awdl_data_encap(const uint8_t *eth, size_t len, const uint8_t self[6], ui
 static int msdu_at(const uint8_t *p, size_t n, const uint8_t *dst, const uint8_t *src, struct awdl_msdu *m,
                    uint16_t *seq)
 {
-    // Broadcom's AWDL firmware wraps MSDUs whose 802.3 length exceeds 1500 in an 8-byte RFC 1042 LLC/SNAP header.
+    // Broadcom's AWDL firmware wraps non-A-MSDU MSDUs in an 8-byte RFC 1042 LLC/SNAP header with the inner MSDU length.
     if (n >= 24 && !memcmp(p, kRfc1042, sizeof kRfc1042)) {
         const size_t inner = ((size_t)p[6] << 8) | p[7];
-        if (inner <= 1500 || inner > n - 8)
+        if (inner < 16 || inner > n - 8)
             return 0;
         p += 8;
         n = inner;

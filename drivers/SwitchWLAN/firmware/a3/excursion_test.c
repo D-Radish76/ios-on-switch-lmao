@@ -136,6 +136,7 @@ static void switch_reset(void)
     switch_write_pointer(switch_scan.bytes, 0, switch_private.bytes);
     switch_write_pointer(switch_private.bytes, 8, switch_wlc.bytes);
     switch_write_pointer(switch_bsscfg.bytes, 0, switch_wlc.bytes);
+    switch_bsscfg.bytes[16] = 1;
     switch_now = 1000;
     switch_clock_error = switch_initialize_error = switch_arm_error = switch_claim_error = 0;
     switch_rx_start_delay = switch_rx_sample_failure = 0;
@@ -384,7 +385,7 @@ static uint32_t switch_test_preflight(unsigned variant)
     switch_reset();
     int wanted = -23;
     if (variant < 4) {
-        switch_bsscfg.bytes[16] = 1;
+        switch_bsscfg.bytes[8] = 1;
         switch_request.station_bound_verified = variant != 0;
         switch_request.station_return_tsf = variant == 1 ? 0 : variant == 2 ? 9999 : 11000;
         if (variant == 3)

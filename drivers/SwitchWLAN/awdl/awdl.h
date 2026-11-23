@@ -35,7 +35,7 @@ extern "C" {
 #define AWDL_PEER_TIMEOUT_US   10000000u  // a peer silent this long is lost
 #define AWDL_ELECTION_MAX_HOPS 10u
 #define AWDL_ELECTION_RSSI_DBM (-65)  // an election candidate's running-average RSSI, on either band, reaches this
-#define AWDL_TXQ_FRAMES        32u
+#define AWDL_TXQ_FRAMES        64u
 #define AWDL_MAX_FRAME         1600u
 
 extern const uint8_t awdl_bssid[6];  // 00:25:00:ff:94:73, address 3 of every AWDL frame

@@ -54,7 +54,7 @@ static void *switch_a3_beacon_station(void *wlc)
     if (!wlc || !*((const uint8_t *)wlc + 25))
         return NULL;
     void *bsscfg = switch_a3_station_bsscfg(wlc);
-    return bsscfg && *((const uint8_t *)bsscfg + 16) ? bsscfg : NULL;
+    return bsscfg && *((const uint8_t *)bsscfg + 8) ? bsscfg : NULL;
 }
 
 int switch_a3_beacon_observe(void *wlc, const void *status, uint32_t status_bytes, const uint8_t *frame,

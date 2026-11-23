@@ -168,10 +168,16 @@ static void switch_a3_scheduler_excursion(void *context, uint32_t event,
                                                                                     : SWITCH_A3_FAULT_CHANNEL_RETURN;
         switch_a3_scheduler_fault(reason == SWITCH_A3_FAULT_CLOCK_BACKWARD ? -35 : -1, reason);
     } else if (switch_a3_scheduler.running && !switch_a3_scheduler.stepping) {
-        if (result->reason == SWITCH_A3_EXCURSION_OK)
+        if (result->reason == SWITCH_A3_EXCURSION_OK) {
             switch_a3_scheduler_step();
-        else
-            switch_a3_scheduler_arm(switch_a3_scheduler.window_end);
+        } else {
+            uint64_t next = switch_a3_scheduler.window_end;
+            if (result->reason == SWITCH_A3_EXCURSION_ENTRY_FAILED &&
+                result->channel_result == SWITCH_A3_CHANNEL_NO_PM_ACK && result->returned_tsf &&
+                next > result->returned_tsf && next - result->returned_tsf > 7000u)
+                next = result->returned_tsf + 5000u;
+            switch_a3_scheduler_arm(next);
+        }
     } else if (!switch_a3_scheduler.running && switch_a3_scheduler.changed) {
         switch_a3_scheduler.changed(switch_a3_scheduler.context, 0);
     }
@@ -241,7 +247,7 @@ static void switch_a3_scheduler_step(void)
         switch_a3_scheduler_fault(-25, SWITCH_A3_FAULT_HOME_CHANGED);
         return;
     }
-    if (*((const uint8_t *)bsscfg + 16)) {
+    if (*((const uint8_t *)bsscfg + 8)) {
         if (switch_a3_beacon_bound(switch_a3_scheduler.wlc, switch_a3_scheduler.home, now, &bsscfg, &station_return)) {
             SWITCH_A3_DIAG_COUNT(SCHED_BLOCK);
             switch_a3_scheduler_arm(boundary);

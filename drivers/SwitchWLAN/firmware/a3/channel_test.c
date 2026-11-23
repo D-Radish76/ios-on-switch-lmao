@@ -141,6 +141,7 @@ static void switch_reset(void)
     switch_pointer(switch_packet, 8, switch_header);
     switch_word16(switch_packet, 12, sizeof switch_header);
     switch_pointer(switch_scb, 16, switch_cfg);
+    *((uint8_t *)switch_cfg + 8) = 1;
     *((uint8_t *)switch_cfg + 16) = 1;
     for (size_t index = 0; index < 6; ++index) {
         *((uint8_t *)switch_cfg + 216 + index) = switch_ap[index];
@@ -187,7 +188,7 @@ static uint32_t switch_test_gate(uint32_t variant, uint32_t initial_depth)
 {
     switch_reset();
     if (variant == 13)
-        *((uint8_t *)switch_cfg + 16) = 0;
+        *((uint8_t *)switch_cfg + 8) = 0;
     if (variant == 14)
         switch_binding.target_chanspec = switch_binding.home_chanspec;
     SWITCH_REQUIRE(!switch_claim());
@@ -206,7 +207,7 @@ static uint32_t switch_test_gate(uint32_t variant, uint32_t initial_depth)
     if (variant == 6)
         *((uint8_t *)switch_cfg + 216) ^= 2;
     if (variant == 7)
-        *((uint8_t *)switch_cfg + 16) = 0;
+        *((uint8_t *)switch_cfg + 8) = 0;
     if (variant == 8)
         switch_word16(switch_wlc, 0x466, 0xd095);
     if (variant == 9)

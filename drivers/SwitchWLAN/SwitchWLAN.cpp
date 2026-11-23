@@ -385,6 +385,7 @@ private:
     swlan_evt_fn awdlLossFn_ = nullptr;
     void *awdlLossCtx_ = nullptr;
     bool setEventMask(bool awdl);
+    void setMpc(bool enabled);
     void awdlEvent(const swlan::Event &event);
     // Once a boot, after the first bring-up: GET of every AWDL variable either firmware generation uses, one os_log
     // line each (status, bytes), so one boot settles which AWDL API this firmware's table has (gAwdlProbe).
@@ -1076,6 +1077,13 @@ bool SwitchWLAN::cmdInt(uint32_t cmd, uint32_t value)
     return ioctl(cmd, le, sizeof(le), 0, nullptr, nullptr);
 }
 
+void SwitchWLAN::setMpc(bool enabled)
+{
+    const uint8_t value[4] = {static_cast<uint8_t>(enabled ? 1 : 0), 0, 0, 0};
+    if (!setVar("mpc", value, sizeof(value)))
+        IOLog("SwitchWLAN: mpc %u refused: %s\n", enabled ? 1u : 0u, why_);
+}
+
 // nxk wl.rs `init` (brcmf_c_preinit_dcmds, brcmf_config_dongle): our address, the events handled, station mode,
 // no power saving, no firmware roaming (it would start a key handshake with another access point behind the
 // supplicant's back; wifid decides on roams), en0's multicast groups (multicastApply), brcmf's join preference
@@ -1093,6 +1101,8 @@ bool SwitchWLAN::radioInit()
     });  // after a recovery an open AWDL keeps its events
     if (!setVar("cur_etheraddr", mac_, 6) || !setEventMask(awdl) || !cmdInt(WLC_SET_INFRA, 1) || !cmdInt(WLC_SET_PM, 0))
         return false;
+    if (awdl)
+        setMpc(false);
     if (!setVar("roam_off", on, sizeof(on)))
         IOLog("SwitchWLAN: roam_off refused: %s\n", why_);
     multicastApply();
@@ -3318,6 +3328,7 @@ int SwitchWLAN::awdlOpen(const swlan_awdl_caps **caps)
     if (switch_wlan_a3_radio_caps(&c)) {
         if (!markOpen())
             return -EBUSY;
+        setMpc(false);
         if (caps)
             *caps = &c;
         return 0;
@@ -3340,6 +3351,7 @@ int SwitchWLAN::awdlOpen(const swlan_awdl_caps **caps)
             });
             return -EIO;
         }
+        setMpc(false);
         IOLog("SwitchWLAN: AWDL: firmware AWDL opened (AWDL events on, %u AWDL flow rings)\n", mb_.awdlRingCount());
     }
     switch_wlan_soft_init();
@@ -3514,8 +3526,10 @@ void SwitchWLAN::awdlClose()
         if (up_)
             mb_.awdlClose();
     });
-    if (was && !loop_->onThread())
+    if (was && !loop_->onThread()) {
         setEventMask(false);
+        setMpc(true);
+    }
 }
 
 // "<name>\0<value>" on firmware interface `ifidx` (brcmf_fil_iovar_data_set/get on that interface's ifp: the msgbuf

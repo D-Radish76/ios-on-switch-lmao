@@ -60,6 +60,7 @@ static void switch_setup(void)
     *(void **)(switch_wlc.bytes + 32) = switch_band.bytes;
     *(void **)switch_cfg.bytes = switch_wlc.bytes;
     *(void **)(switch_cfg.bytes + 0x110) = switch_info.bytes;
+    switch_cfg.bytes[8] = 1;
     switch_cfg.bytes[16] = 1;
     switch_write16(switch_wlc.bytes + 0x466, 0x100b);
     switch_write16(switch_status + 22, 0x100b);
@@ -154,7 +155,7 @@ static void switch_malformed(void)
             switch_frame[40] = 254;
             break;
         case 18:
-            switch_cfg.bytes[16] = 0;
+            switch_cfg.bytes[8] = 0;
             break;
         case 19:
             switch_cfg.bytes[6] = 1;

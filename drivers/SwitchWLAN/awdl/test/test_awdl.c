@@ -481,8 +481,25 @@ static void test_data_encap(void)
     CHECK(awdl_data_msdus(amsdu, 40 + 8 + 1516, &msdu, 1, &seq, &retry) == 1);
     CHECK(msdu.ethertype == 0x86dd && msdu.len == 1500 && seq == 0x456);
     CHECK(!memcmp(msdu.payload, big_eth + 14, 1500));
+    uint8_t small_wrap[300];
+    memcpy(small_wrap, f, 24);
+    small_wrap[0] = 0x88;
+    small_wrap[24] = 0;
+    small_wrap[25] = 0;
+    const size_t small_inner = n - 24;
+    const uint8_t small_rfc1042[8] = {
+        0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00, (uint8_t)(small_inner >> 8), (uint8_t)(small_inner & 0xff),
+    };
+    memcpy(small_wrap + 26, small_rfc1042, sizeof small_rfc1042);
+    memcpy(small_wrap + 34, f + 24, small_inner);
+    CHECK(awdl_data_decap(small_wrap, 26 + 8 + small_inner, back, sizeof back, &seq, &retry) == 200);
+    CHECK(!memcmp(back, eth, 200) && seq == 0x123 && !retry);
     big_wrap[32] = 0x05;
     big_wrap[33] = 0xdc;
+    CHECK(awdl_data_decap(big_wrap, wrap_len, big_back, sizeof big_back, &seq, &retry) == 1498);
+    CHECK(!memcmp(big_back, big_eth, 1498) && seq == 0x456 && !retry);
+    big_wrap[32] = 0x00;
+    big_wrap[33] = 0x0f;
     CHECK(awdl_data_decap(big_wrap, wrap_len, big_back, sizeof big_back, NULL, NULL) == 0);
     big_wrap[32] = 0x05;
     big_wrap[33] = 0xed;
