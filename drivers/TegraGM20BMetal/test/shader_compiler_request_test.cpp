@@ -306,6 +306,41 @@ TEST(CompileRequest, OneWhoseClaimedKeyDiffersIsRefused)
     EXPECT_FALSE(switch_compiler::prepare(gm20b::encodeRequest(r), kStack + 1, system, p, why));
 }
 
+// The compiler's replay of its request log (compiler_service.mm warm) after a build whose stack key moved
+TEST(CompileRequest, ARequestAnEarlierBuildLoggedPreparesUnderThisBuildsKeyAndName)
+{
+    gm20b::CompileRequest r = renderRequest();
+    r.key = runtimeKey(r).key;
+    gm20b::CompileRequest earlier = r;
+    earlier.stack = kStack + 1;
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(switch_compiler::restacked(gm20b::encodeRequest(earlier), kStack), kStack,
+                                         system, p, why))
+        << why;
+    EXPECT_EQ(p.key.stack, kStack);
+    EXPECT_EQ(p.name, gm20b::storeName(runtimeKey(r), r, identities(r)));
+}
+
+// The replay restamps a logged request's stack, never its layout: a request the build before the extended-range
+// stand-in logged (SWCREQ05, with the shadowed and two-plane colours' bytes) is unreadable to restacked as to prepare,
+// so the replay drops it whole (its line's dropped count) and makes nothing of fields read in this layout
+TEST(CompileRequest, ALoggedRequestOfLayout05IsDroppedByTheReplay)
+{
+    gm20b::CompileRequest r = layout03Request();
+    r.stack = kStack + 1;
+    std::string logged = layout03::encode(r, true);
+    logged.replace(0, 8, "SWCREQ05");
+    EXPECT_EQ(switch_compiler::restacked(logged, kStack), logged);
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    EXPECT_FALSE(switch_compiler::prepare(switch_compiler::restacked(logged, kStack), kStack, system, p, why));
+    EXPECT_EQ(why, "an unreadable request");
+    EXPECT_EQ(switch_compiler::restacked("no request", kStack), "no request");
+}
+
 TEST(CompileRequest, TheStoreNameBindsLibraryBytesAndRasterization)
 {
     gm20b::CompileRequest r = renderRequest();

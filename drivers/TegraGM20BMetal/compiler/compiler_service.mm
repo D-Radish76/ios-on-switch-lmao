@@ -391,7 +391,9 @@ void Service::open(uint64_t stack)
 }
 
 // The requests an earlier store was made from, made again as background work nobody waits for, one at a time: the pool
-// runs one background compile at once, and a queued request would hold its libraries' bytes until it ran. A store
+// runs one background compile at once, and a queued request would hold its libraries' bytes until it ran. One an
+// earlier build logged is made under this build's stack key, so the states a device made before a key moved are made
+// again rather than dropped; one of another layout, or whose fields this build keys otherwise, is dropped. A store
 // already holding one gets the record's program slots it lacks (a store written before they were kept, or one that
 // dropped them). A stored refusal this compiler build has not confirmed is made again too (compiler_refusals.h).
 void Service::warm(uint64_t stack)
@@ -402,7 +404,7 @@ void Service::warm(uint64_t stack)
     log_.replay([&](const std::string &request, gm20b::Digest &name) {
         Prepared prepared;
         std::string why;
-        if (!prepare(request, stack, system_, prepared, why)) {
+        if (!prepare(restacked(request, stack), stack, system_, prepared, why)) {
             dropped++;
             return false;
         }

@@ -210,6 +210,15 @@ bool SystemLibraries::air(const std::string &path, std::map<std::string, gm20b::
     return true;
 }
 
+std::string restacked(const std::string &bytes, uint64_t stack)
+{
+    gm20b::CompileRequest r;
+    if (!gm20b::decodeRequest(bytes, r))
+        return bytes;
+    r.stack = stack;
+    return gm20b::encodeRequest(r);
+}
+
 bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, Prepared &out, std::string &why)
 {
     Prepared p;
