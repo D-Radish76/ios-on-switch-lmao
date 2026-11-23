@@ -296,7 +296,7 @@ typedef struct NmbDirectKernel {
     // The push-constant words [0, 128) of the probe's three dispatches: inline bytes, buffers elsewhere, buffers off 16
     uint32_t pushMask, push[32], movedMask, moved[32], boundMask, bound[32];
     // The buffers-elsewhere dispatch ran on the same variant, specialization and set-0 plan (a plan the bind offsets
-    // change is refused at its compile: NativeMetalDirectCompute.rs record_residuals)
+    // change is refused at its compile: NativeMetalDirectComputeWords.rs record_residuals)
     bool movedSame;
     int32_t regionWord;  // the push word of m2v's DispatchRegion field, -1: none
     uint32_t regions;    // the plain dispatch's Vulkan dispatches

@@ -16,6 +16,14 @@ pub mod direct;
 pub mod direct_abi;
 #[path = "NativeMetalDirectCompute.rs"]
 pub mod direct_compute;
+#[path = "NativeMetalDirectComputeAbi.rs"]
+pub mod direct_compute_abi;
+#[path = "NativeMetalDirectComputeBinds.rs"]
+mod direct_compute_binds;
+#[path = "NativeMetalDirectComputeWords.rs"]
+mod direct_compute_words;
+#[path = "NativeMetalDirectComputeWrites.rs"]
+mod direct_compute_writes;
 #[path = "NativeMetalDirectDraw.rs"]
 mod direct_draw;
 #[path = "NativeMetalDirectLayout.rs"]
