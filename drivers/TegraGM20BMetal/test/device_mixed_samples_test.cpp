@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Multisampled passes' forms on gm20b::Device: a one-sample colour beside a four-sample depth (target-independent
-// rasterisation), and a multisampled clear's reach.
+// rasterisation), a multisampled clear's reach, and which sample counts take a zcull region.
 #include "device_forms.h"
+#include "TegraGM20BZcullABI.h"
 
 namespace {
 
@@ -123,6 +124,58 @@ TEST_F(DevicePassForms, AMixedPassSetsEachStatesCoverageRule)
     EXPECT_EQ(controls.back(), gm20b::tirControl(1));
     for (const uint32_t m : values(ms, NVB197_SET_SAMPLE_MASK_X0_Y0))
         EXPECT_EQ(m, 0xffffu);
+}
+
+constexpr uint32_t kSetActiveZcullRegion = 0x1590;  // 0: the pass's region; 0x3f: none (zcull.h)
+// The X1's zcull layout (one GPC, 2048 aliquots), as zcull_test.cpp holds it
+constexpr TegraGM20BAbiZcullInfo kX1Zcull = {32, 32, 1024, 2048, 32, 32, 192, 16, 32, 64, 0x1500, 0x1000};
+
+// The device over a kernel that reports zcull
+class DeviceZcullPasses : public DevicePassForms {
+protected:
+    void SetUp() override
+    {
+        kernel_model::model = {};
+        kernel_model::model.otherMethod = [](uint32_t method, void *output) -> kern_return_t {
+            if (method != TegraGM20BMethodZcullInfo)
+                return kIOReturnUnsupported;
+            *static_cast<TegraGM20BAbiZcullInfo *>(output) = kX1Zcull;
+            return KERN_SUCCESS;
+        };
+        std::string err;
+        ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, gm20b::Device::Role::Client)) << err;
+    }
+
+    // What one pass over a cleared depth of `zetaSamples` beside a memoryless colour of `samples` sets its active zcull
+    // region to
+    std::vector<uint32_t> regions(uint32_t samples, uint32_t zetaSamples)
+    {
+        gm20b::Texture colour, zeta;
+        EXPECT_TRUE(dev.createMemoryless(32, 32, kRGBA8, colour, samples));
+        EXPECT_TRUE(dev.createOwnedZeta(32, 32, kDepth32Float, zetaSamples, true, zeta));
+        gm20b::PassDesc p;
+        p.color[0] = kept(colour, gm20b::ColorAttachment::Clear);
+        p.color[0].store = false;
+        p.count = 1;
+        p.depthStencil = {&zeta, true, false, 1.0f, 0};
+        std::string why;
+        const auto ms = pass(p, &why);
+        EXPECT_FALSE(ms.empty()) << why;
+        return values(ms, kSetActiveZcullRegion);
+    }
+};
+
+// A pass takes a region at any sample count its colour and depth share, as NVK's begin does (the render area's pixels at
+// any sample count); a mixed pass, whose depth has more samples than its colour, takes none
+TEST_F(DeviceZcullPasses, APassOfOneSampleCountTakesARegionAndAMixedOneNone)
+{
+    for (const uint32_t samples : {1u, 4u}) {
+        const auto set = regions(samples, samples);
+        EXPECT_NE(std::find(set.begin(), set.end(), 0u), set.end()) << samples << " samples";
+    }
+    const auto mixed = regions(1, 4);
+    EXPECT_EQ(std::find(mixed.begin(), mixed.end(), 0u), mixed.end());
+    EXPECT_NE(std::find(mixed.begin(), mixed.end(), 0x3fu), mixed.end());
 }
 
 TEST_F(DevicePassForms, OtherMixedSampleCountsAreRefused)

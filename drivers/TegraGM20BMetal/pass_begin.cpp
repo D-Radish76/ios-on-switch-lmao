@@ -258,7 +258,7 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass, const char **why)
     // (a mixed pass keeps zcull off: which sample layout its regions take under target-independent rasterisation is not
     // in the class header)
     ZcullAsk zask;
-    zask.on = dev_->zcullOn_ && e.rasterSamples_ == e.samples_;
+    zask.on = dev_->zcullOn_ && e.rasterSamples_ <= e.samples_;
 #if SWITCH_METAL_DIAGNOSTICS
     zask.on |= dev_->zcullOn_ && e.samples_ == 1 && e.rasterSamples_ == 4 &&
                dev_->probeZcullMixed.load(std::memory_order_relaxed);
