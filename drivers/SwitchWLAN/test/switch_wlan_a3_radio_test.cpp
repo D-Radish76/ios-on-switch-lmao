@@ -8,7 +8,9 @@
 #include "../awdl/awdl.h"
 #include "../awdl/awdl_radio.h"
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <functional>
+#include <utility>
 #include <vector>
 #include "bazel/testing/fresh_process.h"
 
@@ -565,6 +567,27 @@ TEST_F(SwitchA3Radio, StopAndAddressChangeCancelQueuedRequestsOnce)
     EXPECT_TRUE(switch_firmware.dma.empty());
 }
 
+TEST_F(SwitchA3Radio, CancelReportsTransferredRequestsAsPossiblySent)
+{
+    switch_ready();
+    const int transferred = switch_send();
+    ASSERT_GT(transferred, 0);
+    switch_drain();
+    ASSERT_EQ(switch_firmware.dma.size(), 1u);
+    const int queued = switch_send();
+    ASSERT_GT(queued, 0);
+    ASSERT_EQ(switch_refilter(), 0);
+    switch_drain();
+    EXPECT_EQ(switch_firmware.dma.size(), 1u);
+    std::vector<std::pair<int, uint16_t>> reports;
+    for (const auto &event : switch_firmware.events)
+        if (event.type == SWLAN_AWDL_TXDONE)
+            reports.emplace_back(static_cast<int>(event.id), event.status);
+    std::sort(reports.begin(), reports.end());
+    const std::vector<std::pair<int, uint16_t>> expected = {{transferred, ETIME}, {queued, ECANCELED}};
+    EXPECT_EQ(reports, expected);
+}
+
 TEST_F(SwitchA3Radio, ClockEpochChangesDiscardEarlierBurstAndInvalidateConfiguration)
 {
     switch_ready();
@@ -750,7 +773,7 @@ TEST_F(SwitchA3Radio, MissingCanceledStatusDoesNotBlockProvenRfAndDmaRetirement)
     unsigned canceled = 0;
     for (const auto &event : switch_firmware.events)
         canceled += event.type == SWLAN_AWDL_TXDONE && event.id == static_cast<uint32_t>(id) &&
-                    event.status == ECANCELED;
+                    event.status == ETIME;
     EXPECT_EQ(canceled, 1u);
     const auto events = switch_firmware.events.size();
     switch_complete(packet);

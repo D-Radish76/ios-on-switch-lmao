@@ -67,8 +67,10 @@ void cancelTx(bool retainSubmitted)
     for (auto &pending : gPending) {
         if (!pending.id || (retainSubmitted && pending.transport))
             continue;
-        if (!pending.notified && gCancelCount < kJobs)
-            gCancelled[gCancelCount++] = {SWLAN_AWDL_TXDONE, pending.id, ECANCELED, 0, gSession, pending.epoch};
+        if (!pending.notified && gCancelCount < kJobs) {
+            const uint16_t status = pending.transport ? ETIME : ECANCELED;
+            gCancelled[gCancelCount++] = {SWLAN_AWDL_TXDONE, pending.id, status, 0, gSession, pending.epoch};
+        }
         pending.notified = true;
         if (!pending.transport)
             pending = {};

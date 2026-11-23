@@ -290,6 +290,9 @@ void awdl_data_flush(struct awdl_core *c, uint64_t now)
                     continue;
                 if (!result) {
                     handed(c, e, p, now, stay);
+                } else if (result == AWDL_TX_LATE) {
+                    if (stay < c->next_data)
+                        c->next_data = stay;
                 } else if (result != AWDL_TX_BUSY) {
                     c->stats.data_drop++;
                     continue;
@@ -361,11 +364,14 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
                 c->next_data = e->expires;
             return 0;
         }
-        if (result != AWDL_TX_BUSY) {
+        if (result != AWDL_TX_BUSY && result != AWDL_TX_LATE) {
             c->stats.data_drop++;
             return result;
         }
-        c->waiting_credit = 1;
+        if (result == AWDL_TX_BUSY)
+            c->waiting_credit = 1;
+        else if (stay < c->next_data)
+            c->next_data = stay;
     } else if (stay && !c->waiting_credit) {
         c->next_data = now;
     }

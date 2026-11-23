@@ -182,7 +182,8 @@ struct awdl_host {
     // One 802.11 frame (no FCS) to send on freq_mhz as soon as the radio can (its timing fields are stamped for the
     // moment it was built); the radio then stays on freq_mhz until local TSF `stay_until` (0: no need) so the peers'
     // frames of that slot reach us. A radio that cannot hop makes each such stay one excursion from its home channel.
-    // no_ack: group/action frames. Returns 0 when queued, AWDL_TX_BUSY without taking ownership, negative on failure.
+    // no_ack: group/action frames. Returns 0 when queued, AWDL_TX_BUSY or AWDL_TX_LATE (stay_until had already passed
+    // on the radio's clock) without taking ownership, negative on failure.
     int (*tx)(void *ctx, const uint8_t *frame, size_t len, uint16_t freq_mhz, uint64_t stay_until, int no_ack);
     // The radio runs this sequence of 16 slots of 64 TU, slot 0 starting at anchor_tsf (a multiple of 1024 TU after
     // it). Called when the sequence or the synchronisation changes.
@@ -205,7 +206,8 @@ struct awdl_host {
 };
 
 enum {
-    AWDL_TX_BUSY = 1
+    AWDL_TX_BUSY = 1,
+    AWDL_TX_LATE = 2
 };
 
 struct awdl_config {

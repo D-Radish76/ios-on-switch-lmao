@@ -551,7 +551,10 @@ int hostTx(void *, const uint8_t *frame, size_t length, uint16_t freq, uint64_t 
         }
         *slot = {static_cast<uint32_t>(result), ++gDataTxOrder, token};
     }
-    return result == -EAGAIN || result == -ENOBUFS ? AWDL_TX_BUSY : result < 0 ? -1 : 0;
+    return result == -EAGAIN || result == -ENOBUFS ? AWDL_TX_BUSY
+           : result == -ETIMEDOUT                  ? AWDL_TX_LATE
+           : result < 0                            ? -1
+                                                   : 0;
 }
 
 void dataTxDone(const swlan_awdl_event &e)
