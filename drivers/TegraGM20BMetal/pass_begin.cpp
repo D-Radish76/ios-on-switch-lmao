@@ -134,7 +134,11 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass, const char **why)
         backings_.push_back(b);
     } else if (zeta && !pass.separate.stencil && (!zeta->zeta || shortOf(*zeta))) {
         // the copy engine is proven over no compressed zeta: the backing takes no compression
-        Texture *b = backing(layered(zetaShape), 0, false, false, true);
+        bool compressed = false;
+#if SWITCH_METAL_DIAGNOSTICS
+        compressed = e.zetaShadowCompressed_ = dev_->probeZetaShadow.load(std::memory_order_relaxed);
+#endif
+        Texture *b = backing(layered(zetaShape), 0, false, compressed, true);
         if (!b)
             return refused(kNoMemory);
         e.pass_.depthStencil.texture = b;
@@ -255,6 +259,10 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass, const char **why)
     // in the class header)
     ZcullAsk zask;
     zask.on = dev_->zcullOn_ && e.rasterSamples_ == e.samples_;
+#if SWITCH_METAL_DIAGNOSTICS
+    zask.on |= dev_->zcullOn_ && e.samples_ == 1 && e.rasterSamples_ == 4 &&
+               dev_->probeZcullMixed.load(std::memory_order_relaxed);
+#endif
     zask.depth = zeta && !pass.separate.stencil && zetaHasDepth(zeta->format);
     zask.cleared = pass.depthStencil.clearDepth && !std::isnan(pass.depthStencil.depth);
     zask.layers = layers;

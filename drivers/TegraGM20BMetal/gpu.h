@@ -1442,6 +1442,9 @@ private:
     // a stored zeta the pass renders through a backing of its own (pass_.depthStencil.texture): one of fewer layers than
     // the pass, or a colour texture as the depth attachment (zeta_colour.h); its layers moved in and out by the copy engine
     const Texture *zetaShadowOf_ = nullptr;
+#if SWITCH_METAL_DIAGNOSTICS
+    bool zetaShadowCompressed_ = false;  // Device::probeZetaShadow's: zetaShadowOf_ is copied without its decompress
+#endif
     void copyZetaShadow(Push &p, bool toAttachment);
 
     // the encoder's culling, winding and fill, and what the registers hold: the context's (Metal's defaults: no culling,
@@ -2975,6 +2978,13 @@ public:
     std::atomic<bool> probeStencilBits{false};
     // the one-draw route's colour ROP over the zeta's own pages, untiled, not through its pool image (zeta_colour.cpp)
     std::atomic<bool> probeZetaDirect{false};
+    // While set (HW Test's zcull and compression probes, zcull-comp LIST 15, 18, 27, 32): a stored Depth32Float 2D array
+    // takes its stored zeta kind whatever its layers (comp.h storedZetaKind); a pass's zeta shadow (a colour texture as
+    // depth, or a zeta shorter than a layered pass) is backed compressed and its compressed zeta copied undecompressed;
+    // a pass of one-sample colour beside a four-sample depth takes a zcull region; a nonzero criterion (SFUNC, SREF and
+    // SMASK in bytes 0 to 2) replaces the region's SET_ZCULL_CRITERION of NEVER
+    std::atomic<bool> probeZetaLayers{false}, probeZetaShadow{false}, probeZcullMixed{false};
+    std::atomic<uint32_t> probeZcullCriterion{0};
     std::atomic<uint64_t> probeEmitted{0};  // draws that emitted them since they were armed
     // hw_test_app's gpu.sched.long_draw_bands: the band budget its unbanded arm sets to 0 (TegraGM20BMetalProbe.mm)
     std::atomic<uint64_t> bandBudgetNs_{TGM_APP_BAND_NS};

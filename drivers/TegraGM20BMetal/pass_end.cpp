@@ -302,7 +302,13 @@ void RenderEncoder::end()
     // ahead of the depth clear, which sets the region, or the load of a stored one; over the plane the pass renders (a
     // turned drawable's own axes, zcullBegin)
     if (zcull_.candidate) {
-        zcullRegionWords(p, zcull_.region, zs.texture->format, zcull_.dir, zcull_.storage, zcull_.storageBytes);
+        uint32_t criterion = 0;
+#if SWITCH_METAL_DIAGNOSTICS
+        if (const uint32_t c = d.probeZcullCriterion.load(std::memory_order_relaxed))
+            criterion = zcullCriterion(c & 0xff, c >> 8 & 0xff, c >> 16 & 0xff);
+#endif
+        zcullRegionWords(p, zcull_.region, zs.texture->format, zcull_.dir, zcull_.storage, zcull_.storageBytes,
+                         criterion);
         if (zcull_.load)
             p.m(kLoadZcull, 0);
         SWITCH_METAL_DIAGNOSTIC(d.stats.zcullPasses++; d.stats.zcullLoads += zcull_.load);
