@@ -15,19 +15,12 @@
 //  - RGB9E5Float holds its own words after every draw, each mantissa truncated, a clear's rounded: the same stand-in, the store
 //    state truncating, into the words viewed as R32Uint. A pass whose draws do not blend over one another stores Metal's words;
 //    blends over earlier draws lie within the truncations Metal makes between them.
-//  - BGR10_XR_sRGB (555): BGR10_XR's word (xr.h), each colour code through Metal's sRGB tables (xr_srgb.h). GM20B
-//    applies an sRGB transfer to 8-bit UNORM channels and sRGB block formats alone (nil_formats.csv), never to a 10-bit
-//    offset code, so the transfer is the load and store states' work, once a pass. Metal's tile holds such a colour as half
-//    through the pass and encodes it at the store: an RGBA16Float stand-in, which the 3D engine renders and blends as
-//    Metal's tile does, filled with the texels' reads by the texture's own sampling conversion and stored through Metal's
-//    write encode into the words viewed as R32Uint.
-//  - BGRA10_XR_sRGB (553): the same over BGRA10_XR's fields, viewed as RGBA16Uint. Its alpha is BGRA10_XR's, linear (m2v
-//    ExtendedRange::code and code_value take alpha before the sRGB tables, as Apple's GPUs measured), held as half in the
-//    tile and the stand-in alike.
-//  - RGB10A8_2P_XR10_sRGB (551): BGR10_XR_sRGB's colour codes in RGB10A8_2P_XR10's word and its alpha byte linear
-//    (xr.h), the same RGBA16Float stand-in, loaded from the texels and stored into them: over a surface's two planes
-//    from both and into both (the word plane and the alpha plane two targets of the store's pass), of a descriptor from
-//    and into its texels of a word and a byte viewed as RG32Uint.
+//  - BGR10_XR_sRGB (555), BGRA10_XR_sRGB (553) and RGB10A8_2P_XR10_sRGB (551): each colour code through Metal's sRGB tables
+//    (xr_srgb.h), which GM20B applies to no 10-bit offset code (nil_formats.csv: 8-bit UNORM channels and sRGB block
+//    formats alone). An RGBA16Float stand-in, Metal's tile (xr.h xrTargetState), filled with Metal's blend read of the codes and
+//    stored through Metal's write encode into the words viewed as R32Uint, RGBA16Uint or RG32Uint (551 over a surface's
+//    two planes: from both and into both, the word plane and the alpha plane two targets of the store's pass); a loaded
+//    pass's store keeps the texels no draw changed.
 //  - BGRA4Unorm (44): ABGR4Unorm's rules over NIL's B4G4R4A4_UNORM (blue in the low bits), its header NIL's.
 //  - ARGB8Unorm (84) and its sRGB form (85): sampled through RGBA8's header with the channels rotated (its alpha byte first:
 //    the header's red source reads alpha); no colour target of that byte order, so an RGBA8 (an sRGB one's RGBA8_sRGB)
@@ -93,6 +86,13 @@ constexpr bool formatHoldsAlpha(uint32_t format)
            format == kArgb8UnormSrgb || format == kBgra10XrSrgb || format == kRgb10A8XrSrgb;
 }
 
+// Whether the store state of such an attachment reads its codes (texture 1, a surface's alpha plane texture 2) and keeps
+// those of a loaded pass that no draw changed (buffer 0: a uint, non-zero to keep): an extended-range one's (xr.h)
+constexpr bool formatStoreKeeps(uint32_t format)
+{
+    return formatStandIn(format) && xrTarget(format);
+}
+
 // A state by the sample count of the pass it draws in: one sample's, else the per-sample state of a 2- or 4-sample pass
 // (texture2d_ms reads at sample rate, a state keyed samples=2 or 4: m2v-passes' pack states, these names their contract);
 // null for any other count
@@ -106,6 +106,8 @@ constexpr const char *bySamples(uint32_t samples, const char *one, const char *t
 // reads the words as R32Uint and decodes them itself
 constexpr const char *formatLoadState(uint32_t format, uint32_t samples = 1)
 {
+    if (formatStoreKeeps(format))
+        return xrTargetState(format, XrStep::Load, samples);
     switch (format) {
     case kA1Bgr5Unorm:
     case kAbgr4Unorm:
@@ -114,14 +116,6 @@ constexpr const char *formatLoadState(uint32_t format, uint32_t samples = 1)
     case kRgb9e5Float:
         return bySamples(samples, "raw.fmt.fmt_load_rgb9e5_frag", "raw.fmt.fmt_load_rgb9e5_ms2_frag",
                          "raw.fmt.fmt_load_rgb9e5_ms4_frag");
-    case kBgra10XrSrgb:
-        return bySamples(samples, "raw.xr.xr_bgra10_srgb_frag", "raw.xr.xr_bgra10_srgb_ms2_frag",
-                         "raw.xr.xr_bgra10_srgb_ms4_frag");
-    case kBgr10XrSrgb:
-        return bySamples(samples, "raw.xr.xr_bgr10_srgb_frag", "raw.xr.xr_bgr10_srgb_ms2_frag",
-                         "raw.xr.xr_bgr10_srgb_ms4_frag");
-    case kRgb10A8XrSrgb:  // never multisampled (Metal's two-plane formats take no sample count above 1)
-        return samples <= 1 ? "raw.xr.xr_planes_srgb_frag" : nullptr;
     default:
         return nullptr;
     }
@@ -129,6 +123,8 @@ constexpr const char *formatLoadState(uint32_t format, uint32_t samples = 1)
 
 constexpr const char *formatStoreState(uint32_t format, uint32_t samples = 1)
 {
+    if (formatStoreKeeps(format))
+        return xrTargetState(format, XrStep::Store, samples);
     switch (format) {
     case kA1Bgr5Unorm:
         return bySamples(samples, "raw.fmt.fmt_store_a1bgr5_frag", "raw.fmt.fmt_store_a1bgr5_ms2_frag",
@@ -142,22 +138,10 @@ constexpr const char *formatStoreState(uint32_t format, uint32_t samples = 1)
     case kRgb9e5Float:
         return bySamples(samples, "raw.fmt.fmt_store_rgb9e5_frag", "raw.fmt.fmt_store_rgb9e5_ms2_frag",
                          "raw.fmt.fmt_store_rgb9e5_ms4_frag");
-    case kBgra10XrSrgb:
-        return bySamples(samples, "raw.fmt.fmt_store_bgra10_xr_srgb_frag", "raw.fmt.fmt_store_bgra10_xr_srgb_ms2_frag",
-                         "raw.fmt.fmt_store_bgra10_xr_srgb_ms4_frag");
-    case kBgr10XrSrgb:
-        return bySamples(samples, "raw.fmt.fmt_store_bgr10_xr_srgb_frag", "raw.fmt.fmt_store_bgr10_xr_srgb_ms2_frag",
-                         "raw.fmt.fmt_store_bgr10_xr_srgb_ms4_frag");
-    case kRgb10A8XrSrgb:
-        return samples <= 1 ? "raw.fmt.fmt_store_rgb10a8_xr_srgb_frag" : nullptr;
     default:
         return nullptr;
     }
 }
-
-// RGB10A8_2P_XR10_sRGB held in a surface's two planes (Texture::xrPlanes): its load reads both (xr.h xrConversionOf),
-// its store writes the word plane at colour 0 and the alpha plane at colour 1
-constexpr const char *kPlanesSrgbStoreState = "raw.fmt.fmt_store_rgb10a8_xr_srgb_planes_frag";
 
 constexpr uint32_t formatStoreView(uint32_t format)
 {
@@ -310,9 +294,10 @@ class Device;
 Texture *formatStandInFor(Device &d, CommandBuffer &rc, const ColorAttachment &a, uint32_t layers, uint32_t slot,
                           bool fill, const char **why);
 // `a`'s texels from its stand-in after its pass, a layer at a time (a multisampled one by the per-sample store state);
-// `cleared`: the pass drew nothing (xr_pools.h storeXrPlaneRows); false: *why
+// `cleared`: the pass drew nothing (xr_pools.h storeXrPlaneRows); `keep`: the stand-in was filled from the texels, whose
+// store keeps those no draw changed (formatStoreKeeps); false: *why
 bool storeFormatStandIn(Device &d, CommandBuffer &rc, const ColorAttachment &a, uint32_t layers, Texture &standIn,
-                        bool cleared, const char **why);
+                        bool cleared, const char **why, bool keep = false);
 // Levels first + 1 .. last of the selected layers of chain `t` from the level above by the format's mip state; false: *why
 bool formatMipPasses(Device &d, CommandBuffer &rc, Texture &t, uint32_t first, uint32_t last, uint32_t firstLayer,
                      uint32_t layers, uint32_t format, const char **why);

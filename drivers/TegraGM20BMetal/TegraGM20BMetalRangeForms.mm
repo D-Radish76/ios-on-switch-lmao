@@ -107,7 +107,7 @@ bool SwitchMetalRangeEncode::formatStandIns(const SwitchMetalPass &pass, gm20b::
             gm20b::metalCompresses(uint64_t(made.usage), made.allowGPUOptimizedContents, t->_raw.width, t->_raw.height);
         gm20b::formatStandInClear(t->_raw.format, p.color[j].clear, p.color[j].clear, compressed);
         if (p.color[j].store && !t->_raw.memoryless && !kept)
-            formatStores_.push_back({bound, p.layers, standIn});
+            formatStores_.push_back({bound, p.layers, standIn, fill});
     }
     formatTargets_.clear();
     return true;
@@ -121,7 +121,7 @@ bool SwitchMetalRangeEncode::storeFormatTargets()
         if (!passDrew_ && s.attachment.load == gm20b::ColorAttachment::Load && t && t->xrPlanes &&
             gm20b::xrPlanesOverlap(*t))
             continue;
-        if (!gm20b::storeFormatStandIn(*d_, *rc_, s.attachment, s.layers, *s.standIn, !passDrew_, why_)) {
+        if (!gm20b::storeFormatStandIn(*d_, *rc_, s.attachment, s.layers, *s.standIn, !passDrew_, why_, s.filled)) {
             gm20bPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
             return fail(PredPassAttFormat, *why_, s.attachment.texture->format);
         }

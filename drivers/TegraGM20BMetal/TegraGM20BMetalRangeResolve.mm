@@ -187,7 +187,7 @@ bool SwitchMetalRangeEncode::resolvePasses()
                 standInResolve(d, *rc, r.into, a, source, r.attachment, width, height, resolveTargets_, standIn, why_);
             if (end != ResolveEnd::Done)
                 return ended(end, into->format, r.attachment);
-            formatStores_.push_back({a, 1, standIn});
+            formatStores_.push_back({a, 1, standIn, width < a.texture->width || height < a.texture->height});
             continue;
         }
         if (into->samples > 1 && drew)

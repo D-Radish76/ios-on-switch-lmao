@@ -204,6 +204,7 @@ private:
         gm20b::ColorAttachment attachment;
         uint32_t layers;
         gm20b::Texture *standIn;
+        bool filled;  // from the texels (storeFormatStandIn's keep)
     };
 
     std::vector<FormatStore> formatStores_;

@@ -528,9 +528,6 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "23 | v fmt_vert | f fmt_store_a1bgr5_frag",
                             "23 | v fmt_vert | f fmt_store_bgra4_frag",
                             "53 | v fmt_vert | f fmt_store_rgb9e5_frag",
-                            "53 | v fmt_vert | f fmt_store_bgr10_xr_srgb_frag",
-                            "113 | v fmt_vert | f fmt_store_bgra10_xr_srgb_frag",
-                            "103 | v fmt_vert | f fmt_store_rgb10a8_xr_srgb_frag",
                             "23 | v fmt_vert | f fmt_mip_abgr4_frag",
                             "23 | v fmt_vert | f fmt_mip_a1bgr5_frag",
                             "53 | v fmt_vert | f fmt_mip_rgb9e5_frag",
@@ -547,6 +544,31 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "23 | v fmt_vert | f fmt_mip_3d_abgr4_frag",
                             "23 | v fmt_vert | f fmt_mip_3d_a1bgr5_frag",
                             "53 | v fmt_vert | f fmt_mip_3d_rgb9e5_frag"}) {
+        std::string o = out;
+        const size_t bar = o.find(' ');
+        lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=" + o.substr(0, bar) + ":15:0:1:0:0:1:0:0" +
+                        o.substr(bar));
+    }
+    // the extended-range targets' stand-ins (runtime/xr_target.h): their loads, stores (into the codes' integer view)
+    // and resolves; the stores over a surface's two planes are among the pairs below
+    for (const char *out : {"115 | v xr_target_vert | f xr_target_load_bgr10_frag",
+                            "115 | v xr_target_vert | f xr_target_load_bgra10_frag",
+                            "115 | v xr_target_vert | f xr_target_load_planes_frag",
+                            "115 | v xr_target_vert | f xr_target_load_two_planes_frag",
+                            "115 | v xr_target_vert | f xr_target_load_bgr10_srgb_frag",
+                            "115 | v xr_target_vert | f xr_target_load_bgra10_srgb_frag",
+                            "115 | v xr_target_vert | f xr_target_load_planes_srgb_frag",
+                            "115 | v xr_target_vert | f xr_target_load_two_planes_srgb_frag",
+                            "53 | v xr_target_vert | f xr_target_store_bgr10_frag",
+                            "113 | v xr_target_vert | f xr_target_store_bgra10_frag",
+                            "103 | v xr_target_vert | f xr_target_store_planes_frag",
+                            "53 | v xr_target_vert | f xr_target_store_bgr10_srgb_frag",
+                            "113 | v xr_target_vert | f xr_target_store_bgra10_srgb_frag",
+                            "103 | v xr_target_vert | f xr_target_store_planes_srgb_frag",
+                            "115 | v xr_target_vert | f xr_target_resolve_bgr10_frag",
+                            "115 | v xr_target_vert | f xr_target_resolve_bgra10_frag",
+                            "115 | v xr_target_vert | f xr_target_resolve_bgr10_srgb_frag",
+                            "115 | v xr_target_vert | f xr_target_resolve_bgra10_srgb_frag"}) {
         std::string o = out;
         const size_t bar = o.find(' ');
         lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=" + o.substr(0, bar) + ":15:0:1:0:0:1:0:0" +
@@ -583,12 +605,17 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
     // a multisampled format stand-in's per-sample load and store states (runtime/format_standin.h bySamples), drawn at
     // the target's sample count; RGB9E5Float's resolve of one (runtime/attachment_target.h formatResolveState)
     for (const char *samples : {"2", "4"})
-        for (const char *out :
-             {"125 | v fmt_vert | f fmt_load_ms", "125 | v fmt_vert | f fmt_load_rgb9e5_ms",
-              "115 | v xr_vert | f xr_bgr10_srgb_ms", "115 | v xr_vert | f xr_bgra10_srgb_ms",
-              "23 | v fmt_vert | f fmt_store_abgr4_ms", "23 | v fmt_vert | f fmt_store_bgra4_ms",
-              "23 | v fmt_vert | f fmt_store_a1bgr5_ms", "53 | v fmt_vert | f fmt_store_rgb9e5_ms",
-              "53 | v fmt_vert | f fmt_store_bgr10_xr_srgb_ms", "113 | v fmt_vert | f fmt_store_bgra10_xr_srgb_ms"}) {
+        for (const char *out : {"125 | v fmt_vert | f fmt_load_ms", "125 | v fmt_vert | f fmt_load_rgb9e5_ms",
+                                "23 | v fmt_vert | f fmt_store_abgr4_ms", "23 | v fmt_vert | f fmt_store_bgra4_ms",
+                                "23 | v fmt_vert | f fmt_store_a1bgr5_ms", "53 | v fmt_vert | f fmt_store_rgb9e5_ms",
+                                "115 | v xr_target_vert | f xr_target_load_bgr10_ms",
+                                "115 | v xr_target_vert | f xr_target_load_bgra10_ms",
+                                "115 | v xr_target_vert | f xr_target_load_bgr10_srgb_ms",
+                                "115 | v xr_target_vert | f xr_target_load_bgra10_srgb_ms",
+                                "53 | v xr_target_vert | f xr_target_store_bgr10_ms",
+                                "113 | v xr_target_vert | f xr_target_store_bgra10_ms",
+                                "53 | v xr_target_vert | f xr_target_store_bgr10_srgb_ms",
+                                "113 | v xr_target_vert | f xr_target_store_bgra10_srgb_ms"}) {
             const std::string o = out;
             const size_t bar = o.find(' ');
             lines.push_back(std::string("@O R ok=1 label=raw.own samples=") + samples + " topo=0 ds=0/0 c0=" +
@@ -601,8 +628,10 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
     for (const char *out : {"c0=115:15:0:1:0:0:1:0:0 | v two_plane_cover | f two_plane_load",
                             "c0=10:15:0:1:0:0:1:0:0 c1=30:15:0:1:0:0:1:0:0 | v two_plane_cover | f two_plane_store",
                             "c0=53:15:0:1:0:0:1:0:0 c1=13:15:0:1:0:0:1:0:0 | v xr_vert | f xr_planes_split_frag",
-                            "c0=53:15:0:1:0:0:1:0:0 c1=13:15:0:1:0:0:1:0:0 | v fmt_vert | f "
-                            "fmt_store_rgb10a8_xr_srgb_planes_frag",
+                            "c0=53:15:0:1:0:0:1:0:0 c1=13:15:0:1:0:0:1:0:0 | v xr_target_vert | f "
+                            "xr_target_store_two_planes_frag",
+                            "c0=53:15:0:1:0:0:1:0:0 c1=13:15:0:1:0:0:1:0:0 | v xr_target_vert | f "
+                            "xr_target_store_two_planes_srgb_frag",
                             "c0=13:15:0:1:0:0:1:0:0 | v stencil_bits_vert | f stencil_bits_s8_colour_frag",
                             "c0=103:15:0:1:0:0:1:0:0 | v stencil_bits_vert | f stencil_bits_d32fs8_colour_frag",
                             "c0=13:15:0:1:0:0:1:0:0 | v stencil_bits_vert | f stencil_bits_ms_s8_colour_frag",

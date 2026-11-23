@@ -43,6 +43,7 @@ inline gm20b::ProbeTextures probeTextures(const std::string &line, bool ours)
         {"f turn_depth", {MTLPixelFormatDepth32Float, 1}},
         {"f stencil_bits_", {MTLPixelFormatR32Uint, 1}},
         {"f fmt_store_", {MTLPixelFormatRGBA32Float, 1}},
+        {"f xr_target_", {MTLPixelFormatRGBA16Float, 1}},
         {"f fmt_load_rgb9e5", {MTLPixelFormatR32Uint, 1}},
         {"f fmt_mip_", {MTLPixelFormatR32Uint, 1}}};
     for (const auto &[fragment, textures] : sets)
