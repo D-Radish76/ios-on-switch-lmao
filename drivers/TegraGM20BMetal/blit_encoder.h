@@ -12,6 +12,7 @@ namespace gm20b {
 
 class CommandBuffer;
 class Device;
+struct CopySurface;
 
 // Copy-engine work between passes (MAXWELL_DMA_COPY_A, as NVK's nouveau_copy_rect does it for pitch memory)
 class BlitEncoder {
@@ -119,6 +120,13 @@ private:
     const void *read_[kAccesses] = {}, *written_[kAccesses] = {};
     uint8_t reads_ = 0, writes_ = 0;
     void room(uint32_t words = 56);  // at least `words` words left in the reservation
+    // `w` x `h` elements through `remap` (copyRemapped), in launches whose lines each fit a row of every pitch side: the
+    // GM20B's copy engine never completes a launch of more than one line longer than a pitch side's rows, and the
+    // channel's context switch then times out with the engine busy. Such a copy goes a line at a time, or in columns no
+    // wider than those rows, whichever takes fewer launches; where the destination's rows overlap, each launch after the
+    // one before, a later row's bytes landing last
+    void copyElements(const CopySurface &s, const CopySurface &d, uint32_t w, uint32_t h, uint32_t remap,
+                      uint32_t bytes, bool ordered = false);
     // copyBufferTexels of a multisampled colour texture, an M4 Max's layout both ways: row y of the buffer holds texel
     // (x, y)'s samples in order. A 2x sample grid's rows are those rows; a 4x grid's rows 2y and 2y + 1 meet in buffer
     // row y two samples at a time, through t.sampleRows (made at record: bufferCopy): the grid's rows moved whole
