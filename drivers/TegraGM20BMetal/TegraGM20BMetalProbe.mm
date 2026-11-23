@@ -83,7 +83,7 @@ static gm20b::ProbeSurface probeSurface(const gm20b::Texture &t, uint32_t fmt2d)
     return nil;
 }
 
-// `settled` called once every compressed memory the device was asked for so far is made or refused (gpu.h
+// `settled` called once every compressed memory and ZBC entry the device was asked for so far is made or refused (gpu.h
 // compWhenSettled): on the compression thread with no driver lock held, or on this thread before the call returns when
 // none is asked. Nil, else why not.
 - (NSString *)switchMetalProbeCompressionSettled:(void (^)(void))settled

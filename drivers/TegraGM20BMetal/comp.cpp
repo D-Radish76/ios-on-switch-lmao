@@ -128,6 +128,7 @@ void Device::compStart()
                 compRearm_ = false;
                 compMake(l);
                 zbcMake(l);
+                SWITCH_METAL_DIAGNOSTIC(compSettledRun(l));
                 trimBackings();
             }
         });
@@ -248,9 +249,6 @@ void Device::compMake(std::unique_lock<gm20b::Mutex> &l)
                          shortage ? "those backings stay uncompressed until this process gives compressed memory back"
                                   : "that backing stays uncompressed");
     }
-#if SWITCH_METAL_DIAGNOSTICS
-    compSettledRun(l);
-#endif
 }
 
 void Device::compStop()
@@ -269,7 +267,7 @@ void Device::compWhenSettled(std::function<void()> settled)
 {
     {
         std::lock_guard<gm20b::Mutex> l(lock_);
-        if (!comp_.wanted.empty() && !stopping_) {
+        if (compUnsettled()) {
             compSettled_.push_back(std::move(settled));
             return;
         }
@@ -277,10 +275,16 @@ void Device::compWhenSettled(std::function<void()> settled)
     settled();
 }
 
-// `l` holds lock_, dropped around the calls: a caller may make textures, which take it
+bool Device::compUnsettled()
+{
+    return !stopping_ && (!comp_.wanted.empty() || zbc_.unanswered());
+}
+
+// `l` holds lock_, dropped around the calls: a caller may make textures, which take it. An ask that came while zbcMake
+// had it dropped leaves them for the loop's next pass.
 void Device::compSettledRun(std::unique_lock<gm20b::Mutex> &l)
 {
-    if (compSettled_.empty())
+    if (compSettled_.empty() || compUnsettled())
         return;
     std::vector<std::function<void()>> settled;
     settled.swap(compSettled_);

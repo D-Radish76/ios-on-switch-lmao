@@ -2995,8 +2995,8 @@ public:
     std::atomic<uint8_t> probeFetchRung{0};
 #if SWITCH_METAL_DIAGNOSTICS
     // HW Test's wait for the compression thread (TegraGM20BMetalProbe.mm switchMetalProbeCompressionSettled:): `settled` runs once
-    // no compressed memory asked of compThread_ is left to make, each made or refused, on that thread with lock_ dropped;
-    // at once, on the caller's thread, when none is asked
+    // nothing asked of compThread_ is left, each compressed memory and each ZBC entry made or refused, on that thread with
+    // lock_ dropped; at once, on the caller's thread, when none is asked
     void compWhenSettled(std::function<void()> settled);
 #endif
     std::map<uint64_t, Bo> probeCompressed;  // lock_
@@ -3795,6 +3795,7 @@ private:
     bool compRearm_ = false;  // shared plain memory was made: compThread_ takes its deadline (lock_)
 #if SWITCH_METAL_DIAGNOSTICS
     std::vector<std::function<void()>> compSettled_;  // lock_
+    bool compUnsettled();                             // lock_
     void compSettledRun(std::unique_lock<gm20b::Mutex> &l);
 #endif
     void compFree(Backing &b);
