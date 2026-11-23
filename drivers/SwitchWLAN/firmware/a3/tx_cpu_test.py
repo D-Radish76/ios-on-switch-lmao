@@ -17,7 +17,7 @@ def switch_tx_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[st
         switch_cpu.switch_qmp_command(control, 'cont')
         time.sleep(0.1)
         switch_cpu.switch_qmp_command(control, 'stop')
-        results = switch_cpu.switch_read_words(memory, symbols['switch_tx_test_results'], 82)
+        results = switch_cpu.switch_read_words(memory, symbols['switch_tx_test_results'], 83)
         results += switch_cpu.switch_read_words(memory, symbols['switch_timing_test_results'], 27)
         if switch_cpu.switch_read_words(memory, symbols['switch_tx_test_done'], 1) != (0x53574133,):
             registers = switch_cpu.switch_qmp_command(
@@ -67,7 +67,7 @@ class TransmitCPU(unittest.TestCase):
                 if len(fields) == 3:
                     symbols[fields[2]] = int(fields[0], 16)
             results = switch_cpu.switch_run_arm(qemu, elf, path, symbols, switch_tx_results)
-            self.assertEqual(results, (0,) * 109, f'failing tx_test.c/tx_timing_test.c line numbers: {results}')
+            self.assertEqual(results, (0,) * 110, f'failing tx_test.c/tx_timing_test.c line numbers: {results}')
 
 
 if __name__ == '__main__':

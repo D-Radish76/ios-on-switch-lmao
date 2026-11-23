@@ -31,7 +31,7 @@ static uint8_t switch_envelope[1920];
 static uint32_t switch_envelope_bytes, switch_prefix, switch_allocated, switch_freed, switch_radio_count;
 static uint32_t switch_original_freed, switch_radio_freed, switch_fetch_freed, switch_statuses, switch_sends;
 static uint32_t switch_normal_ids[6], switch_normal_count, switch_fault, switch_cancelled_callbacks;
-static uint32_t switch_original_frees[6];
+static uint32_t switch_original_frees[6], switch_send_order[6];
 static void *switch_expected_osh;
 static int switch_oom, switch_fetch_failure, switch_register_failure, switch_send_failure, switch_immediate;
 static int switch_fetch_immediate, switch_clock_error, switch_expire_on_register;
@@ -41,7 +41,7 @@ static uint64_t switch_complete_other_tsf;
 static uint64_t switch_clock_tsf;
 static uint16_t switch_chanspec;
 static struct switch_a3_timer *switch_tx_timer;
-volatile uint32_t switch_tx_test_results[82];
+volatile uint32_t switch_tx_test_results[83];
 volatile uint32_t switch_tx_test_done;
 static uintptr_t switch_pm_arguments[6], switch_pm_fallback[5];
 
@@ -100,6 +100,7 @@ static void switch_reset_input(uint16_t frame_bytes, int split, unsigned metadat
     }
     switch_zero(switch_callbacks, sizeof switch_callbacks);
     switch_zero(switch_original_frees, sizeof switch_original_frees);
+    switch_zero(switch_send_order, sizeof switch_send_order);
     switch_zero(switch_table, sizeof switch_table);
     switch_zero(switch_envelope, sizeof switch_envelope);
     *(void **)(switch_wlc.bytes + 4) = switch_wlc.bytes + 64;
@@ -413,6 +414,8 @@ int switch_a3_tx_sendctl(void *wlc, struct switch_a3_tx_packet *packet, void *qu
     unsigned index = 0;
     while (index < 6 && packet != switch_radio[index])
         ++index;
+    if (switch_sends <= 6)
+        switch_send_order[switch_sends - 1] = index;
     if (index >= 6 || packet->data != switch_buffers[index].bytes + 202 ||
         packet->length != switch_header()->frame_bytes || (*((uint8_t *)packet + 30) & 15))
         switch_fault = 16;
@@ -996,18 +999,39 @@ static uint32_t switch_test_other_completion(unsigned expire)
     switch_a3_tx_wake(switch_wlc.bytes);
     const int progressed = !switch_fault && switch_sends == (expire ? 2u : 3u) &&
                            switch_a3_tx_pending() == (expire ? 1u : 2u) && switch_original_frees[1] == 1 &&
-                           (expire ? switch_original_frees[0] == 1 && switch_reply.request_id == 5 &&
+                           (expire ? switch_original_frees[2] == 1 && switch_reply.request_id == 7 &&
                                          switch_reply.status == SWITCH_A3_TX_EXPIRED
-                                   : !switch_original_frees[0]) &&
+                                   : !switch_original_frees[2]) &&
                            !switch_tx_timer->snapshot.armed;
     for (unsigned index = 0; index < 3; ++index)
         if (switch_callbacks[index].fn)
             switch_radio_complete(index, 2);
     SWITCH_REQUIRE(!switch_a3_tx_cancel(switch_wlc.bytes));
     SWITCH_REQUIRE(progressed);
-    SWITCH_REQUIRE(!switch_fault && !switch_a3_tx_pending() && switch_original_freed == 3 &&
-                   switch_radio_freed == 3 && switch_freed == 3 && switch_statuses == 3 &&
-                   !switch_tx_timer->snapshot.armed);
+    SWITCH_REQUIRE(!switch_fault && !switch_a3_tx_pending() && switch_original_freed == 3 && switch_radio_freed == 3 &&
+                   switch_freed == 3 && switch_statuses == 3 && !switch_tx_timer->snapshot.armed);
+    return 0;
+}
+
+static uint32_t switch_test_deferred_fifo(void)
+{
+    switch_reset(32, 0, 0);
+    switch_chanspec = 0x1006;
+    for (unsigned index = 0; index < 2; ++index) {
+        struct switch_a3_tx_header header;
+        switch_copy(&header, switch_input[index].bytes + 14, sizeof header);
+        header.request_id += index;
+        switch_copy(switch_input[index].bytes + 14, &header, sizeof header);
+        switch_input[index].bytes[8] += index;
+        switch_a3_tx_entry(switch_device.bytes + 64, switch_device.bytes, switch_original[index]);
+    }
+    SWITCH_REQUIRE(!switch_fault && !switch_sends && switch_a3_tx_pending() == 2);
+    switch_chanspec = 0xd024;
+    switch_a3_tx_wake(switch_wlc.bytes);
+    SWITCH_REQUIRE(!switch_fault && switch_sends == 2 && switch_send_order[0] == 0 && switch_send_order[1] == 1);
+    for (unsigned index = 0; index < 2; ++index)
+        switch_radio_complete(index, 2);
+    SWITCH_REQUIRE(!switch_fault && !switch_a3_tx_pending() && switch_original_freed == 2 && switch_statuses == 2);
     return 0;
 }
 
@@ -1053,6 +1077,7 @@ void switch_tx_test_run(void)
     switch_tx_test_results[79] = switch_test_deferred(5);
     switch_tx_test_results[80] = switch_test_other_completion(0);
     switch_tx_test_results[81] = switch_test_other_completion(1);
+    switch_tx_test_results[82] = switch_test_deferred_fifo();
     /* Unobserved retirement deliberately retains a native TX owner until reset. */
     switch_tx_test_results[68] = switch_test_unobserved_retirement();
     switch_tx_test_done = 0x53574133;

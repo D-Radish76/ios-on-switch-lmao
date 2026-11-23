@@ -473,8 +473,11 @@ static void switch_a3_tx_consume(struct switch_a3_tx_packet *packet, uint16_t sk
     pending->wlc = wlc;
     pending->prefix = packet->data + skip;
     pending->prefix_bytes = packet->length - skip;
-    pending->next = switch_a3_tx_state.pending;
-    switch_a3_tx_state.pending = pending;
+    struct switch_a3_tx_pending **tail = &switch_a3_tx_state.pending;
+    while (*tail)
+        tail = &(*tail)->next;
+    pending->next = NULL;
+    *tail = pending;
     ++switch_a3_tx_state.count;
     if (packet->flags & 0x200u) {
         pending->body_bytes = switch_a3_tx_read16((uint8_t *)packet + 80);
