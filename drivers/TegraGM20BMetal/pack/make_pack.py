@@ -251,7 +251,9 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
         objs.append(obj)
     run(['xcrun', 'clang', *cflags, '-c', HERE / 'mock_iokit.c', '-o', work / 'mock_iokit.o'])
     run(['xcrun', 'clang++', *cflags, '-std=c++17', '-c', HERE / 'cap.cpp', '-o', work / 'cap.o'])
-    run(['xcrun', 'clang++', *cflags, '-std=c++17', '-c', HERE / 'nvdec.cpp', '-o', work / 'nvdec.o'])
+    nvdec = ('nvdec', 'nvdec_copy', 'nvdec_text', 'nvdec_load', 'nvdec_state', 'nvdec_draw')
+    for unit in nvdec:
+        run(['xcrun', 'clang++', *cflags, '-std=c++17', '-c', HERE / f'{unit}.cpp', '-o', work / f'{unit}.o'])
     run(['xcrun', 'clang++', *cflags, '-std=c++17', '-c', HERE / 'nvdec_compute.cpp', '-o', work / 'nvdec_compute.o'])
     run(
         [
@@ -260,7 +262,7 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
             '-dynamiclib',
             work / 'mock_iokit.o',
             work / 'cap.o',
-            work / 'nvdec.o',
+            *(work / f'{unit}.o' for unit in nvdec),
             work / 'nvdec_compute.o',
             *objs,
             '-framework',
