@@ -50,7 +50,7 @@ void awdl_probe(struct awdl_core *c, const char *fmt, ...)
 {
     if (!c->host.probe)
         return;
-    char line[160];
+    char line[208];
     va_list ap;  // NOLINT(cppcoreguidelines-init-variables): va_start initializes it
     va_start(ap, fmt);
     vsnprintf(line, sizeof line, fmt, ap);

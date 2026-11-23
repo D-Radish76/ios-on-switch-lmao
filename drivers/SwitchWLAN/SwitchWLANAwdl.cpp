@@ -44,6 +44,7 @@ extern "C" {
 #include <net/bpf.h>
 }
 #include "SwitchWLANAwdlRadio.h"
+#include "SwitchWLANAwdlInput.h"
 #include "SwitchWLANAwdlNeighbor.h"
 #include "SwitchWLANAwdlPresence.h"
 #include "SwitchWLANAwdlSoft.h"
@@ -671,21 +672,34 @@ void logRadioEcho(const uint8_t *eth, size_t length)
 }
 #endif
 
+#if DEVELOPMENT || DEBUG
+switch_wlan_awdl_input_facts gQueued;  // hostDeliver's last packet, for the TCP trace (both under gLock)
+
+void hostQueued(void *, char *line, size_t size)
+{
+    switch_wlan_awdl_input_describe(gQueued, line, size);
+}
+#endif
+
 void hostDeliver(void *, const uint8_t *eth, size_t length)
 {
+#if DEVELOPMENT || DEBUG
+    gQueued = {};
+#endif
     if (!gIf || length < ETHER_HDR_LEN)
         return;
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
     logRadioEcho(eth, length);
 #endif
-    mbuf_t m = nullptr;
-    if (mbuf_allocpacket(MBUF_DONTWAIT, length, nullptr, &m) || !m)
-        return;
-    if (mbuf_copyback(m, 0, length, eth, MBUF_DONTWAIT)) {
-        mbuf_freem(m);
+    mbuf_t m = switch_wlan_awdl_input_packet(eth, length);
+    if (!m) {
+        ifnet_stat_increment_in(gIf, 0, 0, 1);
         return;
     }
-    mbuf_pkthdr_setlen(m, length);
+#if DEVELOPMENT || DEBUG
+    if (switch_wlan_awdl_input_traced(eth, length))
+        gQueued = switch_wlan_awdl_input_inspect(m);
+#endif
     mbuf_pkthdr_setrcvif(m, gIf);
     const auto *source = gPeerWork ? awdl_core_find(gCore, eth + ETHER_ADDR_LEN) : nullptr;
     if (source && source->reachable) {
@@ -703,6 +717,9 @@ void hostDeliver(void *, const uint8_t *eth, size_t length)
                 appendInput(slot.head, slot.tail, m, m);
                 ++slot.count;
             } else {
+#if DEVELOPMENT || DEBUG
+                gQueued = {};
+#endif
                 mbuf_freem(m);
                 ifnet_stat_increment_in(gIf, 0, 0, 1);
             }
@@ -2341,9 +2358,17 @@ void startStack(const awdl_radio_verdict &v, const struct swlan_awdl_caps *caps)
     cfg.backend = gSoft ? AWDL_BACKEND_SOFT : AWDL_BACKEND_NATIVE;
     cfg.fw_api = static_cast<uint8_t>(v.api);
     cfg.fw_absent = bcm_probe_absent(caps->probe);
-    awdl_host host = {nullptr, hostTx, hostSchedule, hostPeer, hostDeliver, hostLog, hostIovar, hostTxEth, nullptr};
+    awdl_host host = {};
+    host.tx = hostTx;
+    host.schedule = hostSchedule;
+    host.peer = hostPeer;
+    host.deliver = hostDeliver;
+    host.log = hostLog;
+    host.iovar = hostIovar;
+    host.tx_eth = hostTxEth;
 #if DEVELOPMENT || DEBUG
     host.probe = hostProbe;
+    host.queued = hostQueued;
 #endif
     awdl_core_init(gCore, &host, &cfg);
     if (caps->requires_radio_ready)

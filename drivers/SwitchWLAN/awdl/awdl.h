@@ -203,6 +203,9 @@ struct awdl_host {
     int (*tx_eth)(void *ctx, const uint8_t *eth, size_t len);
     // Debug builds only: one formatted diagnostic line for the unified log, not the console. May be NULL.
     void (*probe)(void *ctx, const char *line);
+    // Debug builds only: the packet the last deliver queued for the stack, as the stack will take it, formatted for
+    // the TCP trace. May be NULL.
+    void (*queued)(void *ctx, char *line, size_t size);
 };
 
 enum {

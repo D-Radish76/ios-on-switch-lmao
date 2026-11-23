@@ -369,6 +369,37 @@ host_test(
     ],
 )
 
+# awdl0's receive path (SwitchWLANAwdlInput.h) from an A3 record through the AWDL core to the packet the stack reads,
+# against a model of XNU's mbuf_allocpacket and mbuf_copyback.
+host_shims(
+    name = "awdl_input_kernel",
+    headers = [
+        "libkern/libkern.h",
+        "net/ethernet.h",
+        "sys/mbuf.h",
+    ],
+    stubs = "switch_wlan_awdl_input_stubs.h",
+)
+
+host_library(
+    name = "awdl_input",
+    hdrs = ["//drivers/SwitchWLAN:SwitchWLANAwdlInput.h"],
+    deps = [":awdl_input_kernel"],
+)
+
+host_test(
+    name = "switch_wlan_awdl_input_test",
+    srcs = ["switch_wlan_awdl_input_test.cpp"],
+    data = ["//drivers/SwitchWLAN:SwitchWLANAwdl.cpp"],
+    defines = ["DEVELOPMENT=1"],
+    deps = [
+        ":a3_wire",
+        ":awdl_input",
+        ":awdl_input_kernel",
+        "//drivers/SwitchWLAN/awdl/test:awdl",
+    ],
+)
+
 # APPLE80211_IOC_ASSOCIATE as each IPSW kind's IO80211.framework lays it out (SwitchWLANAssoc.h), one test per kind.
 host_library(
     name = "assoc",

@@ -106,11 +106,16 @@ static int tracing(struct awdl_core *c)
     return c->switch_tcp_lines < 800;
 }
 
+static int traced_tcp(const struct awdl_msdu *m)
+{
+    return m->ethertype == 0x86dd && m->len >= 60 && m->payload[6] == 6;
+}
+
 // Transmit lines print retry -1: the radio's own retransmissions are not reported per frame.
 static void trace_tcp(struct awdl_core *c, const char *direction, const struct awdl_msdu *m, uint16_t freq,
                       uint64_t tsf, int retry, uint16_t awdl_seq, const char *outcome)
 {
-    if (m->ethertype != 0x86dd || m->len < 60 || m->payload[6] != 6)
+    if (!traced_tcp(m))
         return;
     const uint8_t *tcp = m->payload + 40;
     const unsigned header = (tcp[12] >> 4) * 4u;
@@ -431,11 +436,17 @@ void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struc
 #if DEVELOPMENT || DEBUG
         if (probe)
             ++probe->rx_delivered;
-        if (tracing(c))
-            trace_tcp(c, "in", &msdus[i], m->freq_mhz, m->tsf, retry, seq, NULL);
 #endif
         c->stats.data_rx++;
         if (c->host.deliver)
             c->host.deliver(c->host.ctx, c->scratch, l);
+#if DEVELOPMENT || DEBUG
+        if (tracing(c) && traced_tcp(&msdus[i])) {
+            char queued[64] = "";
+            if (c->host.queued)
+                c->host.queued(c->host.ctx, queued, sizeof queued);
+            trace_tcp(c, "in", &msdus[i], m->freq_mhz, m->tsf, retry, seq, queued[0] ? queued : NULL);
+        }
+#endif
     }
 }
