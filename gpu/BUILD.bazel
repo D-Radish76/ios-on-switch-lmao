@@ -195,6 +195,8 @@ PLUGIN_CC_SRCS = [
     GM20B_METAL + ":blit_probe.cpp",
     GM20B_METAL + ":blit_texels.cpp",
     GM20B_METAL + ":command_buffer.cpp",
+    GM20B_METAL + ":device_channel.cpp",
+    GM20B_METAL + ":device_stamps.cpp",
     GM20B_METAL + ":draw.cpp",
     GM20B_METAL + ":draw_prepare.cpp",
     GM20B_METAL + ":draw_probes.cpp",
