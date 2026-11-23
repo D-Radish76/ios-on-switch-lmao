@@ -446,6 +446,7 @@ static void test_channel_map(void)
 {
     static const uint8_t mostly149[AWDL_SEQ_SLOTS] = {149, 149, 149, 149, 0, 0, 0, 0, 6, 149, 149, 149, 0, 0, 0, 0};
     static const uint8_t on6[AWDL_SEQ_SLOTS] = {6, 6, 149, 6, 6, 6, 6, 6, 6, 6, 44, 6, 6, 6, 6, 6};
+    static const uint8_t on6_active[AWDL_SEQ_SLOTS] = {44, 44, 149, 44, 6, 6, 6, 6, 6, 149, 44, 149, 6, 6, 6, 6};
     static const uint8_t on36[AWDL_SEQ_SLOTS] = {6, 0, 149, 0, 0, 0, 0, 0, 6, 0, 44, 0, 0, 0, 0, 0};
     static const uint8_t on149[AWDL_SEQ_SLOTS] = {149, 149, 149, 149, 149, 149, 149, 149,
                                                   6,   149, 44,  149, 149, 149, 149, 149};
@@ -454,7 +455,7 @@ static void test_channel_map(void)
     hear_master(c, MAC, 510, mac_idle, 1000000);
     ECHECK(awdl_core_role(c) == AWDL_ROLE_FOLLOWER && advertised(c, on6, 1000000));
     ECHECK(awdl_social_map(awdl_core_sequence(c)) == 7 && awdl_slots_away(awdl_core_sequence(c), 2437) == 2);
-    // AirDrop's TCP both ways and then none for longer than any hold: the radio's schedule is never touched
+    // Inbound TCP from a peer advertising active 5 GHz slots escalates once on the 4th RX segment and returns to idle 2 s after the last.
     const unsigned installed = e_installs;
     for (uint64_t t = 1000000; t < 6000000; t += 50000) {
         if (!(t % 1000000))
@@ -462,9 +463,9 @@ static void test_channel_map(void)
         if (t < 2000000)
             tcp(c, (t / 50000) % 2, t);
         awdl_core_timer(c, t);
-        ECHECK(advertised(c, on6, t));
+        ECHECK(advertised(c, t >= 1300000 && t < 3900000 ? on6_active : on6, t));
     }
-    ECHECK(e_installs == installed);
+    ECHECK(e_installs == installed + 2);
     // a better master whose sequence is mostly 149: the same map
     hear_master(c, A3, 530, mostly149, 6000000);
     ECHECK(root_of(c) == A3 && advertised(c, on6, 6000000));

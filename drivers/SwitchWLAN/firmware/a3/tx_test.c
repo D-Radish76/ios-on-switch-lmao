@@ -42,7 +42,7 @@ static uint64_t switch_clock_tsf;
 static uint32_t switch_expected_rate;
 static uint16_t switch_chanspec;
 static struct switch_a3_timer *switch_tx_timer;
-volatile uint32_t switch_tx_test_results[84];
+volatile uint32_t switch_tx_test_results[86];
 volatile uint32_t switch_tx_test_done;
 static uintptr_t switch_pm_arguments[6], switch_pm_fallback[5];
 
@@ -694,19 +694,20 @@ static uint32_t switch_test_inline(unsigned variant)
 static uint32_t switch_test_hardware_status(unsigned variant)
 {
     switch_reset(32, 0, 0);
-    if (variant != 1)
+    if (variant != 1 && variant != 6 && variant != 7)
         switch_input[0].bytes[82] = switch_envelope[82] = 1;
     switch_enter();
     if (variant == 5)
         switch_a3_tx_cancel(switch_wlc.bytes);
-    uint32_t status = variant == 2 ? 4 : variant == 3 ? 0x40 : 0;
+    uint32_t status = (variant == 2 || variant == 6) ? 4 : (variant == 3 || variant == 7) ? 0x40 : 0;
     switch_a3_tx_radio_status(switch_wlc.bytes + 128,
                               variant == 4 ? (void *)switch_original[0] : (void *)switch_radio[0], status);
-    if (variant == 2 || variant == 4)
+    if (variant == 2 || variant == 4 || variant == 6)
         switch_radio_complete(0, 0);
     SWITCH_REQUIRE(!switch_fault && switch_original_freed == 1 && switch_freed == 1 && switch_statuses == 1);
     SWITCH_REQUIRE(switch_reply.status == (variant == 0   ? SWITCH_A3_TX_SENT
                                            : variant == 5 ? SWITCH_A3_TX_CANCELLED
+                                           : variant >= 6 ? SWITCH_A3_TX_EXPIRED
                                                           : SWITCH_A3_TX_FAILED) &&
                    !switch_reply.flags);
     SWITCH_A3_DIAG(
@@ -1110,6 +1111,8 @@ void switch_tx_test_run(void)
     switch_tx_test_results[81] = switch_test_other_completion(1);
     switch_tx_test_results[82] = switch_test_deferred_fifo();
     switch_tx_test_results[83] = switch_test_rates();
+    switch_tx_test_results[84] = switch_test_hardware_status(6);
+    switch_tx_test_results[85] = switch_test_hardware_status(7);
     /* Unobserved retirement deliberately retains a native TX owner until reset. */
     switch_tx_test_results[68] = switch_test_unobserved_retirement();
     switch_tx_test_done = 0x53574133;

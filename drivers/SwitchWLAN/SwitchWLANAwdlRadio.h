@@ -191,6 +191,7 @@ int swlan_awdl_eth_rx(swlan_eth_rx_fn fn, void *ctx);
 // The access point's channel (MHz) while the station is associated, 0 otherwise. Lock-free; SwitchWLANAwdl.cpp gives
 // it to the stack, whose schedule puts the free slots on it (awdl_schedule: AWDL and the station share one radio).
 uint16_t swlan_awdl_infra_freq(void);
+int swlan_awdl_active(void);
 
 // ---- SwitchWLANAwdl.cpp (r12-awdl-stack) -> SwitchWLANNet.cpp ---------------------------------------------------
 // Whether en0 advertises AWDL (CARD_CAPABILITIES bit 32): the radio's bring-up probe found a way to make the

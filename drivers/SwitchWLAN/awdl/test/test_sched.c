@@ -717,6 +717,98 @@ static void switch_test_traffic_schedule(void)
     free(core);
 }
 
+static void switch_test_rx_data_schedule(void)
+{
+    struct awdl_core *core = make(0x0e, 60, m_tx, switch_schedule);
+    awdl_core_set_infra(core, 2437, 0);
+    switch_awdl_core_set_channels(core, 7, 0);
+    awdl_core_start(core, 0);
+    struct awdl_core *peer = make(0x0f, 520, m_tx, NULL);
+    struct awdl_chan peer_seq[AWDL_SEQ_SLOTS];
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        peer_seq[i] = (struct awdl_chan){(i & 1) ? 44 : 149, 0x80};
+    awdl_core_set_sequence(peer, peer_seq, 0);
+    awdl_core_start(peer, 0);
+    uint8_t frame[AWDL_MAX_FRAME];
+    const size_t length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    const struct awdl_rx_meta af_meta = {1000, 5745, -55};
+    awdl_core_rx(core, frame, length, &af_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    const uint8_t dst[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x0e};
+    const uint8_t src[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x0f};
+    const uint8_t mcast[6] = {0x33, 0x33, 0x00, 0x00, 0x00, 0xfb};
+    uint8_t eth[64] = {0};
+    memcpy(eth, mcast, 6);
+    memcpy(eth + 6, src, 6);
+    eth[12] = 0x86;
+    eth[13] = 0xdd;
+    for (uint16_t s = 1; s <= 5; ++s) {
+        const size_t dlen = awdl_data_encap(eth, sizeof eth, src, s, frame, sizeof frame);
+        const struct awdl_rx_meta m = {10000 + s * 1000, 2437, -50};
+        awdl_core_rx(core, frame, dlen, &m);
+    }
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    memcpy(eth, dst, 6);
+    for (uint16_t s = 10; s < 13; ++s) {
+        const size_t dlen = awdl_data_encap(eth, sizeof eth, src, s, frame, sizeof frame);
+        const struct awdl_rx_meta m = {20000 + (uint64_t)(s - 10) * 1000, 2437, -50};
+        awdl_core_rx(core, frame, dlen, &m);
+    }
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    const size_t dup_len = awdl_data_encap(eth, sizeof eth, src, 12, frame, sizeof frame);
+    frame[1] |= 0x08;
+    const struct awdl_rx_meta dup_meta = {23000, 2437, -50};
+    awdl_core_rx(core, frame, dup_len, &dup_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    const size_t fourth_len = awdl_data_encap(eth, sizeof eth, src, 13, frame, sizeof frame);
+    const struct awdl_rx_meta fourth_meta = {24000, 5220, -50};
+    awdl_core_rx(core, frame, fourth_len, &fourth_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+
+    const size_t refresh_len = awdl_data_encap(eth, sizeof eth, src, 14, frame, sizeof frame);
+    const struct awdl_rx_meta refresh_meta = {1500000, 5220, -50};
+    awdl_core_rx(core, frame, refresh_len, &refresh_meta);
+    awdl_core_timer(core, 2500000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+
+    switch_awdl_core_set_traffic(core, 1, 3000000);
+    awdl_core_timer(core, 3600000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+    switch_awdl_core_set_traffic(core, 0, 3700000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    for (uint16_t s = 20; s < 24; ++s) {
+        const size_t dlen = awdl_data_encap(eth, sizeof eth, src, s, frame, sizeof frame);
+        const struct awdl_rx_meta m = {4000000 + (uint64_t)(s - 20) * 1000, 5220, -50};
+        awdl_core_rx(core, frame, dlen, &m);
+    }
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+    awdl_core_timer(core, 6003000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        peer_seq[i] = (struct awdl_chan){switch_mac[0][i], awdl_opclass_20mhz(switch_mac[0][i])};
+    awdl_core_set_sequence(peer, peer_seq, 6100000);
+    const size_t idle_len = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 6100000, frame, sizeof frame);
+    const struct awdl_rx_meta idle_meta = {6100000, 5745, -55};
+    awdl_core_rx(core, frame, idle_len, &idle_meta);
+    for (uint16_t s = 30; s < 35; ++s) {
+        const size_t dlen = awdl_data_encap(eth, sizeof eth, src, s, frame, sizeof frame);
+        const struct awdl_rx_meta m = {6110000 + (uint64_t)(s - 30) * 1000, 2437, -50};
+        awdl_core_rx(core, frame, dlen, &m);
+    }
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    awdl_core_stop(peer);
+    awdl_core_stop(core);
+    free(peer);
+    free(core);
+}
+
 void test_sched_main(void)
 {
     const int before = test_failures;
@@ -727,6 +819,7 @@ void test_sched_main(void)
     switch_test_first_slot();
     switch_test_acquisition();
     switch_test_traffic_schedule();
+    switch_test_rx_data_schedule();
 #if DEVELOPMENT || DEBUG
     switch_test_home_trial();
 #endif

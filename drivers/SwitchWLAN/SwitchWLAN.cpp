@@ -566,6 +566,7 @@ OSDefineMetaClassAndStructors(SwitchWLAN, IOService)
     // AWDL's free slots on the access point's channel (no mchan on this firmware: AWDL and the station share the
     // one radio by time).
     uint32_t gInfraFreq;
+    uint8_t gAwdlActive;
     // What the firmware's iovar table answered to the AWDL probe (awdlProbe, once a boot).
     bcm_awdl_probe gAwdlProbe;
 }
@@ -595,6 +596,9 @@ extern "C" __attribute__((weak)) bool switch_bluetooth_coex(struct switch_coex_b
         links[0] = 0;
     return false;
 }
+
+extern "C" __attribute__((weak)) void switch_bluetooth_awdl_changed(void)
+{}
 
 bool SwitchWLAN::start(IOService *provider)
 {
@@ -3312,6 +3316,10 @@ int SwitchWLAN::awdlOpen(const swlan_awdl_caps **caps)
 #endif
             allowed = true;
         });
+        if (allowed) {
+            __atomic_store_n(&gAwdlActive, 1u, __ATOMIC_RELEASE);
+            switch_bluetooth_awdl_changed();
+        }
         return allowed;
     };
     locked([&] {
@@ -3349,6 +3357,8 @@ int SwitchWLAN::awdlOpen(const swlan_awdl_caps **caps)
             locked([&] {
                 awdlOpen_ = false;
             });
+            __atomic_store_n(&gAwdlActive, 0u, __ATOMIC_RELEASE);
+            switch_bluetooth_awdl_changed();
             return -EIO;
         }
         setMpc(false);
@@ -3526,6 +3536,10 @@ void SwitchWLAN::awdlClose()
         if (up_)
             mb_.awdlClose();
     });
+    if (was) {
+        __atomic_store_n(&gAwdlActive, 0u, __ATOMIC_RELEASE);
+        switch_bluetooth_awdl_changed();
+    }
     if (was && !loop_->onThread()) {
         setEventMask(false);
         setMpc(true);
@@ -3719,6 +3733,11 @@ void SwitchWLAN::awdlCallbacks(swlan_fw_event_fn events, void *eventsContext, sw
 extern "C" uint16_t swlan_awdl_infra_freq(void)
 {
     return static_cast<uint16_t>(__atomic_load_n(&gInfraFreq, __ATOMIC_ACQUIRE));
+}
+
+extern "C" int swlan_awdl_active(void)
+{
+    return __atomic_load_n(&gAwdlActive, __ATOMIC_ACQUIRE) != 0;
 }
 
 extern "C" void switch_wlan_set_events(const struct swlan_events *events)

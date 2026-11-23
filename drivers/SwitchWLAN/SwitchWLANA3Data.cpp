@@ -354,8 +354,8 @@ bool switch_wlan_a3_radio_frame(const uint8_t *frame, size_t length)
                      : status.status == SWITCH_A3_TX_EXPIRED   ? ETIMEDOUT
                      : status.status == SWITCH_A3_TX_CANCELLED ? ECANCELED
                                                                : EPROTO;
-            if (pending.unicastData && status.status == SWITCH_A3_TX_SENT) {
-                if (acked) {
+            if (pending.unicastData && (status.status == SWITCH_A3_TX_SENT || status.status == SWITCH_A3_TX_FAILED)) {
+                if (status.status == SWITCH_A3_TX_SENT && acked) {
                     if (gDataRateIndex < kDataRateMax && ++gDataAckStreak >= kDataRateStepUpAcks) {
                         ++gDataRateIndex;
                         gDataAckStreak = 0;

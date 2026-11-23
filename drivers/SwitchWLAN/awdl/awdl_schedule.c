@@ -87,7 +87,10 @@ static struct awdl_chan legal_stand_in(uint16_t legal, uint8_t channel)
 }
 
 // A full advertised sequence takes 1.048576 s. Two cycles leave a full peer cycle after schedule installation.
-#define SWITCH_AWDL_SEARCH_US (2 * AWDL_SEQ_US)
+#define SWITCH_AWDL_SEARCH_US      (2 * AWDL_SEQ_US)
+#define SWITCH_AWDL_DATA_BURST     4u
+#define SWITCH_AWDL_DATA_WINDOW_US 1000000u
+#define SWITCH_AWDL_DATA_HOLD_US   2000000u
 
 static void reset_search(struct awdl_core *c, uint64_t now)
 {
@@ -231,7 +234,8 @@ static void build(struct awdl_core *c)
     } else if (c->switch_channels_limited && searching(c)) {
         search_sequence(c, awdl_chan_of_freq(c->infra_mhz));
     } else {
-        const uint8_t *slots = c->switch_traffic_active ? switch_awdl_active_slots : awdl_slot_channels;
+        const uint8_t *slots =
+            (c->switch_traffic_active || c->switch_data_active) ? switch_awdl_active_slots : awdl_slot_channels;
         build_slots(c->cfg.seq, slots, c->infra_mhz);
         for (unsigned i = 0; c->switch_channels_limited && i < AWDL_SEQ_SLOTS; ++i)
             if (slots[i] && !(social_bit(slots[i]) & c->switch_legal_channels))
@@ -337,8 +341,54 @@ void awdl_sched_log(struct awdl_core *c, const char *fmt, ...)
 void awdl_sched_start(struct awdl_core *c)
 {
     c->switch_timed_peer = 0;
+    c->switch_data_active = 0;
+    c->switch_data_burst = 0;
+    c->switch_data_window = 0;
+    c->switch_data_until = 0;
     reset_search(c, c->last_observation);
     build(c);
+}
+
+static int peer_has_active_slots(const struct awdl_peer *p)
+{
+    if (!p || !p->has_seq || !p->seq.count)
+        return 0;
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
+        if (!switch_awdl_active_slots[i] || switch_awdl_active_slots[i] == awdl_slot_channels[i])
+            continue;
+        if (awdl_chan_primary(p->seq.chan[i % p->seq.count]) == switch_awdl_active_slots[i])
+            return 1;
+    }
+    return 0;
+}
+
+void switch_awdl_sched_data_activity(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
+{
+    if (!c || !c->running || awdl_native(c) || !peer_has_active_slots(p))
+        return;
+    if (!now)
+        now = c->last_observation;
+    if (c->switch_data_active) {
+        c->switch_data_until = now + SWITCH_AWDL_DATA_HOLD_US;
+        return;
+    }
+    if (!c->switch_data_burst || now < c->switch_data_window ||
+        now - c->switch_data_window > SWITCH_AWDL_DATA_WINDOW_US) {
+        c->switch_data_window = now;
+        c->switch_data_burst = 1;
+        return;
+    }
+    if (++c->switch_data_burst < SWITCH_AWDL_DATA_BURST)
+        return;
+    struct awdl_chan was[AWDL_SEQ_SLOTS];
+    memcpy(was, c->cfg.seq, sizeof was);
+    c->switch_data_active = 1;
+    c->switch_data_until = now + SWITCH_AWDL_DATA_HOLD_US;
+    build(c);
+    if (memcmp(was, c->cfg.seq, sizeof was)) {
+        awdl_soft_install(c, now);
+        awdl_sched_log(c, "data active");
+    }
 }
 
 void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
@@ -359,22 +409,41 @@ void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *
 
 void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
 {
+    struct awdl_chan previous[AWDL_SEQ_SLOTS];
+    memcpy(previous, c->cfg.seq, sizeof previous);
+    int changed = 0;
+    const char *reason = NULL;
+    if (c->switch_data_active && now >= c->switch_data_until) {
+        c->switch_data_active = 0;
+        c->switch_data_burst = 0;
+        c->switch_data_window = 0;
+        c->switch_data_until = 0;
+        changed = 1;
+        reason = "data idle";
+    }
     if (search_moves(c) && now >= c->switch_next_search) {
         const uint64_t passes = 1 + (now - c->switch_next_search) / SWITCH_AWDL_SEARCH_US;
         c->switch_next_search += passes * SWITCH_AWDL_SEARCH_US;
         // Both split-band searches and the channel-6 sweep repeat within 48 passes.
         c->switch_search_pass = (uint8_t)((c->switch_search_pass + passes) % 48u);
-        struct awdl_chan previous[AWDL_SEQ_SLOTS];
-        memcpy(previous, c->cfg.seq, sizeof previous);
+        changed = 1;
+    }
+    if (changed) {
         build(c);
-        if (memcmp(previous, c->cfg.seq, sizeof previous))
+        if (memcmp(previous, c->cfg.seq, sizeof previous)) {
             awdl_soft_install(c, now);
+            if (reason)
+                awdl_sched_log(c, "%s", reason);
+        }
     }
 }
 
 uint64_t awdl_sched_next(const struct awdl_core *c)
 {
-    return search_moves(c) ? c->switch_next_search : UINT64_MAX;
+    uint64_t next = search_moves(c) ? c->switch_next_search : UINT64_MAX;
+    if (c->switch_data_active && c->switch_data_until < next)
+        next = c->switch_data_until;
+    return next;
 }
 
 void awdl_core_set_infra(struct awdl_core *c, uint16_t infra_mhz, uint64_t now)

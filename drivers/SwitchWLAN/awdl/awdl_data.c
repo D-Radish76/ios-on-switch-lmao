@@ -456,6 +456,8 @@ void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struc
         }
         p->last_data_seq = seq;
         p->has_data_seq = 1;
+        if (!awdl_is_group(f + 4))
+            switch_awdl_sched_data_activity(c, p, m->tsf);
     }
     for (size_t i = 0; i < n; ++i) {
         const size_t l = awdl_msdu_ether(&msdus[i], c->scratch, sizeof c->scratch);

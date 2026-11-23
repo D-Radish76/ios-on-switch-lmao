@@ -22,7 +22,7 @@ static struct switch_a3_timer *switch_due;
 static struct switch_a3_excursion_request switch_request;
 static switch_a3_excursion_callback switch_callback;
 static void *switch_context;
-uint32_t switch_control_test_results[38];
+uint32_t switch_control_test_results[39];
 volatile uint32_t switch_control_test_done;
 
 #define SWITCH_REQUIRE(condition) \
@@ -447,7 +447,7 @@ static uint32_t switch_test(unsigned scenario)
     if (scenario == 15) {
         switch_tbtt = switch_now + 10240;
         SWITCH_REQUIRE(!switch_start(&schedule) && !switch_starts && switch_due->snapshot.armed);
-        SWITCH_REQUIRE(switch_due->snapshot.requested_tsf == switch_tbtt + 2000);
+        SWITCH_REQUIRE(switch_due->snapshot.requested_tsf == switch_tbtt + 5000);
         switch_tbtt += 102400;
         switch_fire(switch_due->snapshot.requested_tsf);
         SWITCH_REQUIRE(switch_starts == 1 && switch_native_pending && switch_request.expiry_tsf == switch_tbtt - 10240);
@@ -598,6 +598,26 @@ static uint32_t switch_test_pm_retry(void)
     return 0;
 }
 
+static uint32_t switch_test_beacon_reentry(void)
+{
+    struct switch_a3_schedule schedule = switch_reset();
+    schedule.slots[0].chanspec = 0x1006;
+    schedule.period_us = 200000;
+    schedule.slots[0].dwell_us = 160000;
+    schedule.slots[1].dwell_us = 40000;
+    *((uint8_t *)switch_bsscfg + 8) = 1;
+    switch_tbtt = 30000;
+    SWITCH_REQUIRE(!switch_start(&schedule) && switch_starts == 1 && switch_native_pending);
+    SWITCH_REQUIRE(switch_request.expiry_tsf == 19760);
+    switch_now = 19767;
+    switch_complete(SWITCH_A3_EXCURSION_EXPIRED);
+    SWITCH_REQUIRE(switch_due && switch_due->snapshot.armed && switch_due->snapshot.requested_tsf == 35000);
+    switch_tbtt = 132400;
+    switch_fire(switch_timer_due);
+    SWITCH_REQUIRE(switch_starts == 2 && switch_native_pending && switch_request.expiry_tsf == 122160);
+    return 0;
+}
+
 void switch_control_test_run(void)
 {
     for (unsigned index = 0; index < 29; ++index)
@@ -607,6 +627,7 @@ void switch_control_test_run(void)
     switch_control_test_results[34] = switch_test_phase();
     switch_control_test_results[35] = switch_test_adjacent_windows();
     switch_control_test_results[36] = switch_test_pm_retry();
-    switch_control_test_results[37] = switch_test(29);
+    switch_control_test_results[37] = switch_test_beacon_reentry();
+    switch_control_test_results[38] = switch_test(29);
     switch_control_test_done = 0x53574133;
 }

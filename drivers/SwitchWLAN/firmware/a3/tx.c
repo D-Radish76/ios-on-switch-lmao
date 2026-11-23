@@ -138,9 +138,11 @@ static void switch_a3_tx_completed(void *wlc, uint32_t status, void *argument)
     if (!pending->submitting) {
         const int acked = !pending->cancelled && (status & 2u);
         const int group_sent = pending->group && pending->radio_status && !(pending->hardware_status & 0x7cu);
+        const int suppressed = !pending->group && pending->radio_status && (pending->hardware_status & 0x7cu);
         switch_a3_tx_finish(pending,
                             pending->cancelled    ? SWITCH_A3_TX_CANCELLED
                             : acked || group_sent ? SWITCH_A3_TX_SENT
+                            : suppressed          ? SWITCH_A3_TX_EXPIRED
                                                   : SWITCH_A3_TX_FAILED,
                             acked ? SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED : 0);
     }

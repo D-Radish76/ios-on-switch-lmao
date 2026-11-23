@@ -1246,12 +1246,14 @@ TEST_F(SwitchA3Radio, UnicastDataUsesAdaptiveOfdmRatesAndActionStaysAt6Mbps)
     switch_complete(switch_firmware.dma.back(), 0, SWITCH_A3_TX_EXPIRED);
     EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
     switch_complete(switch_firmware.dma.back(), 0, SWITCH_A3_TX_CANCELLED);
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
+    switch_complete(switch_firmware.dma.back(), 0, SWITCH_A3_TX_FAILED);
 
     for (unsigned i = 0; i < switch_a3_host::kDataRateStepUpAcks; ++i) {
-        EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
+        EXPECT_EQ(sendFrame(0x08, 2, 0), 24u);
         switch_complete(switch_firmware.dma.back(), SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED);
     }
-    EXPECT_EQ(sendFrame(0x08, 2, 0), 72u);
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
     switch_complete(switch_firmware.dma.back(), SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED);
 
     switch_wlan_a3_radio_power(false);

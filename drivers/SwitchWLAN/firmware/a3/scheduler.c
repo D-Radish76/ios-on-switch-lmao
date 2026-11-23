@@ -172,9 +172,12 @@ static void switch_a3_scheduler_excursion(void *context, uint32_t event,
             switch_a3_scheduler_step();
         } else {
             uint64_t next = switch_a3_scheduler.window_end;
-            if (result->reason == SWITCH_A3_EXCURSION_ENTRY_FAILED &&
-                result->channel_result == SWITCH_A3_CHANNEL_NO_PM_ACK && result->returned_tsf &&
-                next > result->returned_tsf && next - result->returned_tsf > 7000u)
+            if (result->reason == SWITCH_A3_EXCURSION_EXPIRED && switch_a3_scheduler.until < next &&
+                next - switch_a3_scheduler.until > 10240u + 5000u + 1000u)
+                next = switch_a3_scheduler.until + 10240u + 5000u;
+            else if (result->reason == SWITCH_A3_EXCURSION_ENTRY_FAILED &&
+                     result->channel_result == SWITCH_A3_CHANNEL_NO_PM_ACK && result->returned_tsf &&
+                     next > result->returned_tsf && next - result->returned_tsf > 7000u)
                 next = result->returned_tsf + 5000u;
             switch_a3_scheduler_arm(next);
         }
@@ -253,10 +256,10 @@ static void switch_a3_scheduler_step(void)
             switch_a3_scheduler_arm(boundary);
             return;
         }
-        /* Keep the native ten-TU TBTT guard without skipping an imminent beacon. */
+        /* Keep the native ten-TU TBTT guard without skipping an imminent beacon; 5 ms covers 1 Mbps 2.4 GHz beacons. */
         if (station_return <= now || station_return - now <= 10240u + 1000u) {
             SWITCH_A3_DIAG_COUNT(SCHED_BLOCK);
-            const uint64_t retry = station_return + 2000u;
+            const uint64_t retry = station_return + 5000u;
             switch_a3_scheduler_arm(station_return > now && retry + 1000u < boundary ? retry : boundary);
             return;
         }

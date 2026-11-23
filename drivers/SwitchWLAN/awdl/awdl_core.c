@@ -514,6 +514,10 @@ void awdl_core_stop(struct awdl_core *c)
         return;
     c->switch_generation++;
     c->running = 0;
+    c->switch_data_active = 0;
+    c->switch_data_burst = 0;
+    c->switch_data_window = 0;
+    c->switch_data_until = 0;
 #if DEVELOPMENT || DEBUG
     c->switch_home_trial_channel = 0;
 #endif
