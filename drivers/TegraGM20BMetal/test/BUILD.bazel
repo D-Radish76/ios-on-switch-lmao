@@ -301,7 +301,6 @@ device_test(
 device_test(
     name = "device_draw_times_test",
     srcs = ["device_draw_times_test.cpp"],
-    linkopts = ["-Wl,-U,_switch_nmb_blend_color_words"],
 )
 
 # Compute dispatches on gm20b::Device: a kernel's argument tables bound at the dispatch that meets them, direct or
@@ -469,7 +468,6 @@ device_test(
 device_test(
     name = "device_set_test",
     srcs = ["device_set_test.cpp"],
-    linkopts = ["-Wl,-U,_switch_nmb_blend_color_words"],
 )
 
 # A render server's pool and block-linear chunks on gm20b::Device (device_harness.h): cached BoAllocs the kernel serves
@@ -479,7 +477,6 @@ device_test(
     srcs = [
         "device_chunk_memory_test.cpp",
     ],
-    linkopts = ["-Wl,-U,_switch_nmb_blend_color_words"],
 )
 
 # Fetching draws on gm20b::Device (device_harness.h), a state made from a record as the runtime makes one: in its storage
@@ -583,7 +580,6 @@ device_test(
 device_test(
     name = "device_measure_test",
     srcs = ["device_measure_test.cpp"],
-    linkopts = ["-Wl,-U,_switch_nmb_blend_color_words"],
 )
 
 # The encode reads no buffer's contents on the CPU (gm20b::Device over the kernel model): a first draw over buffer vertices and
@@ -803,13 +799,6 @@ device_test(
     name = "device_zero_page_test",
     srcs = [
         "device_zero_page_test.cpp",
-    ],
-)
-
-device_test(
-    name = "device_xr_shadow_test",
-    srcs = [
-        "device_xr_shadow_test.cpp",
     ],
 )
 
@@ -2205,16 +2194,6 @@ host_test(
 )
 
 host_test(
-    name = "xr_shadow_test",
-    srcs = [
-        "xr_shadow_test.cpp",
-        "//drivers/TegraGM20BMetal:xr.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
-    ],
-    cxx_std = "c++17",
-)
-
-host_test(
     name = "packed_plane_test",
     srcs = [
         "packed_plane_test.cpp",
@@ -2728,7 +2707,6 @@ host_test(
         "//drivers/TegraGM20BMetal:zeta.h",
         "//drivers/TegraGM20BMetal:push.h",
         "//drivers/TegraGM20BMetal:direct_abi.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:direct_storage.h",
         "//drivers/TegraGM20BMetal:storage.h",
         "//drivers/TegraGM20BMetal:pack.h",
@@ -3654,7 +3632,6 @@ host_test(
     srcs = [
         "direct_push_test.cpp",
         "//drivers/TegraGM20BMetal:direct_abi.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:direct_push.h",
         "//drivers/TegraGM20BMetal:dynamic_push.h",
@@ -3690,15 +3667,6 @@ host_test(
 )
 
 host_test(
-    name = "blend_color_test",
-    srcs = [
-        "blend_color_test.cpp",
-        "//drivers/TegraGM20BMetal:blend_color.h",
-    ],
-    cxx_std = "c++17",
-)
-
-host_test(
     name = "compute_opening_test",
     srcs = [
         "compute_opening_test.cpp",
@@ -3716,16 +3684,6 @@ host_test(
         "//drivers/TegraGM20BMetal:blend_reads.h",
     ],
     cxx_std = "c++17",
-)
-
-rust_test(
-    name = "blend_words_test",
-    srcs = [
-        "blend_words_test.rs",
-        "//third_party/m2v/crates/metal2vulkan:src/lower/arith/extended_range/blend_color.rs",
-    ],
-    crate_root = "blend_words_test.rs",
-    edition = "2021",
 )
 
 host_test(
@@ -4280,7 +4238,6 @@ host_test(
         "//drivers/TegraGM20BMetal:function_attributes.h",
         "//drivers/TegraGM20BMetal:function_tags.h",
         "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:pack/probe_record.h",
         "//drivers/TegraGM20BMetal:gm20b_cache.cpp",
@@ -4289,7 +4246,6 @@ host_test(
         "//drivers/TegraGM20BMetal:capture.h",
         "//drivers/TegraGM20BMetal:compile_request.cpp",
         "//drivers/TegraGM20BMetal:compile_request.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:compute_record.h",
         "//drivers/TegraGM20BMetal:cubic.h",
         "//drivers/TegraGM20BMetal:kernel_cache.cpp",
@@ -4351,7 +4307,6 @@ host_test(
         "//drivers/TegraGM20BMetal:function_attributes.h",
         "//drivers/TegraGM20BMetal:function_tags.h",
         "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:direct_abi.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:pack/probe_record.h",
@@ -4361,7 +4316,6 @@ host_test(
         "//drivers/TegraGM20BMetal:capture.h",
         "//drivers/TegraGM20BMetal:compile_request.cpp",
         "//drivers/TegraGM20BMetal:compile_request.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:compute_record.h",
         "//drivers/TegraGM20BMetal:cubic.h",
         "//drivers/TegraGM20BMetal:kernel_cache.cpp",
@@ -4415,7 +4369,6 @@ host_test(
         "//drivers/TegraGM20BMetal:written_textures.h",
         "//drivers/TegraGM20BMetal:xr.h",
         "//drivers/TegraGM20BMetal:xr_pass.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:codegen_request.h",
         "//drivers/TegraGM20BMetal:TegraGM20BMetalCompileRequest.h",
         "//drivers/TegraGM20BMetal:TegraGM20BMetalPipelineKey.h",
@@ -4425,7 +4378,6 @@ host_test(
         "//drivers/TegraGM20BMetal:function_attributes.h",
         "//drivers/TegraGM20BMetal:function_tags.h",
         "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:pack/probe_record.h",
         "//drivers/TegraGM20BMetal:gm20b_cache.cpp",
@@ -4492,13 +4444,11 @@ host_test(
         "//drivers/TegraGM20BMetal:xr.h",
         "//drivers/TegraGM20BMetal:xr_pass.h",
         "//drivers/TegraGM20BMetal:codegen_request.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:TegraGM20BMetalCompileRequest.h",
         "//drivers/TegraGM20BMetal:TegraGM20BMetalPipelineKey.h",
         "//drivers/TegraGM20BMetal:compute_key.h",
         "//drivers/TegraGM20BMetal:plugin/StageInText.h",
         "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:pack/probe_record.h",
         "//drivers/TegraGM20BMetal:gm20b_cache.cpp",
@@ -4559,7 +4509,6 @@ host_test(
         "//drivers/TegraGM20BMetal:compiler/compiler_store.cpp",
         "//drivers/TegraGM20BMetal:compiler/compiler_store.h",
         "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:direct_abi.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:pack/probe_record.h",
@@ -4576,7 +4525,6 @@ host_test(
         "//drivers/TegraGM20BMetal:written_textures.h",
         "//drivers/TegraGM20BMetal:xr.h",
         "//drivers/TegraGM20BMetal:xr_pass.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:descriptors.h",
         "//drivers/TegraGM20BMetal:kernel_cache.cpp",
         "//drivers/TegraGM20BMetal:metallib.cpp",
@@ -4618,7 +4566,6 @@ host_test(
         "//drivers/TegraGM20BMetal:remote.h",
         "//drivers/TegraGM20BMetal:lock.h",
         "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
-        "//drivers/TegraGM20BMetal:blend_color.h",
         "//drivers/TegraGM20BMetal:direct_abi.h",
         "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
         "//drivers/TegraGM20BMetal:pack/probe_bind.h",
@@ -4635,7 +4582,6 @@ host_test(
         "//drivers/TegraGM20BMetal:written_textures.h",
         "//drivers/TegraGM20BMetal:xr.h",
         "//drivers/TegraGM20BMetal:xr_pass.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:kernel_cache.cpp",
         "//drivers/TegraGM20BMetal:metallib.cpp",
         "//drivers/TegraGM20BMetal:metallib.h",
@@ -6150,7 +6096,6 @@ host_test(
         "//drivers/TegraGM20BMetal:written_textures.h",
         "//drivers/TegraGM20BMetal:xr.h",
         "//drivers/TegraGM20BMetal:xr_pass.h",
-        "//drivers/TegraGM20BMetal:xr_shadow.h",
         "//drivers/TegraGM20BMetal:slot_mask.h",
     ],
     cxx_std = "c++17",

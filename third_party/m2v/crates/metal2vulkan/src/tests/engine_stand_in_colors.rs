@@ -2,7 +2,8 @@
 //! (`ColorAttachmentDescriptor::stand_in`, `LoweringInputs::stand_in_colors`): the fragment
 //! function's float output there carries Metal's clamp before its conversion, two `GLSL.std.450`
 //! `NClamp`s, its color lanes to the form's bounds (a blended output to Metal's blend source
-//! range, an unblended one to the values of codes 0 and 1023) and its alpha to `[0, 1]`.
+//! range, an unblended one to that range's low end and code 1023's value) and its alpha to
+//! `[0, 1]`. An attachment of one of those formats without a stand-in is refused.
 //!
 //! The owned fixture `engine/stage_io`'s render pipeline, its color 0 `RGBA16Float`, goes through
 //! `Device::compile_render_pipeline` on every committed profile. No GPU is used. `llvm-as`
@@ -10,7 +11,7 @@
 
 use crate::budget::Budget;
 use crate::device::{Device, DeviceDescription, DevicePolicy};
-use crate::error::{Error, Needs};
+use crate::error::{Attachment, Error, Feature, Needs};
 use crate::library::Library;
 use crate::metal::format::ExtendedRange;
 use crate::metal::{BlendFactor, PixelFormat, VertexFormat};
@@ -184,4 +185,45 @@ fn a_stand_in_output_carries_metals_clamp() {
         }
     }
     assert!(checked > 0, "no committed profile compiled the fixture");
+}
+
+/// A color attachment of one of Apple's 10-bit extended-range formats without a stand-in, blended
+/// or not, is refused `NotImplemented(Format)` at that attachment on every committed profile.
+#[test]
+fn an_extended_range_attachment_without_a_stand_in_is_refused() {
+    let Some(bc) = fixture() else {
+        return;
+    };
+    let formats = [
+        PixelFormat::BGR10XR,
+        PixelFormat::BGR10XRSRGB,
+        PixelFormat::BGRA10XR,
+        PixelFormat::BGRA10XRSRGB,
+        PixelFormat::RGB10A82PXR10,
+        PixelFormat::RGB10A82PXR10SRGB,
+    ];
+    let mut checked = 0;
+    for (stem, dev) in devices() {
+        checked += 1;
+        for pf in formats {
+            for blended in [false, true] {
+                let what = format!("{stem}: {pf:?} blended {blended}");
+                let mut c = attachment(None, blended);
+                c.pixel_format = pf;
+                match dev.compile_render_pipeline(&descriptor(&bc, c), &Budget::standard()) {
+                    Err(Error::Unsupported(u)) => {
+                        assert_eq!(
+                            (u.feature, u.needs),
+                            (Feature::Format, Needs::NotImplemented),
+                            "{what}"
+                        );
+                        let at = u.location.as_ref().and_then(|l| l.attachment());
+                        assert_eq!(at, Some(Attachment::Color(0)), "{what}");
+                    }
+                    other => panic!("{what}: {:?}", other.map(|_| ())),
+                }
+            }
+        }
+    }
+    assert!(checked > 0, "no committed profile");
 }

@@ -158,35 +158,6 @@ fragment Planes xr_planes_split_frag(Out in [[stage_in]], texture2d<uint, access
     return {t.x, t.y & 0xff};
 }
 
-// A pass's half shadow of such an attachment (runtime/xr_shadow.h): Metal's tile value of its codes, which holds no colour
-// code past 1022 (a code 1023 reads as 1022 there, where a texture read takes it as 639 / 510)
-static half tileColor(uint code)
-{
-    return color(min(code, 1022u));
-}
-
-static half3 tileWord(uint w)
-{
-    return half3(tileColor(w >> 20 & 0x3ff), tileColor(w >> 10 & 0x3ff), tileColor(w & 0x3ff));
-}
-
-fragment half4 xr_tile_bgr10_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
-{
-    return half4(tileWord(codes.read(uint2(in.position.xy)).r), 1.0h);
-}
-
-fragment half4 xr_tile_bgra10_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
-{
-    const uint4 f = codes.read(uint2(in.position.xy)) >> 6;
-    return half4(tileColor(f.z), tileColor(f.y), tileColor(f.x), color(clamp(f.w, 384u, 894u)));
-}
-
-fragment half4 xr_tile_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
-{
-    const uint2 t = codes.read(uint2(in.position.xy)).rg;
-    return half4(tileWord(t.x), quotient(int(t.y & 0xff), 255));
-}
-
 // A GPU copy through a BGRA10_XR or BGRA10_XR_sRGB texture Metal keeps compressed (runtime/TegraGM20BMetalCopyClamp.h): the copied
 // fields as an M4 Max leaves the copy's destination, each its 10-bit code alone (the low 6 bits 0) and the alpha code clamped
 // to 384..894 (m2v-textures7 probes/lowbits.mm); `origin` the destination's texel the scratch's (0, 0) holds

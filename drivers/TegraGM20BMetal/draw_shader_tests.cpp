@@ -6,7 +6,6 @@
 #include "clear_box.h"
 #include "icb.h"
 #include "dynamic_push.h"
-#include "blend_color.h"
 #include "gpu.h"
 #include "layers.h"
 #include "kit.h"

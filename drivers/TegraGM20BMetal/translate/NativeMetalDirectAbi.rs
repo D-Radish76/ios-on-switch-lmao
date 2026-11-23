@@ -45,7 +45,6 @@ pub enum NmbDirectSource {
     TessFactors,
     PatchIndices,
     ControlPointIndices,
-    ExtendedShadow,
 }
 
 pub const NMB_DIRECT_IMMUTABLE: u32 = u32::MAX;
@@ -133,7 +132,6 @@ pub struct NmbDirectDraw {
     pub write_count: u32,
     pub push_mask: u32,
     pub push: [u32; 32],
-    pub blend_color_word: u32,
     pub half_blend_color_word: u32,
     pub depth_test_word: u32,
     pub stencil_test_word: u32,
@@ -192,8 +190,6 @@ pub struct NmbDirectBinds {
     pub texture_count: u32,
     pub fragment_tests: u32,
     pub bind_stride: u32,
-    pub two_plane: bool,
-    pub extended_shadows: u32,
 }
 
 #[repr(C)]
@@ -237,7 +233,6 @@ pub struct NmbDirectState {
     pub storage: NmbDirectStorage,
     pub blended: u32,
     pub draws: [NmbDirectDraw; 4],
-    pub two_plane: bool,
 }
 
 pub(crate) fn stage_number(stage: Stage) -> u32 {

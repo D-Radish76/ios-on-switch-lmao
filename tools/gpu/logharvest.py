@@ -17,7 +17,7 @@ The lines it reads, os_log's (the runtime's in debug builds, TegraGM20BMetalComp
     OS version: <build>, deviceBuildVersion is "<build>", iPhone OS <version> (<build>)
 A key is TegraGM20BMetalPipelineKey.h pipelineKey's text: "<descriptor fields>  | v <function> <constants> | f
 <function> <constants>[ | <vl|vp|fl|fp> <linked function>...][ | l <framework>]", then a variant's name
-(TegraGM20BMetalCubic.mm renderVariant): "[ | cubic <binds>][ | tests=<n>][ | xr2p][ | xrs=<slots>][ |
+(TegraGM20BMetalCubic.mm renderVariant): "[ | cubic <binds>][ | tests=<n>][ | xrs=<slots>][ |
 wtex=<slot>:<format>,...]". Each state becomes the line
     R ok=1 label=<Core Animation label, else -> os=<build> <fields> | v <function> lib=<path> <constants> | f ... |
         [cubic <binds> | ][xrs=<slots> | ][wtex=<slot>:<format>,... | ]
@@ -27,8 +27,9 @@ state gets its own line first.
 
 A USB pull holds several boots with overlapping clocks: each boot (log show's bootUUID) is read alone, and names its OS
 build in its own lines ("OS version: 24B119"). A boot naming none is skipped unless --build names it; one naming
-another build than --build is refused. A key's test class (" | tests=<n>") and two-plane pass (" | xr2p") are left
-off, as the pack builder makes those of every line. A framework's library path is the build's archive inventory's, the
+another build than --build is refused. A key's test class (" | tests=<n>") is left off, as the pack builder makes
+those of every line. A driver before the extended-range stand-in named a two-plane pass (" | xr2p") after the test
+class; its logs' keys are read without it. A framework's library path is the build's archive inventory's, the
 corpus's, else its crawl's (--crawl: @ipsw//:crawl_inventory of the build's kind).
 
 The made line's key is the cache key (render_key.h renderCacheKey): a state that links functions carries
@@ -97,7 +98,8 @@ BUILD_LINES = (
 # A variant's name segments a corpus line carries (make_pack.state_key: cubic binds, sampled two-plane slots, written
 # formats), and those the pack builder makes of every line it takes (directpack.mm makeState)
 LINE_VARIANTS = ('cubic ', 'xrs=', 'wtex=')
-BUILDER_FORMS = re.compile(r' \| (tests=\d+|xr2p)(?= \| |$)')
+BUILDER_FORMS = re.compile(r' \| tests=\d+(?= \| |$)')
+EARLIER_TWO_PLANE_PASS = ' | xr2p'
 OWN_APPS = ('SwitchHWTest',)
 CA_LABEL = 'com.apple.coreanimation.'
 FRAMEWORK_PATH = re.compile(r' lib=(/System/Library/(?:Private)?Frameworks/(\w+)\.framework/default\.metallib)')
@@ -374,10 +376,10 @@ def states(boot: Boot, held: set[str]) -> Iterator[tuple[str, str, str, str | No
 
 
 def untested(key: str | None) -> str | None:
-    """Give a key without the forms the pack builder makes of each line it takes: its test class and two-plane pass."""
+    """Give a key without the forms the pack builder makes of each line it takes: its test class."""
     if not key:
         return key
-    tails, key = cache_tails(key), without_cache_tails(key)
+    tails, key = cache_tails(key), without_cache_tails(key).replace(EARLIER_TWO_PLANE_PASS, '')
     name = make_pack.packfile.variant_name(key)
     return key[: len(key) - len(name)] + BUILDER_FORMS.sub('', name) + tails
 
@@ -389,6 +391,7 @@ def cache_tails(key: str) -> str:
 
 def base_key(key: str) -> str:
     """Give the key of the state a variant's key names (runtime/pack.h variantNameAt)."""
+    key = key.replace(EARLIER_TWO_PLANE_PASS, '')
     return key[: len(key) - len(make_pack.packfile.variant_name(key))]
 
 

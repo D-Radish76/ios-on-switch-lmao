@@ -105,7 +105,6 @@ pub(crate) mod extended_color;
 pub mod fetch;
 mod plan;
 mod stage_in;
-mod two_plane;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -342,10 +341,6 @@ pub struct StageIoPlan {
     /// as the raw texel Metal stores (`extended_color::encode`), with the form each is held in
     /// (and, a bfloat one's rounding).
     pub extended: BTreeMap<u32, crate::pipeline::lower_inputs::ExtendedRangeColor>,
-    /// The two-plane extended-range color attachments among `extended` whose alpha byte each
-    /// return stores through an output variable of its own (`two_plane`), the variable's object
-    /// by the attachment's index.
-    pub two_plane: BTreeMap<u32, usize>,
     /// A vertex function's viewport compensation (`LoweringInputs::viewport_compensation`).
     pub compensation: Option<Compensation>,
     /// A fragment function's depth output, which each return gives Metal's answer
@@ -1351,10 +1346,7 @@ pub fn emit_return(
                     }
                     None => part,
                 };
-                match o.color.and_then(|c| cx.plan.families.stage_io.two_plane.get(&c).copied()) {
-                    Some(alpha) => two_plane::store(cx, fb, &o.link, alpha, part)?,
-                    None => store(cx, fb, &o.link, part)?,
-                }
+                store(cx, fb, &o.link, part)?;
             }
             if let (Some(c), Some(clip)) = (capture, clip) {
                 store_capture(cx, fb, c, clip, size)?;
@@ -1766,10 +1758,6 @@ fn output_part(
         None => part,
     };
     let part = match o.color {
-        // An extended-range attachment's blend the function computes over its input attachment.
-        Some(color) if cx.plan.families.fragment.input_blends.contains_key(&color) => {
-            input_blended(cx, fb, (x, returned), color, (o.link.form, part))?
-        }
         Some(color) => match cx.plan.families.stage_io.extended.get(&color).copied() {
             Some(e) => extended_color::encode(cx, fb, e, o.link.form, part)?,
             None => {
@@ -1814,31 +1802,6 @@ fn stand_in_clamped(
     let alpha = fb.composite_extract(clamped, &[3])?;
     let alpha = fb.glsl(GlslOp::NClamp, &[alpha, zero, unit])?;
     fb.composite_insert(alpha, clamped, &[3])
-}
-
-/// The raw components a write of first output `part` (of `form`) to extended-range attachment
-/// `color` stores, whose blend the function computes over the attachment's input attachment
-/// (`lower::fragment`'s `input_blend`), the second source read from the returned value `x` (of
-/// shape `returned`) where the blend reads it.
-fn input_blended(
-    cx: &mut EmitCx<'_>,
-    fb: &mut FunctionBuilder<'_>,
-    (x, returned): (SValue, Returned),
-    color: u32,
-    (form, part): (Form, SValue),
-) -> BResult<SValue> {
-    let plan = cx.plan;
-    let Some(ib) = plan.families.fragment.input_blends.get(&color) else {
-        return Err(cx.fail("an input blend of an attachment the plan does not name"));
-    };
-    let second = match (ib.second, returned) {
-        (Some((field, form)), Returned::Struct) => Some((form, fb.composite_extract(x, &[field])?)),
-        (Some(_), _) => return Err(cx.fail("a second output outside a returned structure")),
-        (None, _) => None,
-    };
-    let texel =
-        crate::lower::fragment::input_blend_texel(cx, fb, (color, ib), (form, part), second)?;
-    extended_color::raw_components(fb, ib.form, texel)
 }
 
 /// The rotated first output `part`, of float form `form`, with its alpha lane (Metal's blue)

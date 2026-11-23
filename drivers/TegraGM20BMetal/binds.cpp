@@ -162,7 +162,6 @@ void RenderEncoder::setBlendColor(const float rgba[4])
     if (memcmp(v, blendColor_, sizeof v)) {
         memcpy(blendColor_, v, sizeof v);
         blendColorDirty_ = true;
-        blendWordsDirty_ = true;
         spillDirty_ = true;
     }
 }

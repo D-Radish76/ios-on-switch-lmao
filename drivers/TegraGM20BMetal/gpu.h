@@ -966,7 +966,7 @@ public:
         std::atomic<uint64_t> ceOps{0}, ceBytes{0};
         // passes that drew RGB10A8_2P_XR10 in its two planes (xr_pass.h), the planes those rendered through a shadow, and
         // the draws' binds of a two-plane texture's header pair; the copy engine's merges and splits of a one-image form
-        std::atomic<uint64_t> xrPlanePasses{0}, xrPlaneShadows{0}, xrPairBinds{0};
+        std::atomic<uint64_t> xrPlaneShadows{0}, xrPairBinds{0};
         // passes into a chain level
         std::atomic<uint64_t> levelPasses{0};
         // pack programs placed in the shader heap, and states not made because it was full

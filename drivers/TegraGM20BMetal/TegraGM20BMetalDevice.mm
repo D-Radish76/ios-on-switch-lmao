@@ -105,7 +105,6 @@
     d[@"loop_continuations"] = @(gRM->stats.loopContinuations.load());
     d[@"rings_outgrown"] = @(gRM->raw->stats.ringsOutgrown.load());
 #endif
-    d[@"xr_plane_passes"] = @(gRM->raw->stats.xrPlanePasses.load());
     d[@"xr_plane_shadows"] = @(gRM->raw->stats.xrPlaneShadows.load());
     d[@"xr_pair_binds"] = @(gRM->raw->stats.xrPairBinds.load());
     const gm20b::FetchCounts &fetch = gRM->raw->stats.fetch;

@@ -152,7 +152,6 @@ pub(crate) fn draw_of(
         write_count: writes.len() as u32,
         push_mask: 0,
         push: [0; 32],
-        blend_color_word: 0,
         half_blend_color_word: 0,
         depth_test_word: 0,
         stencil_test_word: 0,
@@ -200,7 +199,6 @@ pub(crate) fn draw_of(
                 draw.other_holes += 1;
                 continue;
             }
-            PushField::BlendColor => (&mut draw.blend_color_word, 32),
             PushField::HalfBlendColor => (&mut draw.half_blend_color_word, 16),
             PushField::ShaderTestsState => (&mut draw.depth_test_word, 16),
             PushField::ShaderStencilState => (&mut draw.stencil_test_word, 16),

@@ -131,7 +131,6 @@ private:
     bool depth16Tested(const SwitchMetalPass &pass, gm20b::PassDesc &p);
     bool depth16Back();
     bool imagePlanes(size_t pass, gm20b::PassDesc &p);
-    bool xrImages(const SwitchMetalPass &pass, gm20b::PassDesc &p);
     bool writtenBack();
     bool resolvePasses();
     void refresh(size_t pass);

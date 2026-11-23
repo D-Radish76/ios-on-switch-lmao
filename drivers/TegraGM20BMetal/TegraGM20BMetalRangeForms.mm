@@ -281,48 +281,6 @@ bool SwitchMetalRangeEncode::imagePlanes(size_t pass, gm20b::PassDesc &p)
     return true;
 }
 
-// Every RGB10A8_2P_XR10 of a pass where one cannot take its two planes (TegraGM20BMetalEncoder.mm xrPlanesPassOf) is drawn in
-// one image: one held in its planes through an image merged from them before the pass, split back into them after it
-// (writtenBack), as a fragment program's stores into one are
-bool SwitchMetalRangeEncode::xrImages(const SwitchMetalPass &pass, gm20b::PassDesc &p)
-{
-    const gm20b::Texture *colors[8] = {};
-    for (unsigned j = 0; j < 8; j++)
-        if (__unsafe_unretained SwitchMetalTexture *t = (SwitchMetalTexture *)pass.color[j].texture)
-            colors[j] = &t->_raw;
-    bool planes = false;
-    if (!gm20b::xrPlanesPass(colors, planes))
-        return true;
-    for (unsigned j = 0; j < 8; j++) {
-        __unsafe_unretained SwitchMetalTexture *t = (SwitchMetalTexture *)pass.color[j].texture;
-        if (!t || !t->_raw.xrPlanes || t->_raw.memoryless || gm20b::xrForm(t->_raw.format) != gm20b::XrForm::Planes)
-            continue;
-        const auto imaged = std::find_if(planesImaged_.begin(), planesImaged_.end(), [&](const auto &w) {
-            return w.first == t;
-        });
-        gm20b::Texture *image = imaged != planesImaged_.end() ? imaged->second : nullptr;
-        if (!image) {
-            const uint32_t k = uint32_t(planesImaged_.size());
-            if (const int failed = mergeXrPlanes(rc_, t->_raw, k, image, why_)) {
-                if (failed == 2) {
-                    gm20bOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
-                    return refused();
-                }
-                gm20bPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorOutOfMemory);
-                return fail(PredEncPassRender, *why_, k);
-            }
-            planesImaged_.push_back({t, image});
-        }
-        // the target in the attachment's format, as its draws' states name it (an over-planes texture is whole: no part
-        // takes this slot)
-        levelTargets_[j] = *image;
-        levelTargets_[j].format = t->_raw.format;
-        levelTargets_[j].rotation = t->_raw.rotation;  // laid out as the planes: a turned one's drawn turned
-        p.color[j].texture = &levelTargets_[j];
-    }
-    return true;
-}
-
 // What the pass stored goes back: sampled shadows and texel buffers' pools of a surface's rows copied into their texels,
 // stand-ins drawn again before their next sample, two-plane images split into their planes
 bool SwitchMetalRangeEncode::writtenBack()

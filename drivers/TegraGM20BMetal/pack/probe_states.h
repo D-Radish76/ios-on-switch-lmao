@@ -115,7 +115,7 @@ struct State {
     unsigned vertexBuffer = 99, vertexStride = 0;
     gm20b::CubicBinds cubic;  // a line naming the state's cubic variant (" | cubic ...", cubic.h): its binds
     // a line naming the state's sampled two-plane variant (" | xrs=<slots>", xr_pass.h): its slots, which its key
-    // leaves out (the runtime names the variant after the test class and the two-plane pass, TegraGM20BMetalCubic.mm)
+    // leaves out (the runtime names the variant after the test class, TegraGM20BMetalCubic.mm)
     uint16_t xrSlots = 0;
     // a line naming the state's written variant (" | wtex=<slot>:<format>,...", written_textures.h): the formats bound at
     // the slots it writes, which its key leaves out as it does xrSlots
@@ -431,9 +431,6 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "115 | v xr_vert | f xr_two_planes_frag",
                             "115 | v xr_vert | f xr_two_planes_srgb_frag",
                             "103 | v xr_vert | f xr_planes_merge_frag",
-                            "115 | v xr_vert | f xr_tile_bgr10_frag",
-                            "115 | v xr_vert | f xr_tile_bgra10_frag",
-                            "115 | v xr_vert | f xr_tile_planes_frag",
                             "113 | v xr_vert | f xr_copy_clamp_frag",
                             "70 | v resolve_vert | f resolve_rgba8_frag",
                             "70 | v resolve_vert | f resolve_rgba8_srgb_frag",
@@ -458,7 +455,6 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "55 | v resolve_vert | f resolve_r32f_frag",
                             "105 | v resolve_vert | f resolve_rg32f_frag",
                             "125 | v resolve_vert | f resolve_rgba32f_frag",
-                            "113 | v resolve_vert | f resolve_bgra10_xr_frag",
                             "40 | v resolve_vert | f resolve_b5g6r5_frag",
                             "43 | v resolve_vert | f resolve_bgr5a1_frag",
                             "1 | v mip_vert | f mip_a8_frag",
@@ -549,7 +545,7 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
         lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=" + o.substr(0, bar) + ":15:0:1:0:0:1:0:0" +
                         o.substr(bar));
     }
-    // the extended-range targets' stand-ins (runtime/xr_target.h): their loads, stores (into the codes' integer view)
+    // the extended-range targets' stand-ins (runtime/xr.h xrTargetState): their loads, stores (into the codes' integer view)
     // and resolves; the stores over a surface's two planes are among the pairs below
     for (const char *out : {"115 | v xr_target_vert | f xr_target_load_bgr10_frag",
                             "115 | v xr_target_vert | f xr_target_load_bgra10_frag",

@@ -108,12 +108,11 @@ TEST(CompileRequest, RoundTripsWhole)
     r.variant.cubic.samplers.push_back({2, 1, 1, 0, 3, true});
     r.variant.cubic.textures.push_back({2, 80});
     r.variant.fragmentTests = 3;
-    r.variant.xrShadows = 5;
     r.key = "a key";
     gm20b::CompileRequest back;
     ASSERT_TRUE(gm20b::decodeRequest(gm20b::encodeRequest(r), back));
     EXPECT_EQ(gm20b::encodeRequest(back), gm20b::encodeRequest(r));
-    EXPECT_EQ(back.variant.xrShadows, 5);
+    EXPECT_EQ(back.variant.fragmentTests, 3);
 
     gm20b::CompileRequest k;
     k.stack = kStack;
@@ -166,8 +165,8 @@ TEST(CompileRequest, AVertexCubicBindKeepsItsStage)
     EXPECT_NE(bytes.find(flags), std::string::npos) << "a fragment sampler's six bytes, its flags only normalized";
 }
 
-// A render request with every variant form layout 03 carried: a fragment cubic bind, a test class, two-plane colours,
-// sampled two-plane slots and a written texture
+// A render request with every variant form layout 03 carried that later layouts keep: a fragment cubic bind, a test
+// class, sampled two-plane slots and a written texture
 gm20b::CompileRequest layout03Request()
 {
     gm20b::CompileRequest r = renderRequest();
@@ -175,28 +174,30 @@ gm20b::CompileRequest layout03Request()
     r.variant.cubic.samplers.push_back({9, 2, 1, 2, 3, true});
     r.variant.cubic.textures.push_back({9, 80});
     r.variant.fragmentTests = 2;
-    r.variant.twoPlane = true;
     r.variant.xrSlots = 4;
     r.variant.written = {{2, 23}};
     return r;
 }
 
-TEST(CompileRequest, ItsLayoutIsSWCREQ05)
+TEST(CompileRequest, ItsLayoutIsSWCREQ06)
 {
-    EXPECT_EQ(gm20b::encodeRequest(layout03Request()).substr(0, 8), "SWCREQ05");
+    EXPECT_EQ(gm20b::encodeRequest(layout03Request()).substr(0, 8), "SWCREQ06");
 }
 
-TEST(CompileRequest, ARequestOfLayout04IsRefused)
+// Layouts 04 and 05 carried the shadowed colours' and the two-plane colours' bytes, which a request no longer has
+TEST(CompileRequest, ARequestOfLayout04Or05IsRefused)
 {
-    std::string bytes = layout03::encode(layout03Request(), true);
-    bytes.replace(0, 8, "SWCREQ04");
-    gm20b::CompileRequest back;
-    EXPECT_FALSE(gm20b::decodeRequest(bytes, back));
-    switch_compiler::SystemLibraries system;
-    switch_compiler::Prepared prepared;
-    std::string why;
-    EXPECT_FALSE(switch_compiler::prepare(bytes, kStack, system, prepared, why));
-    EXPECT_EQ(why, "an unreadable request");
+    for (const char *magic : {"SWCREQ04", "SWCREQ05"}) {
+        std::string bytes = layout03::encode(layout03Request(), true);
+        bytes.replace(0, 8, magic);
+        gm20b::CompileRequest back;
+        EXPECT_FALSE(gm20b::decodeRequest(bytes, back)) << magic;
+        switch_compiler::SystemLibraries system;
+        switch_compiler::Prepared prepared;
+        std::string why;
+        EXPECT_FALSE(switch_compiler::prepare(bytes, kStack, system, prepared, why)) << magic;
+        EXPECT_EQ(why, "an unreadable request") << magic;
+    }
 }
 
 // A request of layout 03, which a client of an older build sends or the compiler's request log (compiler_log.h) kept,
@@ -216,28 +217,24 @@ TEST(CompileRequest, ARequestOfLayout03IsRefused)
     gm20b::CompileRequest merged = r;
     merged.variant.cubic.samplers.push_back({3, 2, 2, 0, 1, false, gm20b::kCubicVertex});
     merged.variant.cubic.textures.push_back({5, 70, gm20b::kCubicVertex});
-    merged.variant.xrShadows = 1;
     EXPECT_FALSE(gm20b::decodeRequest(layout03::encode(merged, true), back));
 }
 
-TEST(CompileRequest, VertexCubicBindsAndShadowedColoursRoundTrip)
+TEST(CompileRequest, VertexCubicBindsRoundTrip)
 {
     gm20b::CompileRequest r = layout03Request();
     r.variant.cubic.samplers.push_back({3, 2, 2, 0, 1, false, gm20b::kCubicVertex});
     r.variant.cubic.textures.push_back({5, 70, gm20b::kCubicVertex});
-    r.variant.xrShadows = 0x81;
     gm20b::CompileRequest back;
     ASSERT_TRUE(gm20b::decodeRequest(gm20b::encodeRequest(r), back));
     EXPECT_EQ(gm20b::encodeRequest(back), gm20b::encodeRequest(r));
     EXPECT_EQ(back.variant.name(), r.variant.name());
-    EXPECT_EQ(back.variant.xrShadows, 0x81);
     ASSERT_EQ(back.variant.cubic.samplers.size(), 2u);
     ASSERT_EQ(back.variant.cubic.textures.size(), 2u);
     EXPECT_EQ(back.variant.cubic.samplers[1].stage, gm20b::kCubicVertex);
     EXPECT_EQ(back.variant.cubic.textures[1].stage, gm20b::kCubicVertex);
     EXPECT_EQ(back.variant.cubic.textures[1].slot, 5u);
     EXPECT_EQ(back.variant.fragmentTests, 2);
-    EXPECT_TRUE(back.variant.twoPlane);
     EXPECT_EQ(back.variant.xrSlots, 4);
 }
 
@@ -276,9 +273,6 @@ TEST(CompileRequest, ItsPackKeyIsTheFacadesForFrameworkAndOwnLibraries)
     r.variant.fragmentTests = 2;
     EXPECT_EQ(gm20b::requestPackKey(r, own),
               gm20b::pipelineKey(descriptor(), &v, &f, "", "RenderBox") + r.variant.cubic.key() + " | tests=2");
-    r.variant.xrShadows = 1;
-    EXPECT_EQ(gm20b::requestPackKey(r, own), gm20b::pipelineKey(descriptor(), &v, &f, "", "RenderBox") +
-                                                 r.variant.cubic.key() + " | tests=2 | xrsh=1");
     gm20b::CompileRequest data = renderRequest();
     EXPECT_EQ(gm20b::requestPackKey(data, own), gm20b::pipelineKey(descriptor(), &v, &f, "", ""));
     EXPECT_TRUE(own);

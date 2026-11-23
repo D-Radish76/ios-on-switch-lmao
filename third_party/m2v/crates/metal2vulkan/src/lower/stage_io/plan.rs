@@ -1733,8 +1733,8 @@ pub fn entry(cx: &mut SelectCx<'_>) -> Result<(), Error> {
             if cx.stage == Stage::Fragment && cx.inputs.rotated_factors.contains_key(&color) {
                 continue;
             }
-            // The second source of an extended-range blend the shader computes in the storage
-            // form, which the blend reads from the returned value.
+            // The second source of the device's blend the shader computes in the storage form,
+            // which the blend reads from the returned value.
             if cx.stage == Stage::Fragment
                 && crate::lower::fragment::blends_second_through_storage(cx, color)
             {
@@ -1742,19 +1742,9 @@ pub fn entry(cx: &mut SelectCx<'_>) -> Result<(), Error> {
                     .map_err(|e| e.at_attachment(Attachment::Color(color)))?;
                 continue;
             }
-            // The second source of an extended-range blend the function computes over the
-            // attachment's input attachment, which the blend reads from the returned value.
-            if cx.stage == Stage::Fragment
-                && crate::lower::fragment::blends_second_through_inputs(cx, color)
-            {
-                crate::lower::fragment::select_input_second_output(cx, o.field, color, ty)
-                    .map_err(|e| e.at_attachment(Attachment::Color(color)))?;
-                continue;
-            }
-            // Every other write of an extended-range attachment (the storage form's of none of its
-            // channels or unblended, or the raw texel's through the interface) reads no second
-            // output, as Metal's write there reads none: it is stored nowhere, where the
-            // interface's raw texel refused it `Format`.
+            // A write of a padded or bfloat attachment (the raw texel's through the interface)
+            // reads no second output, as Metal's write there reads none: it is stored nowhere,
+            // where the interface's raw texel refused it `Format`.
             if cx.stage == Stage::Fragment && cx.inputs.extended_range_colors.contains_key(&color) {
                 continue;
             }

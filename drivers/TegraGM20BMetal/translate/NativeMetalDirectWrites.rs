@@ -102,13 +102,6 @@ pub fn write_of(w: &metal2vulkan::bind::DescriptorWrite, ranges: &[DescriptorRan
                 StorageAttachmentView::SamplePlanes { .. } => avk::ImageViewType::TYPE_2D_ARRAY.as_raw(),
             };
         }
-        // the pass's half shadow of an extended-range colour (xr_shadow.h), bound by the colour's index
-        WriteSource::ExtendedShadow { color_index } => {
-            out.source = NmbDirectSource::ExtendedShadow;
-            out.stage = 2;
-            out.slot = *color_index;
-            out.view_type = avk::ImageViewType::TYPE_2D.as_raw();
-        }
         // the shader-side stencil's shadow is the driver's stencil stand-in (shader_test_push.h shadowStencil)
         WriteSource::DepthStandIn | WriteSource::StencilStandIn | WriteSource::ShadowStencil => {
             out.source = if matches!(w.source, WriteSource::DepthStandIn) {

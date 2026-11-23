@@ -222,11 +222,6 @@ pub fn function_key(
             .bytes(format!("{:?}", inputs.extended_range_colors).as_bytes());
     }
     // Appended only when set, as `storage_view_slots`.
-    if !inputs.two_plane_alphas.is_empty() {
-        h.bytes(b"two-plane-alphas")
-            .bytes(format!("{:?}", inputs.two_plane_alphas).as_bytes());
-    }
-    // Appended only when set, as `storage_view_slots`.
     if !inputs.stand_in_colors.is_empty() {
         h.bytes(b"stand-in-colors")
             .bytes(format!("{:?}", inputs.stand_in_colors).as_bytes());
@@ -393,13 +388,6 @@ pub fn function_key(
         if let Some(ty) = form.index_type() {
             h.bytes(b"indexed").u64(u64::from(ty.as_raw()));
         }
-    }
-    // Appended only when set, in its derived `Debug` form, as `dropped_colors` is: the shadowed
-    // variant of a function whose fetch inputs already hold the color (a blend's) is otherwise the
-    // unshadowed one's key, and a cache would hand it the unshadowed artifact.
-    if !inputs.extended_shadows.is_empty() {
-        h.bytes(b"extended-shadows")
-            .bytes(format!("{:?}", inputs.extended_shadows).as_bytes());
     }
     // Appended only when set: the default mode keeps every key.
     if inputs.texture_write_rounding != crate::metal::TextureWriteRoundingMode::TowardZero {

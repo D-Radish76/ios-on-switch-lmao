@@ -224,7 +224,7 @@ inline uint32_t formatStoredWord(uint32_t format, const float v[4])
 // nearest, a tie up, RGB9E5's mantissas rounded; the stand-in holds their floats. Any other clears as a draw of the clear's
 // colour (probe/fmt/clears.mm: every one of 512 clears by one rule or the other, by usage). R8Unorm_sRGB's clear is the
 // RGBA8Unorm_sRGB stand-in's own. An extended-range format's tile holds a clear as each channel's nearest half, a format
-// of no alpha's alpha 1 (m2v ExtendedRange::clear_tile_value): a draw's route. Metal's straight route (a compressed
+// of no alpha's alpha 1: a draw's route. Metal's straight route (a compressed
 // texture's pass that records no draw) clears BGR10_XR's and BGRA10_XR's codes through the clear registers
 // (TegraGM20BMetalRangeForms.mm formatStandIns); the sRGB twins' is not told apart, and stores within one code of it.
 inline void formatStandInClear(uint32_t format, const float in[4], float out[4], bool compressed)

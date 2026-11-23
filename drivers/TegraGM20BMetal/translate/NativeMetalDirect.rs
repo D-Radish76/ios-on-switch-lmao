@@ -25,7 +25,6 @@ use metal2vulkan::pipeline::{
     StorageAttachmentView,
 };
 use std::ffi::{CString, c_void};
-use std::sync::{Arc, Mutex};
 
 /// A render stage's Metal arguments on this identity (set_entries.h): 31 buffers, the A10X's 31 textures (21H461) or the
 /// A13's 128 (24B119, `target_j181`), 16 samplers
@@ -35,8 +34,8 @@ const STAGE_TEXTURES: usize = 31;
 const STAGE_TEXTURES: usize = 128;
 const STAGE_ARGUMENTS: usize = 31 + STAGE_TEXTURES + 16;
 /// set_entries.h kSyntheticEntries: the colour table, the handle and argument tables, the tessellation buffers, the
-/// depth and stencil stand-ins, and each colour's fetch and extended-range shadow
-const SYNTHETIC_WRITES: usize = 1 + 4 + 2 + 3 + 2 + 8 + 8;
+/// depth and stencil stand-ins, and each colour's fetch
+const SYNTHETIC_WRITES: usize = 1 + 4 + 2 + 3 + 2 + 8;
 /// The set-0 writes a state's record holds at most: every argument one render pipeline binds, and every synthetic entry
 const MAX_WRITES: usize = 2 * STAGE_ARGUMENTS + SYNTHETIC_WRITES;
 
@@ -86,21 +85,6 @@ pub fn compile_error(what: &'static str) -> impl FnOnce(metal2vulkan::error::Err
     }
 }
 
-type Planed = Vec<([u8; 32], Arc<metal2vulkan::device::Device>)>;
-static TWO_PLANE: Mutex<Planed> = Mutex::new(Vec::new());
-
-/// `compile` as a profile that holds each RGB10A8_2P_XR10 attachment in its two planes, one per compile device
-fn two_plane_device(compile: &metal2vulkan::device::Device) -> Result<Arc<metal2vulkan::device::Device>, String> {
-    let mut kept = TWO_PLANE.lock().map_err(|_| "two-plane compile device lock")?;
-    let fingerprint = compile.profile_fingerprint();
-    if let Some((_, device)) = kept.iter().find(|(of, _)| *of == fingerprint) {
-        return Ok(device.clone());
-    }
-    let device = Arc::new(compile.with_two_plane_extended_range());
-    kept.push((fingerprint, device.clone()));
-    Ok(device)
-}
-
 /// A state of more set-0 writes than its record holds is refused, naming it: no write is dropped
 fn set0_writes_fit(count: usize, name: impl FnOnce() -> String) -> Result<(), String> {
     if count <= MAX_WRITES {
@@ -129,21 +113,6 @@ fn chooses_layer(pipeline: &RenderPipeline) -> bool {
         .dependencies
         .iter()
         .any(|d| matches!(d.fact, RuntimeFact::RenderTargetArrayLength { .. }))
-}
-
-/// The words used by Metal extended-range blending for `setBlendColorRed:green:blue:alpha:`.
-///
-/// # Safety
-/// `color` and `words` point to four readable floats and eight writable words.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn switch_nmb_blend_color_words(color: *const f32, words: *mut u32) {
-    // SAFETY: the caller supplies both complete arrays.
-    unsafe {
-        let color = color.cast::<[f32; 4]>().read();
-        words
-            .cast::<[u32; 8]>()
-            .write(metal2vulkan::bind::extended_blend_color_words(color));
-    }
 }
 
 /// nmb_render_pipeline_direct's answer for a state of offline functions, made on the compile profile's devices with no
@@ -210,8 +179,8 @@ pub unsafe fn render_offline<F: DescriptorFunction>(
     )
 }
 
-/// The state `descriptor` describes as the translator makes it on `compile` (its two-plane profile where `binds` ask)
-/// for the probe's draws, its layouts made on `vulkan` where there is one, handed to `each`
+/// The state `descriptor` describes as the translator makes it on `compile` for the probe's draws, its layouts made on
+/// `vulkan` where there is one, handed to `each`
 #[allow(clippy::too_many_arguments)]
 pub fn translate(
     compile: &metal2vulkan::device::Device,
@@ -223,11 +192,6 @@ pub fn translate(
     each: unsafe extern "C" fn(state: *const NmbDirectState, ctx: *mut c_void) -> bool,
     ctx: *mut c_void,
 ) -> Result<bool, String> {
-    let planes = match binds.two_plane {
-        true => Some(two_plane_device(compile)?),
-        false => None,
-    };
-    let compile = planes.as_deref().unwrap_or(compile);
     let format = match texture_format {
         0 => PixelFormat::BGRA8Unorm,
         f => raw::<PixelFormat>(f, "texture format")?,
@@ -275,9 +239,9 @@ pub fn translate(
     };
     // A vertex function that chooses its render target slice, or one amplified, is compiled as for a pass of two
     // layers: the variant that writes Layer, reading the pass's length from its push word, draws in a pass of any
-    // length. One the translation has no layered form of (a fragment function of tile memory, an imageblock, the
-    // shader-side stencil or depth test, or an extended-range shadow) is compiled for one layer, its record marked so
-    // (LAYER_DROPPED): a layered pass draws it elsewhere.
+    // length. One the translation has no layered form of (a fragment function of tile memory, an imageblock, or the
+    // shader-side stencil or depth test) is compiled for one layer, its record marked so (LAYER_DROPPED): a layered
+    // pass draws it elsewhere.
     let (runs, layer_dropped) = if amplification > 1 {
         (probe(&mut variants, 2)?, false)
     } else if chooses {
@@ -447,7 +411,6 @@ pub fn translate(
             .filter(|(_, c)| c.as_ref().is_some_and(|c| c.blend.is_some()))
             .fold(0, |mask, (j, _)| mask | 1 << j),
         draws: [draws[0], draws[1], draws[2], draws[3]],
-        two_plane: binds.two_plane,
     };
     for (slot, &k) in order.iter().enumerate() {
         let stage = &pipeline.stages[k];
@@ -482,11 +445,11 @@ mod tests {
 
     #[test]
     fn a_states_writes_reach_every_argument_of_its_identity_and_its_synthetic_entries() {
-        assert_eq!(MAX_WRITES, 2 * (31 + STAGE_TEXTURES + 16) + 28);
+        assert_eq!(MAX_WRITES, 2 * (31 + STAGE_TEXTURES + 16) + 20);
         #[cfg(not(target_j181))]
-        assert_eq!(MAX_WRITES, 156 + 28);
+        assert_eq!(MAX_WRITES, 156 + 20);
         #[cfg(target_j181)]
-        assert_eq!(MAX_WRITES, 350 + 28);
+        assert_eq!(MAX_WRITES, 350 + 20);
     }
 
     #[test]

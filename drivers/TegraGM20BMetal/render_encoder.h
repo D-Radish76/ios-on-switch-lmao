@@ -430,11 +430,9 @@ private:
     // a fragment argument table's dynamic words may have moved since its last upload: the blend colour, the depth and
     // stencil state and references, the viewport's depth range
     bool spillDirty_ = true;
-    bool blendWords(const PackPipeline &r, const char **why);
     WideDescriptors wideDescriptors_;
     // `pl`'s argument tables whose entries moved (`moved`, bit k entry k; every one where `all`)
-    bool fillSpills(const Pipeline &pl, uint32_t moved, bool all, SetResiduals &prepared, uint32_t *set,
-                    const char **why);
+    void fillSpills(const Pipeline &pl, uint32_t moved, bool all, SetResiduals &prepared, uint32_t *set);
     bool writeSetEntry(Pipeline *pl, const PackEntry &e, uint32_t *set, SetResiduals &prepared, const char **why);
     bool anyEntryMoved(const SetEntries &entries) const;
     bool entryMoved(const PackEntry &e) const;
@@ -567,8 +565,6 @@ private:
     Raster rasterFor(uint32_t primitive) const;
     uint32_t blendColor_[4] = {};  // Metal's default, (0, 0, 0, 0), until the encoder sets one
     bool blendColorDirty_ = true;
-    uint32_t blendWords_[8] = {};
-    bool blendWordsDirty_ = true;
     uint32_t topology_ = ~0u, restart_ = ~0u;
     uint32_t alphaWanted_ = 0;  // the bound Metal state's alpha to coverage and alpha to one (alpha_control.h)
     uint32_t samplePasses_ = 1;

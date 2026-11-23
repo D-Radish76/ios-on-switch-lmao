@@ -20,15 +20,13 @@ pub(crate) const RUN_BYTES: [u32; 4] = [256, 16, 4096, 256];
 const BOUND_RUN: usize = 3;
 
 /// What the probe binds besides its tagged textures and samplers: cubic sampler states, and other textures' formats, by
-/// stage and slot; and whether the state is compiled for RGB10A8_2P_XR10 attachments held in their two planes
+/// stage and slot
 #[derive(Default)]
 pub struct Binds {
     cubic: Vec<(Stage, u32, SamplerDescriptor)>,
     textures: Vec<(Stage, u32, PixelFormat)>,
     pub fragment_tests: u32,
     bind_stride: Option<u32>,
-    pub(crate) two_plane: bool,
-    extended_shadows: u32,
 }
 
 impl Binds {
@@ -45,8 +43,6 @@ impl Binds {
         }
         out.fragment_tests = b.fragment_tests;
         out.bind_stride = (b.bind_stride != 0).then_some(b.bind_stride);
-        out.two_plane = b.two_plane;
-        out.extended_shadows = b.extended_shadows & 0xFF;
         let cubic: &[NmbDirectCubicSampler] = if b.cubic.is_null() {
             &[]
         } else {
@@ -242,7 +238,6 @@ pub(crate) fn probe_state(
     if patches {
         crate::direct_tess::bind_factors(&mut state);
     }
-    state.extended_shadows = (0..8).filter(|c| binds.extended_shadows >> c & 1 != 0).collect();
     state.fragment_tests = match binds.fragment_tests {
         1 => FragmentTests::Pass,
         2 => FragmentTests::Drop,

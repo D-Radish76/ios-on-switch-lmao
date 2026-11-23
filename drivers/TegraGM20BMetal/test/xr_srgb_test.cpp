@@ -113,7 +113,7 @@ TEST(Bgr10XrSrgb, AStoreKeepsTheCodesALoadRead)
 }
 
 // Metal's write of a NaN stores the zero code and of a value past the codes the nearest end; its tile holds a clear as the
-// colour's nearest halves and BGR10's alpha of 1 (m2v ExtendedRange::code, clear_tile_value)
+// colour's nearest halves and BGR10's alpha of 1 (m2v ExtendedRange::code)
 TEST(Bgr10XrSrgb, ItStoresMetalsWritesAndHoldsAClearInHalves)
 {
     const float nan = std::nanf(""), inf = std::numeric_limits<float>::infinity();

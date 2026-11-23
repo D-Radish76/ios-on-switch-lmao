@@ -279,15 +279,9 @@ std::string libraryName(SwitchMetalFunction *f);
 
 // A packed state's variants placed with its own record at creation (TegraGM20BMetalCubic.mm)
 void packedVariants(SwitchMetalPipeline *p, uint64_t keyHash);
-// A state this process made: the variants its creation already names (its test classes, its two-plane form), made and
-// waited for before the creation returns, as the pack builder makes a packed state's
+// A state this process made: the variants its creation already names (its test classes), made and waited for before
+// the creation returns, as the pack builder makes a packed state's
 void gm20bMadeVariants(SwitchMetalPipeline *p, MTLRenderPipelineDescriptor *d);
-// The state's variant for a draw's cubic binds, test class, two-plane colours, sampled two-plane slots, written textures and
-// the colours whose half shadow its pass holds (xr_shadow.h), asked of the compiler where no pack holds it
-gm20b::Variant<gm20b::Pipeline> *gm20bRenderVariant(SwitchMetalPipeline *p, const gm20b::CubicBinds &binds,
-                                                    uint8_t tests, bool planes, uint16_t xrSlots,
-                                                    const std::vector<gm20b::WrittenTexture> &written,
-                                                    uint8_t xrShadows);
 
 // TegraGM20BMetalHeap.mm: the purged heaps a committed command buffer's resources lie in, given their pages back before it is encoded
 // (it counts as committed already, so no purge runs meanwhile)

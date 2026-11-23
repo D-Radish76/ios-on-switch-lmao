@@ -1,75 +1,19 @@
 // SPDX-License-Identifier: MIT
-// xr_pass.h: RGB10A8_2P_XR10 drawn in its two planes. The alpha index is m2v's (pipeline/two_plane.rs: the lowest free
-// index, in index order); a state's colour formats and a Clear's plane words are the planes'; emit writes each alpha
-// plane's target; and nvk_switch_xr_planes.c's join of a header pair, its f32 steps as emitted, gives each code's value as
-// the half Metal's read returns, for every code read as c / 1023 within an ulp and every alpha byte read as b / 255, and
-// every step of Metal's filter grid its half.
+// Extended-range targets and two-plane reads: emit blends an extended-range target's RGBA16Float stand-in with Metal's
+// factors; and nvk_switch_xr_planes.c's join of a header pair, its f32 steps as emitted, gives each code's value as the half
+// Metal's read returns, for every code read as c / 1023 within an ulp and every alpha byte read as b / 255, and every step
+// of Metal's filter grid its half.
 #include "../emit.h"
-#include "../xr_pass.h"
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace {
-
-using Slots = std::array<int8_t, 8>;
-
-Slots slots(std::initializer_list<int> v)
-{
-    Slots out;
-    out.fill(-1);
-    int i = 0;
-    for (int s : v)
-        out[i++] = int8_t(s);
-    return out;
-}
-
-// The pack generator's copy of the rule (pack/mkpack.py xr_alpha_slots) takes these cases too: mkpack_owned_test
-TEST(XrPass, TheAlphaIndexIsTheLowestFreeOne)
-{
-    const uint32_t one[8] = {550};
-    EXPECT_EQ(gm20b::xrAlphaSlots(one), slots({1}));
-    const uint32_t two[8] = {550, 550};
-    EXPECT_EQ(gm20b::xrAlphaSlots(two), slots({2, 3}));
-    const uint32_t renderBox[8] = {550, 105, 550};
-    EXPECT_EQ(gm20b::xrAlphaSlots(renderBox), slots({3, -1, 4}));
-    const uint32_t after[8] = {80, 550};
-    EXPECT_EQ(gm20b::xrAlphaSlots(after), slots({-1, 2}));
-    const uint32_t hole[8] = {550, 0, 80};
-    EXPECT_EQ(gm20b::xrAlphaSlots(hole), slots({1}));
-    const uint32_t full[8] = {550, 80, 80, 80, 80, 80, 80, 80};
-    EXPECT_EQ(gm20b::xrAlphaSlots(full), slots({}));
-    const uint32_t other[8] = {552, 554};
-    EXPECT_EQ(gm20b::xrAlphaSlots(other), slots({}));
-}
-
-TEST(XrPass, AStateTakesThePlanesFormats)
-{
-    uint32_t formats[8] = {550, 105, 550};
-    gm20b::xrPlaneFormats(formats);
-    const uint32_t want[8] = {53, 105, 53, 13, 13};
-    EXPECT_EQ(memcmp(formats, want, sizeof want), 0);
-}
-
-TEST(XrPass, AClearsPlaneWordsAreItsTexels)
-{
-    const float colors[][4] = {{0.5f, -0.5f, 1.0f, 0.75f},
-                               {1.125f, 0.125f, -0.625f, 0.25f},
-                               {NAN, 2.0f, -2.0f, NAN},
-                               {0, 0, 0, 0},
-                               {-0.7529f, 1.2529f, 0.3f, 1.5f}};
-    for (const auto &c : colors) {
-        uint32_t texel[4];
-        gm20b::xrClearTexel(gm20b::XrForm::Planes, c, false, texel);
-        const std::array<uint32_t, 2> words = gm20b::xrPlaneClears(c);
-        EXPECT_EQ(words[0], texel[0]);
-        EXPECT_EQ(words[1], texel[1]);
-        EXPECT_EQ(words[0] >> 30, 0u);
-        EXPECT_LE(words[1], 255u);
-    }
-}
 
 // The fragment header's output map (NAK sph.rs omap_target, from bit 576): `bits` of target j's components at 4j
 std::array<uint8_t, 80> headerWriting(uint32_t bits)
@@ -85,29 +29,6 @@ uint32_t registerOf(const std::vector<gm20b::EmitRegister> &regs, uint32_t metho
         if (r.method == method)
             return r.value;
     return 0xffffffffu;
-}
-
-TEST(XrPass, TheAlphaPlanesTargetIsWritten)
-{
-    constexpr uint32_t kCtWrite = 0x1a00, kBlend = 0x1360;
-    const std::array<uint8_t, 80> vs{}, fs = headerWriting(1u | 1u << 4);
-    gm20b::EmitProgram vertex, fragment;
-    vertex.header = vs.data();
-    fragment.header = fs.data();
-    std::vector<gm20b::EmitRegister> regs;
-    std::string why;
-    ASSERT_TRUE(
-        gm20b::emitState("samples=1 topo=0 ds=0/0 c0=550:15:1:1:5:0:1:5:0", vertex, fragment, regs, why, nullptr, true))
-        << why;
-    EXPECT_EQ(registerOf(regs, kCtWrite + 4), 1u);
-    EXPECT_EQ(registerOf(regs, kBlend + 4), 0u);
-    ASSERT_TRUE(
-        gm20b::emitState("samples=1 topo=0 ds=0/0 c0=550:0:0:1:0:0:1:0:0", vertex, fragment, regs, why, nullptr, true))
-        << why;
-    EXPECT_EQ(registerOf(regs, kCtWrite + 4), 0u);
-    ASSERT_TRUE(gm20b::emitState("samples=1 topo=0 ds=0/0 c0=550:15:0:1:0:0:1:0:0", vertex, fragment, regs, why))
-        << why;
-    EXPECT_EQ(registerOf(regs, kCtWrite + 4), 0xffffffffu) << "the one-image form has no alpha target";
 }
 
 // An extended-range target renders into its RGBA16Float stand-in, which the ROP blends: Metal's write mask and blend, a

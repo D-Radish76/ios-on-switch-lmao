@@ -45,7 +45,6 @@ enum RefusalId : uint8_t {
     // a storage form drawn into an attachment of another sample count than its state's (Metal's validation error): a:
     // the attachment, b: its format, c: its samples
     RefStorageSamples,
-    RefXrShadow,       // a shadow variant drawn in a pass holding no shadow of colour a (the driver's error)
     RefSamplerHeader,  // no header the range makes: a: the sampler, b: the address map, c: 1 compare, 2 constexpr
     RefMatrixUniform,  // a colour matrix form's uniform not bound whole: a: its buffer index, b: offset, c: bytes bound
     RefNoStandIn  // a client's draw sampling a texture of no stand-in that a draw reads through one: a: slot, b: format

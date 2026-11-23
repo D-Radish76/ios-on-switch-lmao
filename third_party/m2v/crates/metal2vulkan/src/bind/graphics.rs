@@ -103,11 +103,10 @@
 //!   of its subpass for other draws' interlocked storage form (`BindShape::interlocked_colors`)
 //!   runs the variant whose fragment function writes those it writes through that form too
 //!   (`VariantKey::interlocked_colors`), so the draw records in the instance. That variant stores
-//!   them before the depth and stencil tests (tested storage writes, below), and so does the
-//!   variant of a draw that holds the `half` shadow of an extended-range color the function writes
-//!   (`BindShape::extended_shadows`): the plan of the pipeline as compiled selects such a moved
-//!   writer's tests from `RuntimeFact::MovableStorageWrites`. A mesh pipeline's is not
-//!   implemented, nor a multisampled, layered or amplified draw's.
+//!   them before the depth and stencil tests (tested storage writes, below): the plan of the
+//!   pipeline as compiled selects such a moved writer's tests from
+//!   `RuntimeFact::MovableStorageWrites`. A mesh pipeline's is not implemented, nor a
+//!   multisampled, layered or amplified draw's.
 //! - **Depth clamp range**. A draw in depth clamp mode through a range above 0 whose Vulkan depth
 //!   clamp holds 0 (`BindShape::depth_clamp_range`) runs the variant whose fragment function, where
 //!   it writes its depth, clamps that depth to the draw's range itself
@@ -950,34 +949,6 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
         .filter(|a| a.writes && shape.interlocked_colors.contains(&a.color_index))
         .map(|a| a.color_index)
         .collect();
-    // The extended-range colors whose `half` shadow the draw's instance holds that the fragment
-    // function writes or reads in the storage form: the variant that reads and writes the
-    // shadows beside the codes. Every such color is single-sampled in a pass of one layer (the
-    // encoder holds no other shadow), as the interlocked colors above are; a pipeline compiled
-    // with shadows binds them.
-    let extended_shadows: std::collections::BTreeSet<u32> = shape
-        .extended_shadows
-        .iter()
-        .copied()
-        .filter(|&c| {
-            1u32.checked_shl(c)
-                .is_some_and(|bit| p.graphics.color_outputs & bit != 0)
-                || p.graphics
-                    .storage_attachments
-                    .iter()
-                    .any(|a| a.color_index == c)
-        })
-        .collect();
-    // An extended-range shadow is one 2D image, which the encoder holds in a pass of one layer
-    // alone (`extended_shadow.rs`).
-    if !extended_shadows.is_empty()
-        && (mesh
-            || p.graphics.rasterization_samples.as_raw() > 1
-            || shape.render_target_array_length > 1
-            || shape.vertex_amplification.count > 1)
-    {
-        return Err(not_implemented(Feature::FramebufferFetch));
-    }
     // In a pass of more than one layer the storage form's images and the shader-side stencil's
     // shadow are arrays of its layers, each access at its primitive's layer: the variant compiled
     // for it, and only there.
@@ -989,16 +960,6 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
         .dependencies
         .iter()
         .any(|d| matches!(d.fact, RuntimeFact::LayeredStorage));
-    let compiled_shadows: std::collections::BTreeSet<u32> = p
-        .layout
-        .sets
-        .iter()
-        .flat_map(|set| &set.bindings)
-        .filter_map(|b| match b.source {
-            BindingSource::ExtendedShadow(color) => Some(color),
-            _ => None,
-        })
-        .collect();
     // A draw in depth clamp mode through a range above 0 whose Vulkan depth clamp holds 0: the
     // variant whose fragment function clamps the depth it writes to the draw's range. A pipeline
     // whose fragment function writes no depth has none to clamp.
@@ -1013,26 +974,23 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
     // tests drop no fragment; where they drop some but write and count nothing, the variant whose
     // function declares early tests, which a pipeline compiled under it states; refused
     // otherwise. A draw that moves a color the function writes as an ordinary output into that
-    // form (an interlocked color, a shadowed extended-range one) asks for the variant that stores
+    // form (an interlocked color) asks for the variant that stores
     // it so: where the pipeline as compiled stores no color so, the function states that variant's
     // tests (`RuntimeFact::MovableStorageWrites`), so this plan selects them, and the variant it
     // names plans itself. A moved write whose mask names none of its attachment's components
     // stores nothing, so no test bears on it: its variant states none, and this plan selects none
     // for it. (A color the pipeline as compiled already writes through the storage form has no
     // ordinary attachment state; its stores state their own tests.)
-    let moves = interlocked_colors
-        .iter()
-        .chain(&extended_shadows)
-        .any(|&c| {
-            1u32.checked_shl(c)
-                .is_some_and(|bit| p.graphics.color_outputs & bit != 0)
-                && p.graphics
-                    .color_attachments
-                    .get(c as usize)
-                    .copied()
-                    .flatten()
-                    .is_some_and(stores)
-        });
+    let moves = interlocked_colors.iter().any(|&c| {
+        1u32.checked_shl(c)
+            .is_some_and(|bit| p.graphics.color_outputs & bit != 0)
+            && p.graphics
+                .color_attachments
+                .get(c as usize)
+                .copied()
+                .flatten()
+                .is_some_and(stores)
+    });
     let tested = p
         .dependencies
         .iter()
@@ -1323,7 +1281,6 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
                 // The draw's depth clamp range, which instantiation reads from the state.
                 PushField::DepthClampRange if stage == Stage::Fragment => {}
                 // The encoder's blend color, which instantiation reads from the state.
-                PushField::BlendColor if stage == Stage::Fragment => {}
                 PushField::HalfBlendColor if stage == Stage::Fragment => {}
                 // The storage form's kept channels, which instantiation reads from the template.
                 PushField::StorageKeptChannels if stage == Stage::Fragment => {}
@@ -1694,10 +1651,6 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
                 BindingSource::TexturePlane(slot) => {
                     resources.texture_plane(set.set, b.binding, b.ty, slot)?
                 }
-                // The `half` shadow of an extended-range attachment the draw's instance holds.
-                BindingSource::ExtendedShadow(color_index) => {
-                    WriteSource::ExtendedShadow { color_index }
-                }
             };
             descriptors.push(DescriptorWrite {
                 set: set.set,
@@ -2004,12 +1957,10 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
     // The pipeline compiled under other zeroed or dropped colors (or none) is the other variant.
     let other_colors = compiled_zeroed != zeroed_colors
         || compiled_dropped != dropped_colors
-        || compiled_interlocked != interlocked_colors
-        || compiled_shadows != extended_shadows;
+        || compiled_interlocked != interlocked_colors;
     variant.zeroed_colors = zeroed_colors;
     variant.dropped_colors = dropped_colors;
     variant.interlocked_colors = interlocked_colors;
-    variant.extended_shadows = extended_shadows;
     variant.depth_clamp_range = depth_clamp_range;
     variant.read_only_tests = read_only_tests;
     variant.shader_tests = shader_tests;
@@ -3554,11 +3505,6 @@ fn instantiate_into(
                         None => return Err(internal("a color write rule link gave no word")),
                     }
                 }
-                // The blend color as an extended-range blend reads it, and one minus it.
-                PushField::BlendColor => super::extended_blend_color_words(state.blend_color)
-                    .iter()
-                    .flat_map(|w| w.to_le_bytes())
-                    .collect(),
                 // The blend color as the encoder set it, which a 16-bit float blend rounds.
                 PushField::HalfBlendColor => state
                     .blend_color

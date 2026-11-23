@@ -609,7 +609,7 @@ static inline void nameFailure(__unsafe_unretained SwitchMetalCommandBuffer *cb,
 // worker's own findings): what the encode reads that the recording may still change, or work it is not built for
 enum SwitchMetalPipelineVeto : uint32_t {
     VetoCounters = 1u << 1,    // counter samples
-    VetoShadows = 1u << 2,     // a texture sampled through a pool image, an extended-range stand-in or half shadow
+    VetoShadows = 1u << 2,     // a texture sampled through a pool image or an extended-range stand-in
     VetoVariant = 1u << 3,     // a binding of a state variant still being made, which an encode ahead would drop
     VetoProbes = 1u << 4,      // HW Test's probes
     VetoParallel = 1u << 5,    // a parallel render encoder's sub-encoders

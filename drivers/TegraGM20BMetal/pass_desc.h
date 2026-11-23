@@ -98,9 +98,6 @@ struct PassDesc {
                 return morePlanes[k].image;
         return nullptr;
     }
-
-    // each extended-range colour's half shadow the pass holds (xr_shadow.h), bound by its " | xrsh=" variants
-    const Texture *xrShadow[8] = {};
 };
 
 // `t`'s layers from `slice` on as a texture of its own (an attachment's slice of a 2D array or cube)
@@ -112,11 +109,5 @@ inline Texture layersFrom(const Texture &t, uint32_t slice)
     part.tic = 0;
     return part;
 }
-
-// Whether a pass of colour attachments `color` draws RGB10A8_2P_XR10 in its two planes (xr_pass.h): one of them an
-// over-planes texture, each a texture held so; null, else what refuses the pass (another 550 beside one, no free index)
-const char *xrPlanesPass(const Texture *const color[8], bool &planes);
-// `p` with each such colour's planes as its targets (xr_pass.h); null, else xrPlanesPass's refusal
-const char *expandXrPlanes(PassDesc &p, Device &d);
 
 }  // namespace gm20b
