@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * A local-network drop NECP reports for a process (<switch/necp.h>), debug kernels: two lines for the first drop of
- * each of SWITCH_NECP_PROBE_PIDS processes. task-platform is the task's exec-time flag; cs-platform is
- * csproc_get_platform_binary, the value NECP ands with cs_valid.
+ * each of SWITCH_NECP_PROBE_PIDS processes, and the policy table around any drop that takes a dump (diag/necp_table.c).
+ * task-platform is the task's exec-time flag; cs-platform is csproc_get_platform_binary, the value NECP ands with
+ * cs_valid.
  */
 #include <switch/bootstrap.h>
 #include <switch/necp.h>
@@ -51,11 +52,8 @@ static proc_t switch_necp_judged(const struct switch_necp_drop *drop, int32_t *p
     return drop->process;
 }
 
-void switch_necp_local_drop(const struct switch_necp_drop *drop)
+static void switch_necp_log_drop(const struct switch_necp_drop *drop)
 {
-    if (!switch_necp_probe_claim(switch_necp_pids, SWITCH_NECP_PROBE_PIDS, drop->pid)) {
-        return;
-    }
     const proc_t process = drop->process;
     int32_t judged_pid = 0;
     const proc_t judged = switch_necp_judged(drop, &judged_pid);
@@ -73,6 +71,14 @@ void switch_necp_local_drop(const struct switch_necp_drop *drop)
            "negated 0x%llx result-flags 0x%x necp-platform %d real-platform %d skip-installed %d skip id %u",
            drop->pid, drop->policy_id, drop->session_order, drop->order, drop->conditions, drop->negated,
            drop->drop_flags, drop->necp_platform, drop->necp_real_platform, drop->skip_installed, drop->skip_id);
+}
+
+void switch_necp_local_drop(const struct switch_necp_drop *drop)
+{
+    if (switch_necp_probe_claim(switch_necp_pids, SWITCH_NECP_PROBE_PIDS, drop->pid)) {
+        switch_necp_log_drop(drop);
+    }
+    switch_necp_table_dump(drop);
 }
 
 #endif /* DEVELOPMENT || DEBUG */

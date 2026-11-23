@@ -373,6 +373,7 @@ struct necp_socket_info {
 	unsigned is_delegated : 1;
 	unsigned is_local : 1;
 	unsigned __pad_bits : 7;
+	SWITCH_NECP_INFO_FIELDS
 };
 
 static  LCK_GRP_DECLARE(necp_kernel_policy_mtx_grp, NECP_CONTROL_NAME);
@@ -5067,6 +5068,7 @@ necp_kernel_socket_policy_add(necp_policy_order order, u_int32_t session_order, 
 	if (necp_debug) {
 		NECPLOG(LOG_DEBUG, "Added kernel policy: socket, id=%d, mask=%llx\n", new_kernel_policy->id, new_kernel_policy->condition_mask);
 	}
+	SWITCH_NECP_POLICY_ADDED(new_kernel_policy);
 	LIST_INSERT_SORTED_TWICE_ASCENDING(&necp_kernel_socket_policies, new_kernel_policy, chain, session_order, order, tmp_kernel_policy);
 
 	return new_kernel_policy ? new_kernel_policy->id : 0;
@@ -5101,6 +5103,7 @@ necp_kernel_socket_policy_delete(necp_kernel_policy_id policy_id)
 	policy = necp_kernel_socket_policy_find(policy_id);
 	if (policy) {
 		LIST_REMOVE(policy, chain);
+		SWITCH_NECP_POLICY_DELETED(policy);
 
 		if (policy->cond_bound_interface) {
 			ifnet_release(policy->cond_bound_interface);
@@ -10396,6 +10399,7 @@ necp_socket_find_policy_match_with_info_locked(struct necp_kernel_socket_policy 
 					NECP_DATA_TRACE_LOG_POLICY_SOCKET(debug, so, "SOCKET", "MATCHED SKIP POLICY");
 					skip_order = policy_search_array[i]->result_parameter.skip_policy_order;
 					skip_session_order = policy_search_array[i]->session_order + 1;
+					SWITCH_NECP_SKIP_TAKEN(info, policy_search_array[i]);
 					if (skip_policy_id && *skip_policy_id == NECP_KERNEL_POLICY_ID_NONE) {
 						*skip_policy_id = policy_search_array[i]->id;
 						if (necp_debug > 1 || NECP_DATA_TRACE_POLICY_ON(debug)) {

@@ -41,6 +41,8 @@ SWITCH_OBJECTS = {
         ("bsd/kern/kern_exit.c", "diag/exit.c", []),
         ("bsd/kern/kern_event.c", "diag/workloop.c", []),
         ("bsd/net/necp.c", "diag/necp.c", [], ["12377.121.6"]),
+        ("bsd/net/necp.c", "diag/necp_table.c", [], ["12377.121.6"]),
+        ("bsd/vm/vm_unix.c", "diag/cryptex_map.c", [], ["12377.121.6"]),
         ("bsd/kern/lockdown_mode.c", "sysctl/lockdown.c", [], ["12377.121.6"]),
         ("bsd/kern/kern_shutdown.c", "shutdown/shutdown.c", []),
         ("bsd/vfs/vfs_lookup.c", "vfs/pretranslated.c", []),
