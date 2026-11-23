@@ -49,6 +49,48 @@ TEST_F(DevicePassForms, AOneSampleColourBesideAFourSampleDepthRasterisesAtTheDep
     EXPECT_EQ(lastOf(ms, NVB197_SET_ANTI_ALIAS), uint32_t(NVB197_SET_ANTI_ALIAS_SAMPLES_MODE_1X1));
 }
 
+// The colour of a mixed pass cleared over a loaded depth (gpu.gm20b.mixed_samples' pass) or a cleared one: its
+// CLEAR_SURFACE comes with the zeta deselected and the mode off (the device: class error 0x124,
+// INVALID_TIR_COMBINATION02, at that clear under the mode); the zeta then back, the mode on after every clear
+TEST_F(DevicePassForms, AMixedPassClearsItsColourBeforeTheModeWithTheZetaDeselected)
+{
+    for (const bool depthCleared : {false, true}) {
+        SCOPED_TRACE(depthCleared ? "depth cleared" : "depth loaded");
+        gm20b::Texture colour, zeta;
+        ASSERT_TRUE(dev.createTexture(32, 32, kRGBA8, colour, false, true));
+        ASSERT_TRUE(dev.createOwnedZeta(32, 32, kDepth32Float, 4, true, zeta));
+        gm20b::PassDesc p;
+        p.color[0] = kept(colour, gm20b::ColorAttachment::Clear);
+        p.count = 1;
+        p.depthStencil = {&zeta, depthCleared, false, 0.25f, 0};
+        std::string why;
+        const auto ms = pass(p, &why);
+        ASSERT_FALSE(ms.empty()) << why;
+        uint32_t zetaSelected = ~0u;
+        bool on = false, colourCleared = false;
+        for (const Method &x : ms) {
+            if (x.subc != gm20b::SUBC_3D)
+                continue;
+            if (x.method == NVB197_SET_ZT_SELECT) {
+                zetaSelected = x.value;
+            } else if (x.method == NVB197_SET_TIR && x.value == NVB197_SET_TIR_MODE_RASTER_N_TARGET_M) {
+                on = true;
+                EXPECT_EQ(zetaSelected, 1u) << "the zeta selected again for the draws";
+            } else if (x.method == NVB197_CLEAR_SURFACE && (x.value & 0x3c)) {
+                colourCleared = true;
+                EXPECT_FALSE(on) << "a colour clear under the mode";
+                EXPECT_EQ(zetaSelected, 0u) << "a colour clear beside the four-sample zeta";
+                EXPECT_EQ(x.value & 3, 0u) << "the zeta cleared with the colour";
+            } else if (x.method == NVB197_CLEAR_SURFACE) {
+                EXPECT_FALSE(on) << "a zeta clear under the mode";
+                EXPECT_EQ(zetaSelected, 1u);
+            }
+        }
+        EXPECT_TRUE(colourCleared);
+        EXPECT_TRUE(on);
+    }
+}
+
 // Each state's colour rule in a mixed pass (mixed_samples.h): a state of one sample merges the pixel's raster samples, a
 // state of four keeps sample 0's; the depth is written at every covered sample under both (SET_SAMPLE_MASK all)
 TEST_F(DevicePassForms, AMixedPassSetsEachStatesCoverageRule)

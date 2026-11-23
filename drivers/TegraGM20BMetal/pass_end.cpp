@@ -338,14 +338,12 @@ void RenderEncoder::end()
     zetaClearValues(p, zsBits & 1, zs.depth, zsBits & 2, zs.stencil);
     if (zsBits & 1)
         d.clearZbcDepth(*zs.texture, areaW_ >= zs.texture->width && areaH_ >= zs.texture->height, zs.depth);
-    // a mixed pass's zeta cleared in its own sample layout, then the colour's under target-independent rasterisation
-    if (rasterSamples_ > samples_) {
-        sampleWords(p, rasterSamples_, d.root_.va, pass_.positions, rot_);
-        if (zsBits)
-            clearZeta(p, planeArea(), zsBits, 0, layers);
-        zsBits = 0;
-        tirOn(p, rasterSamples_);
-    }
+    // A mixed pass's colour is cleared with its zeta deselected and target-independent rasterisation off: under the mode,
+    // beside the four-sample zeta, its CLEAR_SURFACE is class error 0x124 (INVALID_TIR_COMBINATION02, gv100
+    // dev_graphics.ref.txt; gpu.gm20b.mixed_samples on the device). The zeta is cleared in its own sample layout after.
+    const bool mixed = rasterSamples_ > samples_;
+    if (mixed)
+        p.m(ZT_SELECT, 0);
     for (const Clear &c : cl) {
         if (c.own)
             continue;
@@ -354,9 +352,17 @@ void RenderEncoder::end()
         clearWords(t->format, c.value, v, !called_ && t->compressed);
         const Rect r = planeRect(c.x0, c.y0, c.x1, c.y1);
         d.clearZbc(*t, !r.x0 && !r.y0 && r.x1 >= t->width && r.y1 >= t->height, v);
-        const bool area = !c.x0 && !c.y0 && c.x1 == areaW_ && c.y1 == areaH_;
+        const bool area = !mixed && !c.x0 && !c.y0 && c.x1 == areaW_ && c.y1 == areaH_;
         clearRect(p, r.x0, r.y0, r.x1, r.y1, v, c.target, area ? zsBits : 0, layers);
         zsBits = area ? 0 : zsBits;
+    }
+    if (mixed) {
+        p.m(ZT_SELECT, 1);
+        sampleWords(p, rasterSamples_, d.root_.va, pass_.positions, rot_);
+        if (zsBits)
+            clearZeta(p, planeArea(), zsBits, 0, layers);
+        zsBits = 0;
+        tirOn(p, rasterSamples_);
     }
     if (zsBits)
         clearZeta(p, planeArea(), zsBits, 0, layers);
