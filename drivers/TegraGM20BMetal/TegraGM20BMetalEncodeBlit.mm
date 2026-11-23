@@ -15,6 +15,7 @@
 #include "fill_record.h"
 #include "mip.h"
 #include "overlap_rows.h"
+#include "plain_rows.h"
 #include "rotated_pass.h"
 #include "twod_fill.h"
 
@@ -343,6 +344,16 @@ bool encodeBlit(SwitchMetalCommandBuffer *cb, const Cmd &c, gm20b::CommandBuffer
         if (!fresh.empty())
             fresh.erase(t);
         standInFresh.erase(t);
+        if (!dl && gm20b::copiedThroughPool(t->_raw, uint32_t(o), uint32_t(o >> 32), uint32_t(w), uint32_t(h))) {
+            gm20bCopyPlanes(be, rc, s->_raw, so, row, image, *t->_raw.sampled, 0, 0, 0, uint32_t(w), uint32_t(h), 1,
+                            true, uint8_t(c.a));
+            be->end();
+            const int stored = gm20b::storeCopiedPlainRows(*gRM->raw, *rc, t->_raw, why);
+            be = rc->blit();
+            if (stored)
+                return false;
+            break;
+        }
         gm20b::Texture level;
         gm20bBufferCopyImage(t, uint32_t(dl), level, true);
         gm20bCopyPlanes(be, rc, s->_raw, so, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(dz),
