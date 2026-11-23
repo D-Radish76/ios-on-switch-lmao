@@ -832,7 +832,8 @@ static const gm20b::Pipeline *recordedPipeline(const gm20b::RasterState &raster)
     return @YES;
 }
 
-// hw_test_app's gpu.path.state_segments: this command buffer binds every state as an inline copy (gpu.h inlineStates)
+// hw_test_app's gpu.path.state_segments: this command buffer binds every state as an inline copy (command_buffer.h
+// inlineStates)
 - (NSNumber *)switchMetalInlineStates
 {
     std::lock_guard<gm20b::Mutex> lock(_lock);

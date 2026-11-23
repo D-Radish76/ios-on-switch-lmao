@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (RenderEncoder's draws).
+// See render_encoder.h (RenderEncoder's draws).
 #include "lock.h"
 #include "icb.h"
 #include "gpu.h"

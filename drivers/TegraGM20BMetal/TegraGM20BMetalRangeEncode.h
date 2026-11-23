@@ -256,5 +256,5 @@ SwitchMetalRangeEncode &gm20bRangeEncode();
 // texels where `fill`, else copied back into them. Two-plane RGB10A8_2P_XR10 planes' pools (xr_pools.h), a texel
 // buffer's pool of its surface's rows (texel_rows.h), or Texture::sampled
 void gm20bMoveShadowImage(gm20b::BlitEncoder &b, const gm20b::Texture &t, bool fill);
-// The refusal predicate of an encode-time refusal or skip (gpu.h RefusalId)
+// The refusal predicate of an encode-time refusal or skip (draw_refusal.h RefusalId)
 SwitchMetalPred refusalPred(uint8_t id);

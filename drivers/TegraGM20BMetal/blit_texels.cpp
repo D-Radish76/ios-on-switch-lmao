@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The blit encoder's remapped texel copies (gpu.h BlitEncoder): between textures, a stencil aspect through its temp, and
+// The blit encoder's remapped texel copies (blit_encoder.h): between textures, a stencil aspect through its temp, and
 // between a texture and a buffer's rows
 #include "gpu.h"
 #include "blit_remap.h"

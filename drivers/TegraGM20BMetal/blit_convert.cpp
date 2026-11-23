@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The blit encoder's copies that make an image a texture is sampled through from its own bytes (gpu.h BlitEncoder): an
+// The blit encoder's copies that make an image a texture is sampled through from its own bytes (blit_encoder.h): an
 // RG8Unorm_sRGB stand-in, a planar texture's codes image, a one-plane 4:2:2 texture's luma and chroma
 #include "gpu.h"
 #include "srgb_pair.h"

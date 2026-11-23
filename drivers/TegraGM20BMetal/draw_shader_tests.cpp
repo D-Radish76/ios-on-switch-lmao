@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (RenderEncoder::prepareShaderTests: a shader depth/stencil test's stand-ins, filled from the pass's
+// See render_encoder.h (prepareShaderTests: a shader depth/stencil test's stand-ins, filled from the pass's
 // attachment before its draws and drained back after them).
 #include "lock.h"
 #include "nonfinite.h"

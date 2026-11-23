@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (CommandBuffer::render: its attachments, their backings (pass_backings.cpp) and shadows).
+// See command_buffer.h (CommandBuffer::render: its attachments, their backings (pass_backings.cpp) and shadows).
 #include "lock.h"
 #include "fx/fx_image.h"
 #include "attachment_lifetime.h"

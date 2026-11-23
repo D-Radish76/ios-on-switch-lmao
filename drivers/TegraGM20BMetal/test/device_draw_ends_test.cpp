@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// What gm20b::Device names a draw it refuses at encode (gpu.h Refusal), each id one ending of TegraGM20BMetalDrawErrors.mm
+// What gm20b::Device names a draw it refuses at encode (draw_refusal.h), each id one ending of TegraGM20BMetalDrawErrors.mm
 // drawFailed: a storage form in a pass of another sample count (the client's) or of another texel size (the driver's),
 // a shadow variant in a pass with no shadow, a sampler header the range did not make, and a shader depth/stencil test
 // of an aspect or sample count the pass lacks (the client's) or of a Depth16Unorm its pass left unconverted (the

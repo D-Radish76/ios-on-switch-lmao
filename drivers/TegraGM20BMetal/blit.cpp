@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h. The copies follow NVK's nouveau_copy_rect and nvk_cmd_copy_memory_ce (MIT).
+// See blit_encoder.h. The copies follow NVK's nouveau_copy_rect and nvk_cmd_copy_memory_ce (MIT).
 #include "lock.h"
 #include "fx/fx_image.h"
 #include "gpu.h"

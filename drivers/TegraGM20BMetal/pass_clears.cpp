@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (RenderEncoder::clears: what a pass's clears reach; a fused pass's continuation; what the diagnostics read
+// See render_encoder.h (clears: what a pass's clears reach; a fused pass's continuation; what the diagnostics read
 // of what a pass reached).
 #include "lock.h"
 #include "clear.h"

@@ -280,6 +280,13 @@ host_library(
     ],
 )
 
+# resources.h's and pass_desc.h's own arithmetic: a block copy's whole blocks, an attachment's layers from a slice, a
+# pass's written two-plane images past its inline ones
+device_test(
+    name = "resources_test",
+    srcs = ["resources_test.cpp"],
+)
+
 # A state that reads argument buffers on gm20b::Device (device_harness.h): its root-table and status words, its set 1
 # holding the textures whose IDs were named, its draws submitted
 device_test(

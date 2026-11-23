@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (RenderEncoder::end: the pass prologue, its targets and clears).
+// See render_encoder.h (RenderEncoder::end: the pass prologue, its targets and clears).
 #include "lock.h"
 #include "clear.h"
 #include "clear_box.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (RenderEncoder::prepare: a draw's state, set 0 and barriers).
+// See render_encoder.h (RenderEncoder::prepare: a draw's state, set 0 and barriers).
 #include "lock.h"
 #include "nonfinite.h"
 #include "clear_box.h"

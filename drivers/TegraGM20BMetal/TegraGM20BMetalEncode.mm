@@ -52,7 +52,7 @@ bool SwitchMetalRangeEncode::passRefused(uint64_t a)
     return fail(PredEncPassRender, *why_, a);
 }
 
-// A draw the encoder refused: Metal's error, or its predicate and values (gpu.h Refusal)
+// A draw the encoder refused: Metal's error, or its predicate and values (draw_refusal.h Refusal)
 bool SwitchMetalRangeEncode::refused()
 {
     const gm20b::Refusal &f = rc_->refusal;

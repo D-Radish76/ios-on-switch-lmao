@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// See gpu.h (RenderEncoder::prepare's inputs: a stage's root table, which set-0 entries moved, the blend and
+// See render_encoder.h (RenderEncoder::prepare's inputs: a stage's root table, which set-0 entries moved, the blend and
 // argument table words, the region test's geometry, a fetch's attachment views, the raster state and a colour
 // matrix form's constants).
 #include "lock.h"

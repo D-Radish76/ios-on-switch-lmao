@@ -424,7 +424,7 @@ bool gm20bGroupedPass(SwitchMetalCommandBuffer *cb, size_t begin);
 // skipped and counted; false: it is not
 bool gm20bDrawAfterParallelEnd(SwitchMetalCommandBuffer *cb);
 
-// TegraGM20BMetalDrawErrors.mm: a draw refused as `f` (gpu.h RefusalId) that goes nowhere else: its line logged, the
+// TegraGM20BMetalDrawErrors.mm: a draw refused as `f` (draw_refusal.h) that goes nowhere else: its line logged, the
 // command buffer failed (with Metal's error where Metal fails it too); false: a refusal of another kind
 bool drawFailed(SwitchMetalCommandBuffer *cb, const gm20b::Refusal &f, const char *why);
 // A draw into a plane of rotation `turn` of the state of `keyHash` (its key text `key`, null where unknown) whose
