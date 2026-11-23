@@ -1408,7 +1408,7 @@ TEST_F(SwitchA3Radio, RawRxRequiresAppliedGenerationAndStripsRetainedFcs)
     EXPECT_EQ(switch_a3_host::gDiagnostics.rx_unready, 1u);
 }
 
-TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
+TEST_F(SwitchA3Radio, DiagnosticClockSuffixRepeatsEveryThirtySecondsWithoutExtraControls)
 {
     switch_ready();
     const size_t initial = switch_firmware.controls.size();
@@ -1425,21 +1425,21 @@ TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
         switch_drain();
         EXPECT_TRUE(switch_state().ready);
     }
-    EXPECT_EQ(switch_firmware.diagnostic_calls, 4u);
-    EXPECT_EQ(switch_a3_host::gDiagnostics.requests, 4u);
+    EXPECT_EQ(switch_firmware.diagnostic_calls, 11u);
+    EXPECT_EQ(switch_a3_host::gDiagnostics.requests, 11u);
     switch_wlan_a3_discovery_trial();
     switch_wlan_a3_discovery_trial();
     ASSERT_EQ(switch_wlan_a3_radio_clock(), 0);
     switch_drain();
-    EXPECT_EQ(switch_firmware.diagnostic_calls, 5u);
+    EXPECT_EQ(switch_firmware.diagnostic_calls, 12u);
     switch_wlan_a3_discovery_trial();
     ASSERT_EQ(switch_wlan_a3_radio_clock(), 0);
     switch_drain();
-    EXPECT_EQ(switch_firmware.diagnostic_calls, 5u);
+    EXPECT_EQ(switch_firmware.diagnostic_calls, 12u);
     switch_test_now_ns += 30000000000ULL;
     ASSERT_EQ(switch_wlan_a3_radio_clock(), 0);
     switch_drain();
-    EXPECT_EQ(switch_firmware.diagnostic_calls, 5u);
+    EXPECT_EQ(switch_firmware.diagnostic_calls, 13u);
     const char *blocked = nullptr;
     EXPECT_FALSE(switch_wlan_a3_trial_applied(44, &blocked));
     EXPECT_STREQ(blocked, "firmware home channel differs");
@@ -1448,7 +1448,7 @@ TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
     switch_wlan_a3_trial_boundary(true, 6);
     switch_wlan_a3_trial_boundary(true, 6);
     switch_drain();
-    EXPECT_EQ(switch_firmware.diagnostic_calls, 6u);
+    EXPECT_EQ(switch_firmware.diagnostic_calls, 14u);
     const auto startGeneration = switch_state().applied_generation;
     ASSERT_EQ(switch_schedule(false, 2000000), 0);
     switch_drain();
@@ -1462,7 +1462,7 @@ TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
     switch_drain();
     EXPECT_FALSE(switch_wlan_a3_trial_applied(6, &blocked));
     EXPECT_STREQ(blocked, "firmware has an away or inactive slot");
-    EXPECT_EQ(switch_firmware.diagnostic_calls, 7u);
+    EXPECT_EQ(switch_firmware.diagnostic_calls, 15u);
     unsigned matched = 0;
     for (const auto &line : switch_test_log)
         matched += line.find("snapshot matched") != std::string::npos;
@@ -1478,7 +1478,8 @@ TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
 TEST_F(SwitchA3Radio, MeasuredEchoUsesOneExistingExchangeAndExpiresOnAddressChange)
 {
     switch_ready();
-    switch_a3_host::gDiagnostics.routine_requests = 4;
+    switch_a3_host::gDiagnostics.requests = 1;
+    switch_a3_host::gDiagnostics.requested_ns = switch_test_now_ns;
     const auto state = switch_state();
     const auto initial = switch_firmware.controls.size();
     switch_wlan_a3_echo_snapshot(state.generation + 1, state.clock.epoch, 9, 3);

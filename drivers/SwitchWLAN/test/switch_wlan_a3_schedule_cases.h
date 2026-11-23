@@ -322,7 +322,7 @@ TEST_F(SwitchA3Radio, FaultStateDiagnosticRetainsFirstCauseWhenResourcesAreDown)
         ASSERT_EQ(switch_wlan_a3_radio_clock(), 0);
         switch_drain();
     }
-    EXPECT_EQ(switch_a3_host::gDiagnostics.requests, 4u);
+    EXPECT_EQ(switch_a3_host::gDiagnostics.requests, 7u);
     switch_firmware.diagnostic_modify = [](struct switch_a3_diagnostic &snapshot) {
         snapshot.first_fault.sequence = 1;
         snapshot.first_fault.reason = SWITCH_A3_FAULT_TIMER_OWNER;
@@ -339,6 +339,6 @@ TEST_F(SwitchA3Radio, FaultStateDiagnosticRetainsFirstCauseWhenResourcesAreDown)
     for (const auto &line : switch_test_log)
         causes += line.find("A3 diagnostic cause first:") != std::string::npos;
     EXPECT_EQ(causes, 1u);
-    EXPECT_EQ(switch_a3_host::gDiagnostics.requests, 5u);
+    EXPECT_EQ(switch_a3_host::gDiagnostics.requests, 8u);
     EXPECT_FALSE(switch_state().ready);
 }

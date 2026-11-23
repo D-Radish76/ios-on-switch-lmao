@@ -145,8 +145,6 @@ bool diagnosticRequest(const SwitchWLANA3Job &job, uint64_t now, SwitchWLANA3Ech
             if (trial)
                 gDiagnostics.trial_pending = false;
             gDiagnostics.fault_requested |= fault;
-            if (!trial && !fault && !measured)
-                ++gDiagnostics.routine_requests;
         }
         gDiagnostics.requested_ns = now;
     }

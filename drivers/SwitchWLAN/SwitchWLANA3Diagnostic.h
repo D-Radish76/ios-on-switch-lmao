@@ -15,7 +15,7 @@ struct SwitchWLANA3EchoSnapshot {
 struct SwitchWLANA3Diagnostics {
     SwitchWLANA3EchoSnapshot echo;
     uint64_t requested_ns;
-    uint32_t requests, routine_requests;
+    uint32_t requests;
     uint32_t trial_generation, trial_epoch, trial_lifetime;
     uint16_t trial_channel;
     bool fixed_trial_ended;
@@ -35,8 +35,7 @@ void switch_wlan_a3_trial_boundary(bool started, uint16_t channel);
 
 static inline bool switch_a3_diagnostic_due(const SwitchWLANA3Diagnostics &state, uint64_t now)
 {
-    return state.routine_requests < 4u && (!state.requests ||
-           (now >= state.requested_ns && now - state.requested_ns >= 30000000000ULL));
+    return !state.requests || (now >= state.requested_ns && now - state.requested_ns >= 30000000000ULL);
 }
 
 static inline bool switch_a3_diagnostic_decode(const void *data, size_t length, const switch_a3_reply &reply,
