@@ -217,6 +217,18 @@ bool Device::wantCompressed(const Texture &t, uint32_t kind, void *owner)
     return true;
 }
 
+bool Device::wantsCompressed(const Texture &t)
+{
+    std::lock_guard<gm20b::Mutex> l(lock_);
+    return privateWants_.count(&t) != 0;
+}
+
+void Device::keepPlain(const Texture &t)
+{
+    std::lock_guard<gm20b::Mutex> l(lock_);
+    privateWants_.erase(&t);
+}
+
 void Device::privateMoves(void (*take)(void *owner))
 {
     SWITCH_METAL_ENCODE_LOCK(l, lock_);

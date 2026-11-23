@@ -528,6 +528,11 @@ public:
     // t, made plain where createCompressedTexture found no memory of `kind` ready, wants that memory (private_comp.h);
     // `owner`, the facade's texture, is what the submit worker's look hands back; false: t takes none (its layout, a probe)
     bool wantCompressed(const Texture &t, uint32_t kind, void *owner);
+    // Whether t's want is still there: no move took it, and nothing withdrew or dropped it
+    bool wantsCompressed(const Texture &t);
+    // t's want withdrawn, for a CPU copy: t stays on its plain memory for life, as one with a raw view does. The submit
+    // worker's, between its submissions, where no move of t is under way
+    void keepPlain(const Texture &t);
 
     // t as it is between the submit worker's moves of its memory, which write it under lock_ (a debug probe's read)
     Texture lockedCopy(const Texture &t)
