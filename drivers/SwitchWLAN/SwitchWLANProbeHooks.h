@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Debug-build readings of the stock firmware's heap (SwitchWLANChipProbe.cpp). Release builds get empty hooks.
+// Debug-build readings of the stock firmware's heap and A-MSDU receive state (SwitchWLANChipProbe.cpp). Release builds
+// get empty hooks.
 #ifndef SWITCH_WLAN_PROBE_HOOKS_H
 #define SWITCH_WLAN_PROBE_HOOKS_H
 
