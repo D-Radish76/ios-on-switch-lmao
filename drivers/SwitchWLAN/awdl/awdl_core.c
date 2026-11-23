@@ -45,6 +45,20 @@ void awdl_log(struct awdl_core *c, const char *fmt, ...)
     c->host.log(c->host.ctx, line);
 }
 
+#if DEVELOPMENT || DEBUG
+void awdl_probe(struct awdl_core *c, const char *fmt, ...)
+{
+    if (!c->host.probe)
+        return;
+    char line[160];
+    va_list ap;  // NOLINT(cppcoreguidelines-init-variables): va_start initializes it
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof line, fmt, ap);
+    va_end(ap);
+    c->host.probe(c->host.ctx, line);
+}
+#endif
+
 uint16_t awdl_core_aw_seq(const struct awdl_core *c, uint64_t now)
 {
     if (now >= c->base_tsf)
@@ -78,10 +92,9 @@ uint64_t awdl_eaw_start(const struct awdl_core *c, uint64_t now)
 
 static int discovery_slot(const struct awdl_core *c, unsigned slot)
 {
-    if (c->switch_channels_limited)
-        return awdl_chan_freq(c->cfg.seq[slot]) != 0;
-    const unsigned mask = awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode) | (1u << 8);
-    return awdl_chan_freq(c->cfg.seq[slot]) && (c->seq_fixed || (mask & (1u << slot)));
+    const uint8_t ch = awdl_chan_primary(c->cfg.seq[slot]);
+    return awdl_chan_freq(c->cfg.seq[slot]) &&
+           (c->seq_fixed || c->switch_channels_limited || ch == 6 || ch == 44 || ch == 149);
 }
 
 static uint64_t next_discovery(const struct awdl_core *c, uint64_t now)
@@ -130,39 +143,60 @@ struct candidate {
     uint32_t metric, counter, dist;
 };
 
-// OWL's order (src/election.c), Apple's v2 election: the root that has been master longest, then the higher metric,
-// then the node nearer its root, then the higher address of the node we would follow.
+// IO80211Family's runParentElection: between two roots the higher metric, then the higher address; towards one root
+// the higher metric, then a counter more than 2 ahead, then, on an equal counter, the shorter way.
 static int better(const struct candidate *a, const struct candidate *b)
 {
+    if (!awdl_addr_eq(a->root, b->root))
+        return a->metric != b->metric ? a->metric > b->metric : memcmp(a->root, b->root, 6) > 0;
+    if (a->metric > b->metric)
+        return 1;
     if (a->counter != b->counter)
-        return a->counter > b->counter;
-    if (a->metric != b->metric)
-        return a->metric > b->metric;
-    if (a->dist != b->dist)
-        return a->dist < b->dist;
-    return memcmp(a->via, b->via, 6) > 0;
+        return a->counter > b->counter && a->counter - b->counter > 2;
+    return a->dist < b->dist;
 }
 
+static int electable(const struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
+{
+    if (!p || !p->used || !p->has_v2 || (now >= p->last_seen && now - p->last_seen > AWDL_PEER_TIMEOUT_US))
+        return 0;
+    const struct awdl_election_v2 *e = &p->election;
+    return !awdl_addr_eq(e->root, c->cfg.addr) && !awdl_addr_eq(e->parent, c->cfg.addr) &&
+           e->hops + 1 <= AWDL_ELECTION_MAX_HOPS;
+}
+
+static struct candidate through(const struct awdl_peer *p)
+{
+    return (struct candidate){p->election.root, p->addr, p->election.root_metric, p->election.root_counter,
+                              p->election.hops};
+}
+
+// The parent we have is weighed first, so a candidate it equals or also outranks never displaces it; when no peer is
+// loud enough to be a candidate it is kept until it falls silent (macOS does the same).
 void awdl_run_election(struct awdl_core *c, uint64_t now)
 {
     const uint8_t *self = c->cfg.addr;
-    struct candidate best = {self, self, c->cfg.self_metric, c->self_counter, 0};
-    const struct awdl_peer *parent = NULL;
+    const struct candidate me = {self, self, c->cfg.self_metric, c->self_counter, 0};
+    const struct awdl_peer *current = c->role == AWDL_ROLE_FOLLOWER ? awdl_core_find(c, c->adv.parent) : NULL;
+    if (!electable(c, current, now))
+        current = NULL;
+    const struct awdl_peer *parent = current && current->rssi >= AWDL_ELECTION_RSSI_DBM ? current : NULL;
+    struct candidate best = parent ? through(parent) : me;
     for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
         const struct awdl_peer *p = &c->peers[i];
-        if (!p->used || !p->has_v2 || (now >= p->last_seen && now - p->last_seen > AWDL_ELECTION_FRESH_US))
+        if (p == current || p->rssi < AWDL_ELECTION_RSSI_DBM || !electable(c, p, now))
             continue;
-        const struct awdl_election_v2 *e = &p->election;
-        if (awdl_addr_eq(e->root, self) || awdl_addr_eq(e->parent, self))
-            continue;  // our own subtree: no loops
-        if (e->hops + 1 > AWDL_ELECTION_MAX_HOPS)
-            continue;
-        struct candidate k = {e->root, p->addr, e->root_metric, e->root_counter, e->hops};
-        if (better(&k, &best)) {
+        const struct candidate k = through(p);
+        if (!parent || (better(&k, &best) && !better(&best, &k))) {
             best = k;
             parent = p;
         }
     }
+    if (parent && !better(&best, &me))
+        parent = NULL;
+    else if (!parent)
+        parent = current;
+    best = parent ? through(parent) : me;
     const enum awdl_role was = c->role;
     uint8_t old_parent[6];
     uint8_t old_root[6];
@@ -183,8 +217,8 @@ void awdl_run_election(struct awdl_core *c, uint64_t now)
     }
 }
 
-// The counter of a root grows while it stays one; it is our tie-breaker against other new roots, so only its rate
-// matters, and it is caught up here rather than given a wake-up of its own.
+// The counter of a root grows while it stays one; followers read it to tell a fresh way to that root from a stale one,
+// so only its rate matters, and it is caught up here rather than given a wake-up of its own.
 static void tick_counter(struct awdl_core *c, uint64_t now)
 {
     if (now < c->last_counter_tick)
@@ -296,17 +330,24 @@ static int sender_next_eaw(const struct awdl_af *a, uint64_t rx_tsf, uint64_t *t
     return 1;
 }
 
+// Our clock follows every measurement of the parent's; the radio's installed sequence follows it only when the
+// parent changes or the two have drifted apart by more than AWDL_RESYNC_US (AWDL_SEQ_US is a power of two).
 static void sync_to(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
 {
-    const uint64_t predicted = awdl_core_aw_start(c, p->next_aw_seq, now);
-    const int64_t err = (int64_t)(p->next_aw_tsf - predicted);
     c->base_tsf = p->next_aw_tsf;
     c->base_seq = p->next_aw_seq;
-    int64_t clamped = err < INT32_MIN ? INT32_MIN : err;
-    if (err > INT32_MAX)
-        clamped = INT32_MAX;
-    c->stats.last_sync_error_us = (int32_t)clamped;
-    if (err > AWDL_RESYNC_US || err < -AWDL_RESYNC_US) {
+    if (c->schedule_pending) {  // the install still to come takes this clock
+        memcpy(c->synced_to, p->addr, 6);
+        return;
+    }
+    const uint16_t aw = awdl_core_aw_seq(c, now);
+    const uint64_t start = awdl_core_aw_start(c, (uint16_t)(aw - aw % (AWDL_EAW_AWS * AWDL_SEQ_SLOTS)), now);
+    int64_t err = (int64_t)((start - c->anchor) % AWDL_SEQ_US);
+    if (err > (int64_t)(AWDL_SEQ_US / 2))
+        err -= (int64_t)AWDL_SEQ_US;
+    c->stats.last_sync_error_us = (int32_t)err;
+    if (!awdl_addr_eq(c->synced_to, p->addr) || err > AWDL_RESYNC_US || err < -AWDL_RESYNC_US) {
+        memcpy(c->synced_to, p->addr, 6);
         c->stats.resyncs++;
         awdl_soft_install(c, now);
     }
@@ -377,8 +418,6 @@ void awdl_handle_af(struct awdl_core *c, const struct awdl_af *a, const struct a
     } else if (timed && parent) {
         sync_to(c, p, now);
     }
-    if (parent)
-        awdl_sched_learn_social(c, p, now);
     if (timed && c->txq_count)
         c->next_data = now;
     if (!p->reachable && timed && p->has_seq &&
@@ -456,6 +495,7 @@ void awdl_core_start(struct awdl_core *c, uint64_t now)
     c->base_tsf = now - now % AWDL_AW_US;
     c->base_seq = 0;
     c->self_counter = 0;
+    memset(c->synced_to, 0, sizeof c->synced_to);
     c->last_counter_tick = now;
     c->last_observation = now;
     c->schedule_pending = 0;

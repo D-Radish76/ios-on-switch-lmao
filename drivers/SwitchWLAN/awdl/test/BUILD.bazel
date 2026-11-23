@@ -65,6 +65,7 @@ COPTS = [
         srcs = [
             "switch_apple_frames.h",
             "test_awdl.c",
+            "test_election.c",
             "test_native.c",
             "test_owl.c",
             "test_radio.c",

@@ -17,6 +17,7 @@ void test_owl_main(void);     // test_owl.c
 void test_sched_main(void);   // test_sched.c
 void test_radio_main(void);
 void test_services_main(void);  // test_services.c
+void test_election_main(void);  // test_election.c
 #define CHECK(x)                                                         \
     do {                                                                 \
         if (!(x)) {                                                      \
@@ -1196,6 +1197,7 @@ int main(int argc, char **argv)
     test_owl_main();
     test_sched_main();
     test_radio_main();
+    test_election_main();
     sim_reset(0);
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);

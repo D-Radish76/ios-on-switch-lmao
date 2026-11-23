@@ -268,6 +268,58 @@ host_test(
     deps = [":awdl_presence"],
 )
 
+# awdl0's neighbour cache (SwitchWLANAwdlNeighbor.c) against a model of XNU's node presence, absence and nd6_free.
+host_library(
+    name = "neighbor_model_api",
+    hdrs = ["switch_wlan_neighbor_model.h"],
+)
+
+host_shims(
+    name = "neighbor_kernel",
+    headers = [
+        "net/ethernet.h",
+        "net/if.h",
+        "net/if_dl.h",
+        "net/if_types.h",
+        "net/if_var.h",
+        "net/kpi_interface.h",
+        "net/route.h",
+        "netinet/in.h",
+        "netinet6/in6_var.h",
+        "netinet6/nd6.h",
+        "netinet6/scope6_var.h",
+        "sys/param.h",
+        "sys/socket.h",
+        "sys/sockio.h",
+        "sys/systm.h",
+    ],
+    stubs = "switch_wlan_neighbor_stubs.h",
+    deps = [":neighbor_model_api"],
+)
+
+host_library(
+    name = "neighbor",
+    srcs = [
+        "switch_wlan_neighbor_model.c",
+        "//drivers/SwitchWLAN:SwitchWLANAwdlNeighbor.c",
+        "//drivers/SwitchWLAN:SwitchWLANAwdlNeighbor.h",
+    ],
+    # Release form: the debug-only echo counters use the socket KPI, which the stand-ins leave out.
+    copts = ["-UDEBUG"],
+    defines = ["DEVELOPMENT=0"],
+    # The stand-ins replace <sys/socket.h> and friends: they stay out of the test's own (GoogleTest's) includes.
+    implementation_deps = [":neighbor_kernel"],
+)
+
+host_test(
+    name = "switch_wlan_awdl_neighbor_test",
+    srcs = ["switch_wlan_awdl_neighbor_test.cpp"],
+    deps = [
+        ":neighbor",
+        ":neighbor_model_api",
+    ],
+)
+
 # en0's data path (SwitchWLANNet.cpp) against models of the radio's transmit buffers and IONetworkingFamily's queues.
 host_shims(
     name = "net_kernel",

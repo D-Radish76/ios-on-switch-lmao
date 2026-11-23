@@ -34,8 +34,11 @@ void expireTx(thread_call_param_t, thread_call_param_t)
     for (auto &pending : gPending) {
         if (!pending.id || pending.expires_ns > now)
             continue;
-        if (!pending.notified)
-            expired[count++] = {SWLAN_AWDL_TXDONE, pending.id, ETIMEDOUT, 0, gSession, pending.epoch};
+        if (!pending.notified) {
+            // The chip took it and may have sent it: ETIME, unlike ETIMEDOUT, tells the sender not to send it again.
+            const uint16_t status = pending.transport ? ETIME : ETIMEDOUT;
+            expired[count++] = {SWLAN_AWDL_TXDONE, pending.id, status, 0, gSession, pending.epoch};
+        }
         pending.notified = true;
         if (pending.transport && active)
             pending.expires_ns = UINT64_MAX;
@@ -339,10 +342,12 @@ bool switch_wlan_a3_radio_frame(const uint8_t *frame, size_t length)
                 !switch_a3_tx_status_decode(frame, length, gSession, pending.epoch, pending.schedule, &status) ||
                 pending.id != status.request_id)
                 continue;
-            result = status.status == SWITCH_A3_TX_SENT ? 0 : EIO;
-            if (pending.ack && (status.flags & (SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED)) !=
-                                   (SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED))
-                result = EIO;
+            const bool acked = (status.flags & (SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED)) ==
+                               (SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED);
+            result = status.status == SWITCH_A3_TX_SENT        ? (pending.ack && !acked ? EIO : 0)
+                     : status.status == SWITCH_A3_TX_EXPIRED   ? ETIMEDOUT
+                     : status.status == SWITCH_A3_TX_CANCELLED ? ECANCELED
+                                                               : EPROTO;
 #if DEVELOPMENT || DEBUG
             gDiagnostics.tx_last_id = status.request_id;
             gDiagnostics.tx_last_status = status.status;

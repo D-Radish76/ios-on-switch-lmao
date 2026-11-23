@@ -264,6 +264,8 @@ static void switch_test_peer_window(uint64_t start, int rephase)
     RCHECK(t == open && switch_radio_test.accepted == 0);
     awdl_core_timer(core, open);
     RCHECK(switch_radio_test.accepted == 2 && switch_radio_test.sequence[0] == 0 && switch_radio_test.sequence[1] == 1);
+    switch_awdl_core_tx_done(core, 0, SWITCH_AWDL_TX_ACKED, 0, start + 205000);
+    switch_awdl_core_tx_done(core, 1, SWITCH_AWDL_TX_ACKED, 0, start + 205000);
     RCHECK(!awdl_core_output(core, eth, sizeof eth, start + 205000));
     RCHECK(switch_radio_test.accepted == 3 && switch_radio_test.data_deadline == start + 212992 + shift - 3 * AWDL_TU_US);
     awdl_core_stop(core);
@@ -295,7 +297,7 @@ static void switch_test_bonjour_windows(void)
     RCHECK(!awdl_core_output(core, frame, sizeof frame, now));
     awdl_core_timer(core, (AWDL_SEQ_SLOTS + 8) * slot + guard);
     RCHECK(switch_radio_test.accepted == 2);
-    awdl_core_timer(core, now + AWDL_TRANSFER_HOLD_US + slot * AWDL_SEQ_SLOTS);
+    awdl_core_timer(core, now + AWDL_PEER_TIMEOUT_US + slot * AWDL_SEQ_SLOTS);
     RCHECK(switch_radio_test.accepted == 2 && awdl_core_stats(core)->data_drop == 1);
     awdl_core_stop(core);
     free(core);
@@ -310,7 +312,7 @@ static void switch_test_queued_expiry(void)
     switch_radio_test.result = AWDL_TX_BUSY;
     RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000) && switch_radio_test.calls == 1);
     switch_radio_test.result = 0;
-    const uint64_t expiry = 1000 + AWDL_TRANSFER_HOLD_US + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
+    const uint64_t expiry = 1000 + AWDL_PEER_TIMEOUT_US + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
     awdl_core_timer(core, expiry);
     switch_awdl_core_tx_ready(core, expiry + 1);
     RCHECK(switch_radio_test.accepted == 0 && awdl_core_stats(core)->data_drop == 1);
@@ -355,6 +357,8 @@ static void switch_test_delayed_action(void)
     free(peer);
 }
 
+// AirDrop's TCP leaves the radio's schedule alone, so nothing in flight is cancelled; while the radio is not ready the
+// segment waits for it. One the radio never reports is counted dropped when its peer goes.
 static void switch_test_transfer_backpressure(int queued)
 {
     memset(&switch_radio_test, 0, sizeof switch_radio_test);
@@ -370,30 +374,85 @@ static void switch_test_transfer_backpressure(int queued)
     if (queued)
         switch_awdl_core_radio_ready(core, 0);
     RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000));
-    RCHECK(awdl_core_mode(core) == AWDL_MODE_TRANSFER && !switch_awdl_core_ready(core));
-    RCHECK(switch_radio_test.schedules == 1 && !switch_radio_test.accepted && !switch_radio_test.cancelled);
-    memset(ether + 14, 0, sizeof ether - 14);
-    uint64_t now = 1100;
-    if (queued) {
-        now = 1001 + AWDL_TRANSFER_HOLD_US;
-        switch_radio_test.async_schedule = 0;
-        switch_radio_learn_peer(core, ether, now);
-        switch_radio_test.async_schedule = 1;
-        switch_awdl_core_radio_ready(core, 1);
-        awdl_core_timer(core, now);
-        RCHECK(awdl_core_mode(core) == AWDL_MODE_IDLE && !switch_awdl_core_ready(core));
-        switch_awdl_core_radio_ready(core, 1);
-        switch_awdl_core_tx_ready(core, ++now);
-        RCHECK(awdl_core_mode(core) == AWDL_MODE_TRANSFER && !switch_awdl_core_ready(core));
-        RCHECK(switch_radio_test.schedules == 3 && !switch_radio_test.accepted && !switch_radio_test.cancelled);
-    }
+    RCHECK(switch_radio_test.accepted == !queued && !switch_radio_test.schedules && !switch_radio_test.cancelled);
     switch_awdl_core_radio_ready(core, 1);
-    switch_awdl_core_tx_ready(core, ++now);
+    switch_awdl_core_tx_ready(core, 1100);
     RCHECK(switch_radio_test.accepted == 1 && switch_radio_test.pending == 1 && !switch_radio_test.cancelled);
     RCHECK(switch_radio_test.attempted_bytes == expected_bytes &&
            !memcmp(switch_radio_test.attempted, expected, expected_bytes) && switch_radio_test.sequence[0] == 0);
-    switch_awdl_core_tx_ready(core, ++now);
-    RCHECK(switch_radio_test.accepted == 1 && awdl_core_stats(core)->data_drop == 0);
+    awdl_core_timer(core, 1000 + 2 * AWDL_PEER_TIMEOUT_US);
+    RCHECK(!switch_radio_test.schedules && awdl_core_stats(core)->data_drop == 1);
+    awdl_core_stop(core);
+    free(core);
+}
+
+static void switch_test_requeue(void)
+{
+    memset(&switch_radio_test, 0, sizeof switch_radio_test);
+    struct awdl_core *core = switch_radio_core();
+    awdl_core_start(core, 1000);
+    uint8_t ether[64] = {2, 1, 2, 3, 4, 8, 2, 1, 2, 3, 4, 5, 0x86, 0xdd, 0xa1};
+    switch_radio_learn_peer(core, ether, 1000);
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000));
+    ether[14] = 0xb2;
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, 1000));
+    RCHECK(switch_radio_test.accepted == 2);
+    const uint16_t a = switch_radio_test.sequence[0], b = switch_radio_test.sequence[1];
+    switch_awdl_core_tx_done(core, a, SWITCH_AWDL_TX_EXPIRED, 0, 2000);
+    switch_awdl_core_tx_done(core, b, SWITCH_AWDL_TX_CANCELLED, 0, 2000);
+    switch_awdl_core_tx_ready(core, 2000);
+    RCHECK(switch_radio_test.accepted == 4 && switch_radio_test.sequence[2] == a && switch_radio_test.sequence[3] == b);
+    RCHECK(switch_radio_test.marker[2] == 0xa1 && switch_radio_test.marker[3] == 0xb2);
+    switch_awdl_core_tx_done(core, a, SWITCH_AWDL_TX_ACKED, 0, 3000);
+    switch_awdl_core_tx_done(core, b, SWITCH_AWDL_TX_UNACKED, 0, 3000);
+    switch_awdl_core_tx_ready(core, 3000);
+    RCHECK(switch_radio_test.accepted == 4);
+
+    // A frame out of its window with no word from the radio holds back the next one to the same peer.
+    ether[14] = 0xc3;
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, 3000) && switch_radio_test.accepted == 5);
+    const uint16_t c = switch_radio_test.sequence[4];
+    const uint64_t later = 3 * AWDL_EAW_TU * AWDL_TU_US;
+    ether[14] = 0xd4;
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, later));
+    switch_awdl_core_tx_ready(core, later);
+    RCHECK(switch_radio_test.accepted == 5);
+    switch_awdl_core_tx_done(core, c, SWITCH_AWDL_TX_EXPIRED, 0, later + 1);
+    switch_awdl_core_tx_ready(core, later + 1);
+    RCHECK(switch_radio_test.accepted == 7 && switch_radio_test.sequence[5] == c &&
+           switch_radio_test.marker[5] == 0xc3 && switch_radio_test.marker[6] == 0xd4);
+    const uint64_t closes = switch_radio_test.data_deadline;
+
+    // The radio gave up on a frame the chip had taken (ETIME, here a failure): it may have gone, so it is not resent.
+    switch_awdl_core_tx_done(core, switch_radio_test.sequence[6], SWITCH_AWDL_TX_FAILED, 0, later + 2);
+    switch_awdl_core_tx_ready(core, later + 2);
+    RCHECK(switch_radio_test.accepted == 7);
+
+    // No word at all: 1.2 s after its window the frame is let go and counted, and the next one to the peer goes.
+    const uint32_t drops = awdl_core_stats(core)->data_drop;
+    ether[14] = 0xe5;
+    RCHECK(!awdl_core_output(core, ether, sizeof ether, closes + 1200000));
+    RCHECK(switch_radio_test.accepted == 7 && awdl_core_stats(core)->data_drop == drops);
+    switch_awdl_core_tx_ready(core, closes + 1200001);
+    RCHECK(switch_radio_test.accepted == 8 && switch_radio_test.marker[7] == 0xe5 &&
+           awdl_core_stats(core)->data_drop == drops + 1);
+
+    // Past its lifetime an unsent frame is dropped, once.
+    const uint16_t e = switch_radio_test.sequence[7];
+    const uint64_t dead = 1000 + 2 * AWDL_PEER_TIMEOUT_US;
+    switch_awdl_core_tx_done(core, e, SWITCH_AWDL_TX_EXPIRED, 0, dead);
+    switch_awdl_core_tx_done(core, e, SWITCH_AWDL_TX_EXPIRED, 0, dead);
+    switch_awdl_core_tx_ready(core, dead);
+    RCHECK(switch_radio_test.accepted == 8 && awdl_core_stats(core)->data_drop == drops + 2);
+
+    uint16_t token = 0;
+    RCHECK(switch_awdl_data_token(switch_radio_test.attempted, switch_radio_test.attempted_bytes, &token) &&
+           token == e);
+    uint8_t frame[AWDL_MAX_FRAME];
+    size_t length = awdl_core_build_af(core, AWDL_SUBTYPE_PSF, dead, frame, sizeof frame);
+    RCHECK(length && !switch_awdl_data_token(frame, length, &token));
+    length = awdl_core_build_af(core, AWDL_SUBTYPE_MIF, dead, frame, sizeof frame);
+    RCHECK(length && !switch_awdl_data_token(frame, length, &token));
     awdl_core_stop(core);
     free(core);
 }
@@ -584,4 +643,5 @@ void test_radio_main(void)
     switch_test_clock_request_events();
     switch_test_address_change();
     switch_test_recovery();
+    switch_test_requeue();
 }

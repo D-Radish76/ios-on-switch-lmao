@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// The channel sequence both backends run (awdl.h awdl_schedule): macOS's single-radio states, the free slots on the
-// access point's channel, the 5 GHz social channel learnt from the master, and the idle/transfer mode.
+// The channel sequence both backends run (awdl.h awdl_schedule): the slots macOS keeps in every state, the free slots
+// on the access point's channel, and the channel search a radio limited to legal channels runs until a peer is timed.
 #include "awdl_internal.h"
-#include "awdl_bcm.h"
 
 static struct awdl_chan social5_chan(uint8_t ch)
 {
     return (struct awdl_chan){ch == 44 ? 44 : 149, 0x80};
-}
-
-uint16_t awdl_slot_mask(uint16_t infra_mhz, enum awdl_mode mode)
-{
-    if (mode != AWDL_MODE_TRANSFER)
-        return AWDL_SLOTS_IDLE;
-    return infra_mhz ? AWDL_SLOTS_TRANSFER_INFRA : AWDL_SLOTS_TRANSFER_ALL;
 }
 
 void awdl_schedule_from(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t mask, struct awdl_chan free_chan, uint8_t first,
@@ -30,19 +22,17 @@ void awdl_schedule_from(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t mask, str
     }
 }
 
-void awdl_schedule(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t infra_mhz, uint8_t social5, enum awdl_mode mode)
+static const uint8_t awdl_slot_channels[AWDL_SEQ_SLOTS] = {0, 0, 149, 0, 0, 0, 0, 0, 6, 0, 44, 0, 0, 0, 0, 0};
+
+void awdl_schedule(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t infra_mhz)
 {
     const struct awdl_chan infra = awdl_chan_of_freq(infra_mhz);
-    const uint8_t ip = infra.number;
-    uint8_t first = social5;
-    uint8_t second = social5;
-    if (ip == 44 || ip == 149) {
-        first = second = ip;
-    } else if (social5 != 44 && social5 != 149) {
-        first = 149;  // no master heard yet: both 5 GHz social channels, so either kind of peer meets us
-        second = 44;
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
+        const uint8_t ch = awdl_slot_channels[i];
+        out[i] = ch == 6 ? (struct awdl_chan){6, 81} : ch ? social5_chan(ch) : infra;
     }
-    awdl_schedule_from(out, awdl_slot_mask(infra_mhz, mode), infra, first, second);
+    if (!out[0].number)
+        out[0] = (struct awdl_chan){6, 81};
 }
 
 unsigned awdl_slots_away(const struct awdl_chan seq[AWDL_SEQ_SLOTS], uint16_t infra_mhz)
@@ -79,6 +69,14 @@ static uint16_t social_bit(uint8_t channel)
 static uint8_t secondary_social(uint16_t legal)
 {
     return (legal & 1u) ? 6 : (legal & 2u) ? 44 : 149;
+}
+
+// A 5 GHz social slot whose channel the radio may not use moves to the other 5 GHz one, else to 6.
+static struct awdl_chan legal_stand_in(uint16_t legal, uint8_t channel)
+{
+    if (channel != 6 && (legal & 6u))
+        return social5_chan((legal & 4u) ? 149 : 44);
+    return channel != 6 && (legal & 1u) ? (struct awdl_chan){6, 81} : (struct awdl_chan){0, 0};
 }
 
 // A full advertised sequence takes 1.048576 s. Two cycles leave a full peer cycle after schedule installation.
@@ -223,28 +221,13 @@ static void build(struct awdl_core *c)
         memcpy(c->cfg.seq, c->switch_requested_seq, sizeof c->cfg.seq);
     } else if (awdl_native(c)) {
         awdl_native_build_seq(c);
-    } else if (c->switch_channels_limited) {
-        const struct awdl_chan home = awdl_chan_of_freq(c->infra_mhz);
-        uint8_t first = (c->switch_legal_channels & 4u) ? 149 : 44;
-        uint8_t second = (c->switch_legal_channels & 2u) ? 44 : first;
-        uint8_t preferred = c->social5;
-        if (!(c->switch_legal_channels & social_bit(preferred)))
-            preferred = home.number;
-        if ((preferred == 44 && (c->switch_legal_channels & 2u)) ||
-            (preferred == 149 && (c->switch_legal_channels & 4u)))
-            first = second = preferred;
-        if (searching(c)) {
-            search_sequence(c, home);
-        } else {
-            const uint16_t mask = awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode);
-            awdl_schedule_from(c->cfg.seq, mask, home, first, second);
-            if (c->switch_legal_channels == social_bit(6))
-                for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
-                    if (mask & (1u << i))
-                        c->cfg.seq[i] = (struct awdl_chan){6, 81};
-        }
+    } else if (c->switch_channels_limited && searching(c)) {
+        search_sequence(c, awdl_chan_of_freq(c->infra_mhz));
     } else {
-        awdl_schedule(c->cfg.seq, c->infra_mhz, c->social5, (enum awdl_mode)c->mode);
+        awdl_schedule(c->cfg.seq, c->infra_mhz);
+        for (unsigned i = 0; c->switch_channels_limited && i < AWDL_SEQ_SLOTS; ++i)
+            if (awdl_slot_channels[i] && !(social_bit(awdl_slot_channels[i]) & c->switch_legal_channels))
+                c->cfg.seq[i] = legal_stand_in(c->switch_legal_channels, awdl_slot_channels[i]);
     }
     if (!awdl_native(c) && c->switch_channels_limited) {
         for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
@@ -312,7 +295,7 @@ void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t 
         awdl_soft_install(c, now);
 }
 
-// One line per schedule: the mode, why, and how many slots leave the access point's channel.
+// One line per schedule: why, and how many slots leave the access point's channel.
 void awdl_sched_log(struct awdl_core *c, const char *fmt, ...)
 {
     char why[96];
@@ -320,43 +303,19 @@ void awdl_sched_log(struct awdl_core *c, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(why, sizeof why, fmt, ap);
     va_end(ap);
-    const char *mode = c->mode == AWDL_MODE_TRANSFER ? "transfer" : "idle";
     const unsigned n = awdl_slots_away(c->cfg.seq, c->infra_mhz);
     if (c->infra_mhz) {
-        awdl_log(c, "AWDL: schedule %s (%s): %u of 16 slots away from infra (%u MHz)", mode, why, n, c->infra_mhz);
+        awdl_log(c, "AWDL: schedule (%s): %u of 16 slots away from infra (%u MHz)", why, n, c->infra_mhz);
     } else {
-        awdl_log(c, "AWDL: schedule %s (%s): AWDL in %u of 16 slots, not associated", mode, why, n);
+        awdl_log(c, "AWDL: schedule (%s): AWDL in %u of 16 slots, not associated", why, n);
     }
 }
 
 void awdl_sched_start(struct awdl_core *c)
 {
-    c->social5 = 0;
     c->switch_timed_peer = 0;
     reset_search(c, c->last_observation);
-    c->mode = AWDL_MODE_IDLE;  // discoverable with the least presence until AirDrop data flows
-    c->transfer_until = 0;
     build(c);
-}
-
-static void set_mode(struct awdl_core *c, enum awdl_mode mode, uint64_t now, const char *fmt, ...)
-    __attribute__((format(printf, 4, 5)));
-
-static void set_mode(struct awdl_core *c, enum awdl_mode mode, uint64_t now, const char *fmt, ...)
-{
-    if (c->mode == (uint8_t)mode)
-        return;
-    char why[96];
-    va_list ap;  // NOLINT(cppcoreguidelines-init-variables): va_start initializes it
-    va_start(ap, fmt);
-    vsnprintf(why, sizeof why, fmt, ap);
-    va_end(ap);
-    const uint16_t map = awdl_social_map(c->cfg.seq);
-    c->mode = (uint8_t)mode;
-    c->stats.mode_changes++;
-    build(c);
-    awdl_sched_log(c, "%s", why);
-    apply(c, map, now);
 }
 
 void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
@@ -367,8 +326,6 @@ void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *
     if (present == c->switch_timed_peer)
         return;
     c->switch_timed_peer = (uint8_t)present;
-    if (!present)
-        c->social5 = 0;
     reset_search(c, now);
     struct awdl_chan previous[AWDL_SEQ_SLOTS];
     memcpy(previous, c->cfg.seq, sizeof previous);
@@ -377,73 +334,8 @@ void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *
         awdl_soft_install(c, now);
 }
 
-// Our 5 GHz social channel follows the master's: the one of 44/149 most of its slots are on.
-void awdl_sched_learn_social(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
-{
-    if (!p->has_seq || !p->seq.count)
-        return;
-    unsigned n44 = 0;
-    unsigned n149 = 0;
-    for (unsigned i = 0; i < p->seq.count && i < AWDL_SEQ_SLOTS; ++i) {
-        const uint8_t ch = awdl_chan_primary(p->seq.chan[i]);
-        n44 += ch == 44;
-        n149 += ch == 149;
-    }
-    uint8_t want = n149 ? 149 : 0;
-    if (n44 > n149)
-        want = 44;
-    if (!want || want == c->social5 || c->created_with == BCM_AWDL_API_IFC_V3)
-        return;
-    c->social5 = want;
-    const uint16_t map = awdl_social_map(c->cfg.seq);
-    build(c);
-    awdl_sched_log(c, "master %02x:%02x:%02x:%02x:%02x:%02x on channel %u", p->addr[0], p->addr[1], p->addr[2],
-                   p->addr[3], p->addr[4], p->addr[5], want);
-    apply(c, map, now);
-}
-
-// AirDrop's data (TLS over TCP, unicast) on awdl0: transfer mode now, held for AWDL_TRANSFER_HOLD_US after it.
-int awdl_transfer_frame(const uint8_t *eth, size_t len)
-{
-    if (len < 14 + 20 || (eth[0] & 1))
-        return 0;
-    const uint16_t type = (uint16_t)(((unsigned)eth[12] << 8) | eth[13]);
-    if (type == 0x0800)
-        return (eth[14] >> 4) == 4 && eth[14 + 9] == 6;
-    if (type == 0x86dd)
-        return len >= 14 + 40 && (eth[14] >> 4) == 6 && eth[14 + 6] == 6;
-    return 0;
-}
-
-void awdl_sched_transfer(struct awdl_core *c, const uint8_t peer[6], int out, uint64_t now)
-{
-    if (now + AWDL_TRANSFER_HOLD_US > c->transfer_until)
-        c->transfer_until = now + AWDL_TRANSFER_HOLD_US;
-    if (c->mode == AWDL_MODE_TRANSFER)
-        return;
-    const uint8_t *p = peer;
-    set_mode(c, AWDL_MODE_TRANSFER, now, "TCP %s %02x:%02x:%02x:%02x:%02x:%02x", out ? "to" : "from", p[0], p[1], p[2],
-             p[3], p[4], p[5]);
-}
-
-void awdl_sched_traffic(struct awdl_core *c, const uint8_t *eth, size_t len, int out, uint64_t now)
-{
-    if (awdl_transfer_frame(eth, len))
-        awdl_sched_transfer(c, out ? eth : eth + 6, out, now);
-}
-
-void awdl_core_traffic_registered(struct awdl_core *c, const char *who, uint64_t now)
-{
-    if (!c->running)
-        return;
-    c->transfer_until = now + AWDL_TRANSFER_HOLD_US;  // a session start: the data that follows keeps it
-    set_mode(c, AWDL_MODE_TRANSFER, now, "wifip2pd traffic registration %.40s", who ? who : "");
-}
-
 void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
 {
-    if (c->mode == AWDL_MODE_TRANSFER && now >= c->transfer_until)
-        set_mode(c, AWDL_MODE_IDLE, now, "no AirDrop data for %u s", AWDL_TRANSFER_HOLD_US / 1000000);
     if (search_moves(c) && now >= c->switch_next_search) {
         const uint64_t passes = 1 + (now - c->switch_next_search) / SWITCH_AWDL_SEARCH_US;
         c->switch_next_search += passes * SWITCH_AWDL_SEARCH_US;
@@ -459,13 +351,7 @@ void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
 
 uint64_t awdl_sched_next(const struct awdl_core *c)
 {
-    const uint64_t mode = c->mode == AWDL_MODE_TRANSFER ? c->transfer_until : UINT64_MAX;
-    return search_moves(c) && c->switch_next_search < mode ? c->switch_next_search : mode;
-}
-
-enum awdl_mode awdl_core_mode(const struct awdl_core *c)
-{
-    return (enum awdl_mode)c->mode;
+    return search_moves(c) ? c->switch_next_search : UINT64_MAX;
 }
 
 void awdl_core_set_infra(struct awdl_core *c, uint16_t infra_mhz, uint64_t now)

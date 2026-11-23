@@ -254,7 +254,8 @@ static void test_owl_election(void)
     feed(us, 0x20, 0x20, 0, 0, 60, 1000000);
     OCHECK(awdl_core_role(us) == AWDL_ROLE_ROOT && root_is(us, 0x30));
     free(us);
-    // counter_metric: metric 1000 against our 1000 (address), against 1001 (we win), then the counter decides first
+    // counter_metric: metric 1000 against our 1000 (address), against 1001 (we win); unlike OWL, macOS never lets the
+    // counter rank two roots
     us = o_core(0x10, 1000, "us", 1000000);
     feed(us, 0x20, 0x20, 0, 0, 1000, 1000000);
     OCHECK(root_is(us, 0x20));
@@ -263,7 +264,7 @@ static void test_owl_election(void)
     feed(us, 0x20, 0x20, 0, 0, 1000, 1000000);
     OCHECK(awdl_core_role(us) == AWDL_ROLE_ROOT);
     feed(us, 0x20, 0x20, 1, 0, 1000, 1100000);
-    OCHECK(awdl_core_role(us) == AWDL_ROLE_FOLLOWER && root_is(us, 0x20));
+    OCHECK(awdl_core_role(us) == AWDL_ROLE_ROOT);
     free(us);
     // our own counter grows while we are root (every π s): 1 against the peer's 1, and our metric wins again
     us = o_core(0x10, 1001, "us", 1000000);
@@ -276,13 +277,13 @@ static void test_owl_election(void)
     feed(us, 0x20, 0x10, 0, 1, 1000, 1000000);
     OCHECK(awdl_core_role(us) == AWDL_ROLE_ROOT);
     free(us);
-    // same root and score through two peers: the one nearer the root, then the higher address
+    // same root and score through two peers: the one nearer the root; on a tie the parent we have
     us = o_core(0x10, 60, "us", 1000000);
     feed(us, 0x40, 0x50, 9, 2, 500, 1000000);
     feed(us, 0x20, 0x50, 9, 1, 500, 1000000);
     OCHECK(awdl_core_election(us)->parent[5] == 0x20 && awdl_core_election(us)->hops == 2);
     feed(us, 0x30, 0x50, 9, 1, 500, 1000000);
-    OCHECK(awdl_core_election(us)->parent[5] == 0x30);
+    OCHECK(awdl_core_election(us)->parent[5] == 0x20);
     free(us);
     free(shape);
 }

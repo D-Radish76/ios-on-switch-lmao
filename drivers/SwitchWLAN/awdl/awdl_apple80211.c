@@ -420,7 +420,6 @@ int a80211_awdl_request(struct a80211_awdl *f, int set, int32_t type, int32_t *v
                     return start;
 #endif
                 f->traffic_registrations++;
-                awdl_core_traffic_registered(f->core, (const char *)t.unique_id, now);  // a session starts
             } else if (f->traffic_registrations) {
                 f->traffic_registrations--;
 #if defined(SWITCH_IPSW_KIND_24B119)

@@ -6,7 +6,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-int switch_wlan_awdl_neighbor_update(ifnet_t ifp, const uint8_t address[6], int present, int8_t rssi);
+int switch_wlan_awdl_neighbor_update(ifnet_t ifp, const uint8_t address[6], int present, int8_t rssi,
+                                     uint32_t *route_flags);
 
 #if DEVELOPMENT || DEBUG
 enum { SWITCH_WLAN_IPV6_TEXT_LEN = 46 };

@@ -80,19 +80,18 @@ static void fw_peer_op(struct awdl_core *c, uint8_t op, const struct awdl_peer *
 
 static uint8_t social5_of(const struct awdl_chan seq[AWDL_SEQ_SLOTS])
 {
-    return awdl_chan_primary(seq[0]);
+    return awdl_chan_primary(seq[10]);
 }
 
-// The sequence the native backend runs for its mode: on interface_create v3 the series' slot_bss form (44 and 6, the
-// free slots the firmware's for the station), on 7.x our own (the infra channel and the learnt social channel).
+// The sequence the native backend runs: on interface_create v3 the series' slot_bss form (44 and 6, the free slots the
+// firmware's for the station), on 7.x our own (awdl_schedule).
 void awdl_native_build_seq(struct awdl_core *c)
 {
     if (c->created_with == BCM_AWDL_API_IFC_V3) {
-        awdl_schedule_from(c->cfg.seq, awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode), (struct awdl_chan){0, 0},
-                           44, 44);
+        awdl_schedule_from(c->cfg.seq, AWDL_SLOTS_IDLE, (struct awdl_chan){0, 0}, 44, 44);
         return;
     }
-    awdl_schedule(c->cfg.seq, c->infra_mhz, c->social5, (enum awdl_mode)c->mode);
+    awdl_schedule(c->cfg.seq, c->infra_mhz);
     for (unsigned i = 0; c->seq_no_empty && i < AWDL_SEQ_SLOTS; ++i) {
         if (!c->cfg.seq[i].number)
             c->cfg.seq[i] = c->cfg.seq[0];
@@ -103,7 +102,7 @@ static void native_schedule(struct awdl_core *c)
 {
     uint8_t b[BCM_AWDL_SLOT_BSS_LEN];
     if (c->created_with == BCM_AWDL_API_IFC_V3 && !(c->switch_fw_unsupported & (1u << BCM_PROBE_SLOT_BSS))) {
-        fw_set(c, "slot_bss", b, bcm_slot_bss(b, awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode)));
+        fw_set(c, "slot_bss", b, bcm_slot_bss(b, AWDL_SLOTS_IDLE));
     } else {
         fw_set(c, "awdl_chan_seq", b, bcm_awdl_chan_seq(b, sizeof b, c->cfg.seq, AWDL_SEQ_SLOTS));
     }
@@ -270,8 +269,6 @@ static void switch_native_ready(struct awdl_core *c, uint64_t now)
              awdl_chan_primary(c->cfg.seq[0]), awdl_chan_primary(c->cfg.seq[9]), c->infra_mhz);
     awdl_sched_log(c, "%s", "start");
 }
-
-// One line per schedule: the mode, why, and how many slots leave the access point's channel.
 
 void awdl_native_resend(struct awdl_core *c, uint16_t old_map)
 {
@@ -491,8 +488,8 @@ int awdl_native_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint
         c->stats.tx_refused++;
         return -3;
     }
+    (void)now;
     c->data_seq++;
     c->stats.data_tx++;
-    awdl_sched_traffic(c, eth, len, 1, now);
     return 0;
 }

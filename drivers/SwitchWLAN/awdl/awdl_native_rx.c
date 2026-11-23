@@ -142,5 +142,4 @@ void awdl_core_rx_eth(struct awdl_core *c, const uint8_t *frame, size_t len, uin
     c->stats.data_rx++;
     if (c->host.deliver)
         c->host.deliver(c->host.ctx, c->scratch, n);
-    awdl_sched_traffic(c, c->scratch, n, 0, now);
 }

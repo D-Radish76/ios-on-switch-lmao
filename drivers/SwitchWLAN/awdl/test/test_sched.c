@@ -238,11 +238,14 @@ static void measure_sync(struct counts *k)
 
 static void test_shared_radio(void)
 {
-    // The master: AirDrop open (Stute et al.'s "Data": 149 everywhere but channel 6 in slot 8), unassociated.
+    // The master: a Mac's own sequence beside its access point (wifip2pd), the access point's slots empty here.
     m_core = make(0x0a, 520, m_tx, m_schedule);
+    static const uint8_t mac[AWDL_SEQ_SLOTS] = {44, 44, 149, 0, 0, 0, 0, 0, 6, 149, 44, 0, 0, 0, 0, 0};
     struct awdl_chan seq[AWDL_SEQ_SLOTS];
     for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
-        seq[i] = i == 8 ? (struct awdl_chan){6, 0x51} : (struct awdl_chan){149, 0x80};
+        seq[i] = !mac[i]       ? (struct awdl_chan){0, 0}
+                 : mac[i] == 6 ? (struct awdl_chan){6, 0x51}
+                               : (struct awdl_chan){mac[i], 0x80};
     awdl_core_set_sequence(m_core, seq, 0);
     u_core = make(0x0b, 60, u_tx, NULL);
     awdl_core_set_infra(u_core, HOME_MHZ, us_local(0));
@@ -255,7 +258,7 @@ static void test_shared_radio(void)
     run_start = 10000000;
     run(run_start, &m_deadline, &u_deadline, &k);
     SCHECK(awdl_core_role(u_core) == AWDL_ROLE_FOLLOWER && awdl_core_election(u_core)->root[5] == 0x0a);
-    SCHECK(awdl_slots_away(awdl_core_sequence(u_core), HOME_MHZ) == 4);  // idle: 0, 8, 9, 10
+    SCHECK(awdl_slots_away(awdl_core_sequence(u_core), HOME_MHZ) == 3);  // 2, 8, 10
     away_time = longest_away = 0;
     tx_calls = excursions = 0;
     const uint64_t window = 57 * 1048576ull;  // whole sequences
@@ -265,33 +268,16 @@ static void test_shared_radio(void)
     double caught = k.m_frames_in_our_slots ? (double)k.m_frames_caught / k.m_frames_in_our_slots : 0;
     measure_sync(&k);
     const struct awdl_peer *seen = awdl_core_find(m_core, (const uint8_t[6]){0x02, 0x11, 0x22, 0x33, 0x44, 0x0b});
-    printf("  shared radio, idle: AP keeps %.1f %%, longest absence %.1f ms, %.1f excursions/s, caught %.1f %% of "
+    printf("  shared radio: AP keeps %.1f %%, longest absence %.1f ms, %.1f excursions/s, caught %.1f %% of "
            "the master's frames in our AWDL slots, EAW within %lld us, %.1f wakeups/s, %.1f sends/s\n",
            home * 100, (double)longest_away / 1000, excursions / (window / 1e6), caught * 100, (long long)k.worst_sync,
            k.wakeups / (window / 1e6), tx_calls / (window / 1e6));
-    SCHECK(home > 0.74 && home < 0.77);
-    SCHECK(longest_away <= 3 * 65536 + 3000);  // slots 8-10, under any access point's power-save buffering
+    SCHECK(home > 0.80 && home < 0.84);
+    SCHECK(longest_away <= 65536 + 3000);  // one slot at a time, under any access point's power-save buffering
     SCHECK(caught > 0.9);
     SCHECK(k.worst_sync < 3000);
     SCHECK(seen && seen->reachable);
     SCHECK(k.wakeups < 12 * 60 && tx_calls < 11 * 60);
-
-    // wifip2pd registers AirDrop traffic: "Data+Infra", the access point keeps 4 of 16 slots
-    awdl_core_traffic_registered(u_core, "com.apple.airdrop", us_local(s_now));
-    u_deadline = awdl_core_timer(u_core, us_local(s_now));  // the driver re-arms after every request
-    SCHECK(awdl_slots_away(awdl_core_sequence(u_core), HOME_MHZ) == 12);
-    away_time = 0;
-    excursions = 0;
-    run_start = s_now;
-    memset(&k, 0, sizeof k);
-    run(s_now + 2 * 1048576, &m_deadline, &u_deadline, &k);
-    close_excursion();
-    const double home_t = 1.0 - (double)away_time / (2 * 1048576.0);
-    caught = k.m_frames_in_our_slots ? (double)k.m_frames_caught / k.m_frames_in_our_slots : 0;
-    printf("  shared radio, transfer: AP keeps %.1f %%, caught %.1f %%, %u excursions\n", home_t * 100, caught * 100,
-           excursions);
-    SCHECK(home_t > 0.24 && home_t < 0.3);
-    SCHECK(caught > 0.9);
     free(m_core);
     free(u_core);
 }
@@ -344,7 +330,6 @@ static void switch_test_legal_channels(void)
     SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER && awdl_social_map(switch_installed) == 2);
     awdl_core_stop(peer);
     free(peer);
-    awdl_core_traffic_registered(core, "com.apple.airdrop", 0);
     SCHECK(awdl_slots_away(switch_installed, 5745) == 4);
     switch_awdl_core_set_channels(core, 0, 0);
     SCHECK(!awdl_social_map(switch_installed));
@@ -532,7 +517,7 @@ static void switch_hear_peer_on(struct awdl_core *core, uint8_t channel, uint64_
     free(peer);
 }
 
-// Every search pass idle and in transfer, then a timed peer's sequence idle and in transfer.
+// Every search pass, then a timed peer's sequence.
 static void switch_test_first_slot(void)
 {
     const uint64_t period = 2 * AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
@@ -542,23 +527,16 @@ static void switch_test_first_slot(void)
         const uint16_t infra = awdl_chan_freq((struct awdl_chan){(uint8_t)channel, 0});
         for (unsigned mask = 1; mask <= 7; ++mask) {
             unsigned illegal = 0;
-            for (unsigned transfer = 0; transfer < 2; ++transfer) {
-                struct awdl_core *core = switch_first_slot_core(infra, mask);
-                for (unsigned pass = 0; pass < 48; ++pass) {
-                    if (transfer)
-                        awdl_core_traffic_registered(core, "com.apple.airdrop", period * pass);
-                    awdl_core_timer(core, period * pass);
-                    illegal += switch_first_slot_illegal(core, mask);
-                }
-                awdl_core_stop(core);
-                free(core);
-            }
             struct awdl_core *core = switch_first_slot_core(infra, mask);
+            for (unsigned pass = 0; pass < 48; ++pass) {
+                awdl_core_timer(core, period * pass);
+                illegal += switch_first_slot_illegal(core, mask);
+            }
+            awdl_core_stop(core);
+            free(core);
+            core = switch_first_slot_core(infra, mask);
             switch_hear_peer_on(core, mask & 1u ? 6 : mask & 2u ? 44 : 149, period);
             SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER);
-            illegal += switch_first_slot_illegal(core, mask);
-            awdl_core_traffic_registered(core, "com.apple.airdrop", period);
-            SCHECK(awdl_core_mode(core) == AWDL_MODE_TRANSFER);
             illegal += switch_first_slot_illegal(core, mask);
             awdl_core_stop(core);
             free(core);
@@ -598,9 +576,9 @@ static void switch_test_acquisition(void)
     SCHECK(switch_installs == before + 1);
     SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER);
     awdl_core_set_infra(core, 2437, now);
-    SCHECK(switch_installed[0].number == 44 && switch_installed[2].number == 6);
+    SCHECK(switch_installed[0].number == 6 && switch_installed[2].number == 149 && switch_installed[10].number == 44);
     awdl_core_set_infra(core, 5745, now);
-    SCHECK(switch_installed[0].number == 44 && switch_installed[1].number == 149);
+    SCHECK(switch_installed[0].number == 149 && switch_installed[8].number == 6 && switch_installed[10].number == 44);
     unsigned installed = switch_installs;
     awdl_core_timer(core, now + period / 2);
     SCHECK(switch_installs == installed);
@@ -671,7 +649,6 @@ static void switch_test_home_trial(void)
 
     struct awdl_chan desired[AWDL_SEQ_SLOTS] = {{44, 115}};
     awdl_core_set_sequence(core, desired, 2000);
-    awdl_core_traffic_registered(core, "com.apple.airdrop", 2100);
     SCHECK(switch_installed[0].number == 6 && switch_installed[15].number == 6);
     switch_awdl_core_home_trial(core, 0, 3000);
     SCHECK(!memcmp(switch_installed, desired, sizeof desired));
@@ -709,6 +686,5 @@ void test_sched_main(void)
 #if DEVELOPMENT || DEBUG
     switch_test_home_trial();
 #endif
-    printf("shared radio: idle and transfer schedules beside the access point: %s\n",
-           test_failures == before ? "ok" : "FAILED");
+    printf("shared radio: the schedule beside the access point: %s\n", test_failures == before ? "ok" : "FAILED");
 }

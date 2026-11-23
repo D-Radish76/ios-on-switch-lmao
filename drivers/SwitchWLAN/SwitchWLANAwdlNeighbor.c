@@ -19,7 +19,10 @@
 #endif
 #include "SwitchWLANAwdlNeighbor.h"
 
-static int switch_wlan_neighbor_matches(struct ifnet *ifp, struct sockaddr_dl *peer, bool *permanent)
+// The neighbour cache entry for the peer's link-local address, returned referenced and unlocked when it carries the
+// peer's link address.
+static int switch_wlan_neighbor_route(struct ifnet *ifp, struct sockaddr_dl *peer, struct rtentry **found,
+                                      uint32_t *flags)
 {
     struct sockaddr_dl link = {};
     struct sockaddr_in6 ip = {};
@@ -30,18 +33,33 @@ static int switch_wlan_neighbor_matches(struct ifnet *ifp, struct sockaddr_dl *p
     if (!route)
         return ENOENT;
     const struct sockaddr_dl *gateway = (const struct sockaddr_dl *)(const void *)route->rt_gateway;
-    if (permanent)
-        *permanent = (route->rt_flags & RTF_STATIC) != 0;
+    *flags = route->rt_flags;
     const int match = route->rt_ifp == ifp && gateway && gateway->sdl_family == AF_LINK &&
                       gateway->sdl_index == peer->sdl_index && gateway->sdl_alen == ETHER_ADDR_LEN &&
                       gateway->sdl_len >= offsetof(struct sockaddr_dl, sdl_data) + gateway->sdl_nlen + ETHER_ADDR_LEN &&
                       !memcmp(CONST_LLADDR(gateway), LLADDR(peer), ETHER_ADDR_LEN);
     RT_UNLOCK(route);
-    rtfree(route);
-    return match ? 0 : EADDRNOTAVAIL;
+    if (!match) {
+        rtfree(route);
+        return EADDRNOTAVAIL;
+    }
+    *found = route;
+    return 0;
 }
 
-int switch_wlan_awdl_neighbor_update(ifnet_t ifp, const uint8_t address[6], int present, int8_t rssi)
+static int switch_wlan_neighbor_gone(struct ifnet *ifp, struct sockaddr_dl *peer, uint32_t *flags)
+{
+    struct rtentry *route = NULL;
+    const int match = switch_wlan_neighbor_route(ifp, peer, &route, flags);
+    if (match == ENOENT || match == EADDRNOTAVAIL)
+        return 0;
+    if (!match)
+        rtfree(route);
+    return match ? match : EBUSY;
+}
+
+int switch_wlan_awdl_neighbor_update(ifnet_t ifp, const uint8_t address[6], int present, int8_t rssi,
+                                     uint32_t *route_flags)
 {
     struct sockaddr_dl peer = {};
     peer.sdl_len = sizeof peer;
@@ -50,24 +68,41 @@ int switch_wlan_awdl_neighbor_update(ifnet_t ifp, const uint8_t address[6], int 
     peer.sdl_index = (uint16_t)ifnet_index(ifp);
     peer.sdl_alen = ETHER_ADDR_LEN;
     memcpy(LLADDR(&peer), address, ETHER_ADDR_LEN);
+    *route_flags = 0;
+    struct rtentry *route = NULL;
     if (present) {
         uint8_t service[48] = {};
         int error = ifnet_notice_node_presence(ifp, (struct sockaddr *)&peer, rssi, 0, 0, service);
         // DLIL also returns success for an unchanged, including static, neighbor.
-        return error && error != EEXIST ? error : switch_wlan_neighbor_matches(ifp, &peer, NULL);
+        if (error && error != EEXIST)
+            return error;
+        error = switch_wlan_neighbor_route(ifp, &peer, &route, route_flags);
+        if (!error)
+            rtfree(route);
+        return error;
     }
-    bool permanent = false;
-    int match = switch_wlan_neighbor_matches(ifp, &peer, &permanent);
-    if (match == ENOENT || match == EADDRNOTAVAIL || permanent)
+    int match = switch_wlan_neighbor_route(ifp, &peer, &route, route_flags);
+    if (match == ENOENT || match == EADDRNOTAVAIL)
         return 0;
     if (match)
         return match;
+    rtfree(route);
+    if (*route_flags & RTF_STATIC)
+        return 0;
     const int error = ifnet_notice_node_absence(ifp, (struct sockaddr *)&peer);
     if (error)
         return error;
-    // DLIL's absence notification discards the route deletion result.
-    match = switch_wlan_neighbor_matches(ifp, &peer, NULL);
-    return match == ENOENT || match == EADDRNOTAVAIL ? 0 : (match ? match : EBUSY);
+    // DLIL discards nd6_alt_node_absent's result, and that deletes only a cloned host route
+    // (IS_DYNAMIC_DIRECT_HOSTROUTE); nd6_lookup creates an uncloned one when no cloning route covers the address.
+    match = switch_wlan_neighbor_route(ifp, &peer, &route, route_flags);
+    if (match == ENOENT || match == EADDRNOTAVAIL)
+        return 0;
+    if (match)
+        return match;
+    if ((*route_flags & (RTF_HOST | RTF_LLINFO | RTF_GATEWAY | RTF_STATIC)) == (RTF_HOST | RTF_LLINFO))
+        nd6_free(route);
+    rtfree(route);
+    return switch_wlan_neighbor_gone(ifp, &peer, route_flags);
 }
 
 #if DEVELOPMENT || DEBUG

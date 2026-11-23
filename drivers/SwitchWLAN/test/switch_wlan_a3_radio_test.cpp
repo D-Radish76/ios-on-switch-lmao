@@ -424,8 +424,7 @@ TEST_F(SwitchA3Radio, MissingTxStatusExpiresOnceAndReplaysAfterProvenRetirement)
     unsigned expired = 0;
     for (const auto &event : switch_firmware.events) {
         EXPECT_NE(event.type, SWLAN_AWDL_RECOVERY_REQUIRED);
-        expired +=
-            event.type == SWLAN_AWDL_TXDONE && event.id == static_cast<uint32_t>(id) && event.status == ETIMEDOUT;
+        expired += event.type == SWLAN_AWDL_TXDONE && event.id == static_cast<uint32_t>(id) && event.status == ETIME;
     }
     EXPECT_EQ(expired, 1u);
     const auto events = switch_firmware.events.size();
@@ -440,7 +439,8 @@ TEST_F(SwitchA3Radio, QueuedDmaCannotTransmitAfterItsDeadline)
 {
     switch_ready();
     switch_firmware.dma_refusals = 100;
-    ASSERT_GT(switch_send(), 0);
+    const int id = switch_send();
+    ASSERT_GT(id, 0);
     switch_drain();
     EXPECT_TRUE(switch_firmware.dma.empty());
     switch_test_now_ns += 100000000;
@@ -451,6 +451,11 @@ TEST_F(SwitchA3Radio, QueuedDmaCannotTransmitAfterItsDeadline)
     EXPECT_TRUE(switch_firmware.dma.empty());
     EXPECT_TRUE(switch_state().ready);
     EXPECT_EQ(switch_state().tx_credits, 4u);
+    unsigned expired = 0;
+    for (const auto &event : switch_firmware.events)
+        expired +=
+            event.type == SWLAN_AWDL_TXDONE && event.id == static_cast<uint32_t>(id) && event.status == ETIMEDOUT;
+    EXPECT_EQ(expired, 1u);
 }
 
 TEST_F(SwitchA3Radio, FailedTimeoutCleanupRequiresFreshFirmwareInsteadOfReopenLoop)
@@ -1483,10 +1488,17 @@ TEST_F(SwitchA3Radio, MeasuredEchoUsesOneExistingExchangeAndExpiresOnAddressChan
 TEST_F(SwitchA3Radio, DiagnosticStatusCountsDecodedOutcomes)
 {
     switch_ready();
+    const uint16_t reported[] = {0, ETIMEDOUT, ECANCELED, EPROTO};
     for (int32_t status = SWITCH_A3_TX_SENT; status <= SWITCH_A3_TX_FAILED; ++status) {
-        ASSERT_GT(switch_send(), 0);
+        const int id = switch_send();
+        ASSERT_GT(id, 0);
         switch_drain();
         switch_complete(switch_firmware.dma.back(), 0, status);
+        unsigned done = 0;
+        for (const auto &event : switch_firmware.events)
+            done += event.type == SWLAN_AWDL_TXDONE && event.id == static_cast<uint32_t>(id) &&
+                    event.status == reported[status - SWITCH_A3_TX_SENT];
+        EXPECT_EQ(done, 1u) << status;
     }
     const auto &diagnostic = switch_a3_host::gDiagnostics;
     EXPECT_EQ(diagnostic.tx_records, 4u);
