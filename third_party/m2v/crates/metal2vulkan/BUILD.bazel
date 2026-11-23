@@ -324,4 +324,5 @@ rust_test(
 ) for name, test_filter in [
     ("binary_linking_test", "tests::engine_linking::binary_functions_link_under_their_specialized_names_and_compute_exact_outputs"),
     ("group_linking_test", "tests::engine_linking::groups::"),
+    ("signed_linking_test", "tests::engine_linking::signed::"),
 ]]
