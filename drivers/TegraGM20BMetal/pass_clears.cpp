@@ -77,6 +77,18 @@ void RenderEncoder::continuePass(uint8_t stores)
     SWITCH_METAL_DIAGNOSTIC(dev_->stats.fusedPasses++);
 }
 
+bool RenderEncoder::takeStorage(uint8_t storage, uint8_t arrayed)
+{
+    if ((storage & ~pass_.storageMask) && !dev_->storageCompressedOk())
+        return false;
+    for (uint32_t j = 0; j < 8; j++)
+        if ((arrayed >> j & 1) && pass_.color[j].texture && !pass_.color[j].texture->blockLinear)
+            return false;
+    pass_.storageMask |= storage;
+    pass_.arrayedStorageMask |= arrayed;
+    return true;
+}
+
 #if SWITCH_METAL_DIAGNOSTICS
 // The pass's stored colours that it leaves a row or two of (logEdgeMiss): outside its render area, or outside every one of its
 // draws' scissors within their viewports; a Clear load reaches past both

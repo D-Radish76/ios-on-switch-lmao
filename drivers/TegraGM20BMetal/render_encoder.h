@@ -229,6 +229,11 @@ public:
     void end();
 
     void continuePass(uint8_t stores);
+    // A pass whose draws bind colours `storage` as storage images, `arrayed` of them as 2D arrays, fused into this one:
+    // false where this pass's begin laid those colours out otherwise (a colour bound as storage takes an uncompressed
+    // backing where a storage form cannot view compressed memory, one bound as a 2D array a block-linear target), else
+    // they become this pass's storage colours, which passUses reads at its end
+    bool takeStorage(uint8_t storage, uint8_t arrayed);
     // setVisibilityResultMode:offset: (visibility.h) in a pass that resets or, `accumulate`, adds to its results:
     // false where the driver cannot take it
     bool setVisibility(uint32_t mode, const Buffer *results, uint64_t offset, bool accumulate);
