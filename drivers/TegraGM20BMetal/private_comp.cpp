@@ -348,6 +348,9 @@ bool Device::compressedFromPlain(Texture &t)
     }
     SWITCH_METAL_DIAGNOSTIC(stats.privateCompressedMoves++);
 #if SWITCH_METAL_DIAGNOSTICS
+    if (glassMem)
+        for (const uint32_t tic : movedPlain_.back().tics)
+            glassMem->rewriting(tic, true);
     os_log(OS_LOG_DEFAULT, "SwitchMetal: private %ux%u f%u moved to compressed memory kind 0x%x (%llu KiB)", t.width,
            t.height, t.format, kind, (unsigned long long)(bo.bytes >> 10));
 #endif
@@ -373,6 +376,11 @@ void Device::freeMovedPlain()
         else
             freeSpan(it->span, Memory::Bl, none);
         freeSpan(it->headers.span, it->headers.wc ? Memory::Wc : Memory::Pool, it->headers.lease);
+#if SWITCH_METAL_DIAGNOSTICS
+        if (glassMem)
+            for (const uint32_t tic : it->tics)
+                glassMem->rewriting(tic, false);
+#endif
         it = movedPlain_.erase(it);
     }
 }
