@@ -257,6 +257,31 @@ class LogHarvestTest(unittest.TestCase):
         self.assertEqual(logharvest.untested(IMAGE + CUBIC + ' | tests=2 | xr2p | xrs=2'), IMAGE + CUBIC + ' | xrs=2')
         self.assertEqual(logharvest.untested(IMAGE + ' | xr2p'), IMAGE)
 
+    def test_an_earlier_drivers_shadowed_variant_is_harvested_as_its_state(self):
+        # boot 1's iconservicesagent asked RenderBox's states as " | xrsh=1" variants, which a device draws as the
+        # states themselves now
+        records = [
+            record(BOOT, 'x', 'OS version: 24B119'),
+            made(BOOT, 'iconservicesagent', '000000000000000c', COLOR + CUBIC + ' | tests=2 | xrsh=1'),
+        ]
+        added, _ = self.run_tool(records)
+        self.assertEqual([logharvest.make_pack.state_key(line) for line in added], [COLOR, COLOR + CUBIC])
+        self.assertEqual(logharvest.base_key(IMAGE + CUBIC + ' | tests=2 | xrsh=1 | xrs=2'), IMAGE)
+
+    def test_check_fails_while_an_os_state_is_not_the_corpuss_and_leaves_it_as_it_was(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            corpus = Path(scratch) / 'corpus.log'
+            corpus.write_text(CORPUS)
+            ndjson = Path(scratch) / 'boot.ndjson'
+            # but the key the log cut, which no line can hold and --check counts
+            whole = [r for r in boot_records() if ' 0000000000000006 ' not in r['eventMessage']]
+            ndjson.write_text(''.join(json.dumps(r) + '\n' for r in whole))
+            check = ['--ndjson', str(ndjson), '--corpus', str(corpus), '--check']
+            self.assertEqual(logharvest.main(check), 1)
+            self.assertEqual(corpus.read_text(), CORPUS)
+            logharvest.main(['--ndjson', str(ndjson), '--corpus', str(corpus)])
+            self.assertEqual(logharvest.main(check), 0)
+
     def test_a_framework_only_the_crawl_names_takes_the_crawls_path(self):
         tungsten = f'{HEAD} | v tungsten_vertex  | f tungsten_fragment  | l Tungsten'
         records = [record(BOOT, 'Photos', 'OS version: 24B119'), made(BOOT, 'Photos', '0000000000000009', tungsten)]

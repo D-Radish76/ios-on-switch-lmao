@@ -793,6 +793,36 @@ GROUPS: dict[str, list[Check]] = {
             source='drivers/NativeSwitchBlock/SwitchCryptex.cpp',
             note='silence means the page-ins failed',
         ),
+        Check(
+            'boot.pack-covers-os',
+            'cold-boot',
+            ('a state the pack lacks made in', 'a compute state the pack lacks answered by the shader compiler'),
+            process='!SwitchHWTest',
+            subsystem=GPU_METAL_SUBSYSTEM,
+            regex=(
+                r'^SwitchMetal: a (?P<kind>compute state|state) the pack lacks (?:made|answered) '
+                r'.*?by the shader compiler'
+            ),
+            show=('process', 'kind'),
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalCompleteRemote.mm (debug builds)',
+            note='an OS process waited for a compile of a state the pack lacks; `logharvest --check` on the pull names '
+            'them and `logharvest` adds them to the corpus; boot 1 (22 Nov), before its boot logo: 3 states (shadowed '
+            'variants, 30 to 61 s each; the last held the logo) and 45 compute states',
+        ),
+        Check(
+            'compiler.ui-waiter-served-below-ui',
+            'cold-boot',
+            '(UI, by the shader compiler;',
+            'count == 0',
+            subsystem=GPU_METAL_SUBSYSTEM,
+            regex=r'\(UI, by the shader compiler;.* at priority (?P<priority>\d+)',
+            where='priority < 47',
+            show=('process', 'priority'),
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalCompleteRemote.mm (debug builds)',
+            note="a user-interactive thread's compile answered below its priority (47): the compiler's task holds "
+            'user-initiated at most, and only a synchronous waiter pushing the worker (a turnstile, as a sync XPC '
+            "message pushes Apple's MTLCompilerService) lifts it; boot 1: 36",
+        ),
     ],
     'refusals': [
         Check(
