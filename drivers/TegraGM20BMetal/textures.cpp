@@ -320,6 +320,10 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
         return false;
     }
     t.va = span.va;
+    if (!at) {
+        SWITCH_METAL_DIAGNOSTIC(t.heldBytes = bytes);
+        SWITCH_METAL_DIAGNOSTIC(stats.textureBytes += bytes);
+    }
     if (compressed) {
         noteCompressed(ask, comp, bytes, t);
     } else if (zeta) {
@@ -440,6 +444,7 @@ void Device::destroyTexture(Texture &t)
 #endif
     releasePrivateCompressed(t);
     freeSpan(t.span, memoryOf(t), t.lease);
+    SWITCH_METAL_DIAGNOSTIC(stats.textureBytes -= t.heldBytes);
     t = {};
 }
 

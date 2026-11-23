@@ -5,6 +5,8 @@
 
 #include <os/log.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -405,9 +407,9 @@ void Device::zbcMake(std::unique_lock<gm20b::Mutex> &l)
         if (kr == kIOReturnNoResources && zbc_.firstFull(e.type))
             os_log_error(
                 compLog(),
-                "SwitchMetal: the GPU's ZBC %{public}s table is full (every process's, never emptied): full clears of "
-                "compressed targets to values it lacks write their texels",
-                e.type == TegraGM20BZbcDepth ? "depth" : "colour");
+                "SwitchMetal: %{public}s[%d] the GPU's ZBC %{public}s table is full (every process's, never emptied): "
+                "full clears of compressed targets to values it lacks write their texels",
+                getprogname(), getpid(), e.type == TegraGM20BZbcDepth ? "depth" : "colour");
         else if (kr != KERN_SUCCESS && kr != kIOReturnNoResources)
             os_log_error(compLog(),
                          "SwitchMetal: ZBC entry format 0x%x not added (0x%x): those clears write their texels",

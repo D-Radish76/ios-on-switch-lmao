@@ -326,6 +326,9 @@ struct Texture {
     Import *import = nullptr;  // surface or no-copy pages, else
     Span span;                 // pool memory, else a view (memory of the texture it views)
     Lease *lease = nullptr;  // span's, once it was made aliasable (makeArenaAliasable): span is freed at its last drop
+#if SWITCH_METAL_DIAGNOSTICS
+    uint64_t heldBytes = 0;  // the memory of its own it took at creation, in Stats::textureBytes until destroyTexture
+#endif
 
     // A two-plane 4:4:4 surface's texture (RGB8_444_2P, Metal format 542): the image sampled is span (RGBA8, the codes as Metal
     // reads them: red Cr, green Y, blue Cb, alpha 1), which BlitEncoder::convertPlanar writes from the surface's planes (import)
@@ -526,6 +529,9 @@ struct Buffer {
     Lease *lease = nullptr;    // as Texture::lease
     bool arena = false;        // as Texture::arena
     bool hostVisible = true;
+#if SWITCH_METAL_DIAGNOSTICS
+    uint64_t keptBytes = 0;  // a decoded texture's kept blocks: in Stats::textureBytes until destroyBuffer
+#endif
 };
 
 // Level `level` (1 .. levels - 1) of mipmapped texture `t`'s chain as a render target (target.h: NVK's block-linear
@@ -2836,6 +2842,8 @@ public:
         std::atomic<uint64_t> backings{0}, backingBytes{0}, retiredBackings{0}, tiledFreeBytes{0};
         // surface imports made (a kernel import each) and found live, since open
         std::atomic<uint64_t> importsMade{0}, importHits{0};
+        // the memory live textures took of their own and their kept blocks' (Texture::heldBytes, Buffer::keptBytes)
+        std::atomic<uint64_t> textureBytes{0};
         // diagnostics: color targets the driver rendered whose address or pitch is not a multiple of 128 (NVK renders
         // those through a tiled shadow: nvk_cmd_draw.c nvk_image_plane_aligned_for_linear_attachment), and the last one's pitch
         std::atomic<uint64_t> rtUnaligned{0};

@@ -81,6 +81,8 @@ bool Device::createCompressedTexture(uint32_t width, uint32_t height, uint32_t f
     ask.compressKind = kind;
     noteCompressed(ask, bo, bl.bytes, t);
     writeTic(t);
+    SWITCH_METAL_DIAGNOSTIC(t.heldBytes = bl.bytes);
+    SWITCH_METAL_DIAGNOSTIC(stats.textureBytes += bl.bytes);
     return true;
 }
 
@@ -98,6 +100,8 @@ bool Device::createCompressedZeta(uint64_t bytes, uint32_t kind, Texture &t)
     t.comptags = true;
     compZeta_[bo.va] = {bo, kind};
     writeTic(t);
+    SWITCH_METAL_DIAGNOSTIC(t.heldBytes = bytes);
+    SWITCH_METAL_DIAGNOSTIC(stats.textureBytes += bytes);
     privateMade_.store(privateMade_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     return true;
 }
