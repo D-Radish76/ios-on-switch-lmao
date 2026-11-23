@@ -39,9 +39,10 @@ static int switch_elapsed_on_arm, switch_timer_fault;
 static int switch_complete_other;
 static uint64_t switch_complete_other_tsf;
 static uint64_t switch_clock_tsf;
+static uint32_t switch_expected_rate;
 static uint16_t switch_chanspec;
 static struct switch_a3_timer *switch_tx_timer;
-volatile uint32_t switch_tx_test_results[83];
+volatile uint32_t switch_tx_test_results[84];
 volatile uint32_t switch_tx_test_done;
 static uintptr_t switch_pm_arguments[6], switch_pm_fallback[5];
 
@@ -169,6 +170,7 @@ static void switch_reset_input(uint16_t frame_bytes, int split, unsigned metadat
     switch_complete_other_tsf = 0;
     switch_chanspec = 0xd024;
     switch_expire_on_register = 0;
+    switch_expected_rate = 12;
     switch_clock_tsf = 1000;
 }
 
@@ -409,7 +411,7 @@ int switch_a3_tx_sendctl(void *wlc, struct switch_a3_tx_packet *packet, void *qu
 {
     ++switch_sends;
     if (wlc != switch_wlc.bytes || queue != switch_wlc.bytes + 160 || scb != switch_scb.bytes ||
-        bsscfg != switch_wlc.bytes + 192 || short_preamble || key || rate != 12)
+        bsscfg != switch_wlc.bytes + 192 || short_preamble || key || rate != switch_expected_rate)
         switch_fault = 15;
     unsigned index = 0;
     while (index < 6 && packet != switch_radio[index])
@@ -784,7 +786,7 @@ static uint32_t switch_test_final_expiry(void)
 
 static uint32_t switch_test_binding(unsigned variant)
 {
-    struct switch_a3_ring_binding rings = {.first_ring = 2, .ring_count = 1, .max_frame = 1800, .credits = 4};
+    struct switch_a3_ring_binding rings = {.first_ring = 2, .ring_count = 1, .max_frame = 1800, .credits = 8};
     if (variant == 2)
         rings.first_ring = 1;
     if (variant == 3)
@@ -800,7 +802,7 @@ static uint32_t switch_test_binding(unsigned variant)
     if (variant == 7)
         rings.credits = 0;
     if (variant == 8)
-        rings.credits = 5;
+        rings.credits = 9;
     if (variant == 9)
         rings.reserved = 1;
     if (variant == 10)
@@ -1035,6 +1037,35 @@ static uint32_t switch_test_deferred_fifo(void)
     return 0;
 }
 
+static uint32_t switch_test_rates(void)
+{
+    static const uint32_t valid[] = {0, 12, 24, 48, 72, 108};
+    for (unsigned index = 0; index < sizeof valid / sizeof valid[0]; ++index) {
+        switch_reset(32, 0, 0);
+        struct switch_a3_tx_header header;
+        switch_copy(&header, switch_envelope + 14, sizeof header);
+        header.rate = valid[index];
+        switch_expected_rate = valid[index] ? valid[index] : 12;
+        switch_copy(switch_input[0].bytes + 14, &header, sizeof header);
+        switch_enter();
+        switch_radio_complete(0, 2);
+        SWITCH_REQUIRE(!switch_fault && switch_sends == 1 && switch_statuses == 1 &&
+                       switch_reply.status == SWITCH_A3_TX_SENT);
+    }
+    static const uint32_t invalid[] = {11, 18, 109};
+    for (unsigned index = 0; index < sizeof invalid / sizeof invalid[0]; ++index) {
+        switch_reset(32, 0, 0);
+        struct switch_a3_tx_header header;
+        switch_copy(&header, switch_envelope + 14, sizeof header);
+        header.rate = invalid[index];
+        switch_copy(switch_input[0].bytes + 14, &header, sizeof header);
+        switch_enter();
+        SWITCH_REQUIRE(!switch_fault && !switch_sends && switch_statuses == 1 &&
+                       switch_reply.status == SWITCH_A3_TX_FAILED);
+    }
+    return 0;
+}
+
 void switch_tx_test_run(void)
 {
     extern void switch_timing_test_run(void);
@@ -1078,6 +1109,7 @@ void switch_tx_test_run(void)
     switch_tx_test_results[80] = switch_test_other_completion(0);
     switch_tx_test_results[81] = switch_test_other_completion(1);
     switch_tx_test_results[82] = switch_test_deferred_fifo();
+    switch_tx_test_results[83] = switch_test_rates();
     /* Unobserved retirement deliberately retains a native TX owner until reset. */
     switch_tx_test_results[68] = switch_test_unobserved_retirement();
     switch_tx_test_done = 0x53574133;

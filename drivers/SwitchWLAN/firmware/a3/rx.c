@@ -41,10 +41,10 @@ extern void switch_a3_raw_sendup(void *wl, void *interface, struct switch_a3_pac
 extern void switch_a3_tsf_receive(void *wlc, const void *status, uint32_t *high, uint32_t *low);
 
 static struct {
+    uint8_t enabled;
+    uint8_t address[6];
     void *wlc;
     uint32_t generation, session, clock_epoch, config_generation, pending;
-    uint8_t address[6];
-    uint8_t enabled;
 } switch_a3_rx_state;
 
 struct switch_a3_rx_pending {
@@ -56,7 +56,7 @@ struct switch_a3_rx_pending {
     uint16_t prefix_bytes, body_bytes;
 };
 
-__attribute__((noinline, noclone)) static uint16_t switch_a3_read16(const void *address)
+__attribute__((noinline)) static uint16_t switch_a3_read16(const void *address)
 {
     const uint8_t *bytes = address;
     return (uint16_t)(bytes[0] | ((uint16_t)bytes[1] << 8));

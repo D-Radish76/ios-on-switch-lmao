@@ -92,8 +92,8 @@ extern struct switch_a3_diagnostic switch_a3_diagnostic;
 void switch_a3_diagnostic_count(uint32_t offset);
 void switch_a3_diagnostic_pm(uint32_t value);
 #define SWITCH_A3_DIAG_INDEX(index) \
-    switch_a3_diagnostic_count(offsetof(struct switch_a3_diagnostic, counters) + sizeof(uint32_t) * (index))
-#define SWITCH_A3_DIAG_FIELD(name) switch_a3_diagnostic_count(offsetof(struct switch_a3_diagnostic, name))
+    switch_a3_diagnostic_count((offsetof(struct switch_a3_diagnostic, counters) >> 2) + (index))
+#define SWITCH_A3_DIAG_FIELD(name) switch_a3_diagnostic_count(offsetof(struct switch_a3_diagnostic, name) >> 2)
 #define SWITCH_A3_DIAG_COUNT(name) SWITCH_A3_DIAG_INDEX(SWITCH_A3_DIAG_##name)
 #define SWITCH_A3_DIAG(statement) do { statement; } while (0)
 #else

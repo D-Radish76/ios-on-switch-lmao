@@ -1155,12 +1155,12 @@ void statsLine()
     os_log(
         OS_LOG_DEFAULT,
         "SwitchWLAN: AWDL stats: ifidx %d, fw events %u (unknown %u), AWs %u, frames %u parsed %u bad %u, fw role %d "
-        "(%u), peers +%u -%u, syncs %u, iovars %u refused %u skipped %u, data rx %u tx %u drop %u refused %u "
+        "(%u), peers +%u -%u, syncs %u, iovars %u refused %u skipped %u, data rx %u tx %u drop %u bad %u refused %u "
         "not-AWDL %u, sent PSF %u MIF %u, sync error %d us, resyncs %u%s",
         awdl_core_fw_ifidx(gCore), st->fw_events, st->fw_unknown, st->aws, st->fw_frames, st->af_rx, st->af_bad,
         st->fw_role, st->roles, st->peer_adds, st->peer_dels, st->syncs_pushed, st->iovars, st->iovar_refused,
-        st->iovar_skipped, st->data_rx, st->data_tx, st->data_drop, st->tx_refused, st->data_not_awdl, st->psf_tx,
-        st->mif_tx, st->last_sync_error_us, st->resyncs, soft);
+        st->iovar_skipped, st->data_rx, st->data_tx, st->data_drop, st->data_bad, st->tx_refused, st->data_not_awdl,
+        st->psf_tx, st->mif_tx, st->last_sync_error_us, st->resyncs, soft);
 #endif
 }
 

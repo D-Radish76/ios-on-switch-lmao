@@ -294,7 +294,7 @@ TEST_F(SwitchA3Radio, ScheduleChangeDuringRefusedDmaRetiresUnsubmittedWork)
                      event.status == ECANCELED;
     EXPECT_EQ(cancelled, 1u);
     EXPECT_TRUE(switch_state().ready);
-    EXPECT_EQ(switch_state().tx_credits, 4u);
+    EXPECT_EQ(switch_state().tx_credits, 8u);
 }
 
 TEST_F(SwitchA3Radio, FailedInitialClockBurstWaitsForAnotherRequest)

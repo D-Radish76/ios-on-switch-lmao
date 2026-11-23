@@ -25,7 +25,7 @@ static struct {
     uint8_t address[6];
 } switch_network;
 
-uint32_t switch_ack_test_results[44];
+uint32_t switch_ack_test_results[45];
 volatile uint32_t switch_ack_test_done;
 
 #define SWITCH_REQUIRE(condition) \
@@ -422,6 +422,22 @@ static uint32_t switch_test_network(void)
     return 0;
 }
 
+static uint32_t switch_test_disable(void)
+{
+    switch_reset();
+    SWITCH_REQUIRE(!switch_a3_ack_configure(switch_wlc[0].bytes, switch_address, 1));
+    const uint32_t cleared = switch_cleared, programmed = switch_programmed, sequence = switch_network.sequence;
+    switch_wlc[0].bytes[25] = 0;
+    switch_a3_ack_disable();
+    SWITCH_REQUIRE(!switch_fault && switch_cleared == cleared && switch_programmed == programmed &&
+                   switch_network.sequence == sequence);
+    switch_wlc[0].bytes[25] = 1;
+    SWITCH_REQUIRE(!switch_a3_ack_reconcile(switch_wlc[0].bytes));
+    SWITCH_REQUIRE(!switch_fault && switch_cleared == cleared + 1 && switch_programmed == programmed &&
+                   switch_network.sequence == sequence + 1);
+    return 0;
+}
+
 void switch_bssid_test_run(volatile uint32_t *results);
 
 void switch_ack_test_run(void)
@@ -450,5 +466,6 @@ void switch_ack_test_run(void)
         switch_ack_test_results[21 + index] = switch_test_mutated(index);
     switch_ack_test_results[32] = switch_test_network();
     switch_bssid_test_run(switch_ack_test_results + 33);
+    switch_ack_test_results[44] = switch_test_disable();
     switch_ack_test_done = 0x53574133;
 }

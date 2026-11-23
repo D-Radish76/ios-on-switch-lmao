@@ -12,11 +12,12 @@ extern void switch_a3_pm_request(void *bsscfg, uint32_t enabled);
 extern int switch_a3_pm_effective(void *bsscfg);
 
 static struct {
-    struct switch_a3_channel_binding binding;
+    uint8_t active, associated, pm_ack, pm_attempted, pm_requesting, pm_captured;
+    uint8_t ap[6];
     void *scan, *private_context, *pm_packet;
     uintptr_t pm_token;
     uint32_t result;
-    uint8_t ap[6], active, associated, pm_ack, pm_attempted, pm_requesting, pm_captured;
+    struct switch_a3_channel_binding binding;
 } switch_a3_channel;
 
 const struct switch_a3_channel_binding *switch_a3_channel_current(void)
@@ -29,7 +30,7 @@ static void *switch_a3_channel_pointer(const void *base, size_t offset)
     return *(void *const *)((const uint8_t *)base + offset);
 }
 
-__attribute__((noinline, noclone)) static uint16_t switch_a3_channel_read16(const void *address)
+__attribute__((noinline)) static uint16_t switch_a3_channel_read16(const void *address)
 {
     const uint8_t *bytes = address;
     return (uint16_t)(bytes[0] | ((uint16_t)bytes[1] << 8));

@@ -43,6 +43,8 @@ void switch_wlan_a3_radio_attach(const switch_a3_caps *caps, const uint8_t mac[6
         ++gSession;
     gCount = gHead = 0;
     gTxCount = gTxHead = 0;
+    gDataRateIndex = kDataRateMax;
+    gDataAckStreak = 0;
     memset(gPending, 0, sizeof gPending);
     armTxExpiry();
     gClockQueued = false;
@@ -96,6 +98,8 @@ void switch_wlan_a3_radio_lost(void)
     __atomic_store_n(&gDmaBlocked, false, __ATOMIC_RELEASE);
     gCount = gHead = 0;
     gTxCount = gTxHead = 0;
+    gDataRateIndex = kDataRateMax;
+    gDataAckStreak = 0;
     memset(gPending, 0, sizeof gPending);
     armTxExpiry();
     gClockQueued = false;
@@ -133,6 +137,10 @@ void switch_wlan_a3_radio_power(bool on)
     gState.social_channels_valid = 0;
     gApplied = gSchedule = 0;
     gConfigured = false;
+    if (on) {
+        gDataRateIndex = kDataRateMax;
+        gDataAckStreak = 0;
+    }
     const bool replay = on && (gFirmwareOwnerGeneration || (gHaveConfiguration && !gClosing && !gStationPaused));
     gDrainPending = replay;
     gDrainDeadlineNs = 0;
@@ -179,8 +187,31 @@ int switch_wlan_a3_radio_station_prepare(void)
             thread_call_enter(gWorker);
         }
     }
-    while (!gPauseReady && gAttached && gPowered && !gRecoveryRequired && gSession == session)
-        IOLockSleep(gLock, &gStationPaused, THREAD_UNINT);
+    uint64_t deadline = 0;
+    clock_interval_to_deadline(10000, kMillisecondScale, &deadline);
+    bool timedOut = false;
+    while (!gPauseReady && gAttached && gPowered && !gRecoveryRequired && gSession == session) {
+        if (IOLockSleepDeadline(gLock, &gStationPaused, deadline, THREAD_UNINT) == THREAD_TIMED_OUT) {
+            timedOut = true;
+            break;
+        }
+    }
+    if (timedOut && !gPauseReady && gAttached && gPowered && !gRecoveryRequired && gSession == session) {
+        gStationPaused = gPauseReady = false;
+        gDrainPending = gDrainWaitEvent = false;
+        resetScheduleUpdate();
+        gRecoveryRequired = true;
+        gCount = gHead = 0;
+        gState.ready = 0;
+        gState.tx_credits = 0;
+        gState.clock = {};
+        gState.error = -ETIMEDOUT;
+        armTxExpiry();
+        IOLockWakeup(gLock, &gStationPaused, false);
+        IOLockUnlock(gLock);
+        emitRadioEvent(session, SWLAN_AWDL_RECOVERY_REQUIRED, 0, ETIMEDOUT);
+        return -ETIMEDOUT;
+    }
     const int error = !gAttached || !gPowered || gSession != session ? -ENXIO : gRecoveryRequired ? gState.error : 0;
     IOLockUnlock(gLock);
     return error;

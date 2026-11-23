@@ -23,16 +23,23 @@ void awdl_schedule_from(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t mask, str
 }
 
 static const uint8_t awdl_slot_channels[AWDL_SEQ_SLOTS] = {0, 0, 149, 0, 0, 0, 0, 0, 6, 0, 44, 0, 0, 0, 0, 0};
+static const uint8_t switch_awdl_active_slots[AWDL_SEQ_SLOTS] = {44, 44,  149, 44,  0, 0, 0, 0,
+                                                                 6,  149, 44,  149, 0, 0, 0, 0};
 
-void awdl_schedule(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t infra_mhz)
+static void build_slots(struct awdl_chan out[AWDL_SEQ_SLOTS], const uint8_t slots[AWDL_SEQ_SLOTS], uint16_t infra_mhz)
 {
     const struct awdl_chan infra = awdl_chan_of_freq(infra_mhz);
     for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
-        const uint8_t ch = awdl_slot_channels[i];
+        const uint8_t ch = slots[i];
         out[i] = ch == 6 ? (struct awdl_chan){6, 81} : ch ? social5_chan(ch) : infra;
     }
     if (!out[0].number)
         out[0] = (struct awdl_chan){6, 81};
+}
+
+void awdl_schedule(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t infra_mhz)
+{
+    build_slots(out, awdl_slot_channels, infra_mhz);
 }
 
 unsigned awdl_slots_away(const struct awdl_chan seq[AWDL_SEQ_SLOTS], uint16_t infra_mhz)
@@ -224,10 +231,11 @@ static void build(struct awdl_core *c)
     } else if (c->switch_channels_limited && searching(c)) {
         search_sequence(c, awdl_chan_of_freq(c->infra_mhz));
     } else {
-        awdl_schedule(c->cfg.seq, c->infra_mhz);
+        const uint8_t *slots = c->switch_traffic_active ? switch_awdl_active_slots : awdl_slot_channels;
+        build_slots(c->cfg.seq, slots, c->infra_mhz);
         for (unsigned i = 0; c->switch_channels_limited && i < AWDL_SEQ_SLOTS; ++i)
-            if (awdl_slot_channels[i] && !(social_bit(awdl_slot_channels[i]) & c->switch_legal_channels))
-                c->cfg.seq[i] = legal_stand_in(c->switch_legal_channels, awdl_slot_channels[i]);
+            if (slots[i] && !(social_bit(slots[i]) & c->switch_legal_channels))
+                c->cfg.seq[i] = legal_stand_in(c->switch_legal_channels, slots[i]);
     }
     if (!awdl_native(c) && c->switch_channels_limited) {
         for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
@@ -293,6 +301,21 @@ void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t 
     build(c);
     if (c->running && memcmp(was, c->cfg.seq, sizeof was))
         awdl_soft_install(c, now);
+}
+
+void switch_awdl_core_set_traffic(struct awdl_core *c, int active, uint64_t now)
+{
+    const uint8_t want = active != 0;
+    if (!c || awdl_native(c) || c->switch_traffic_active == want)
+        return;
+    struct awdl_chan was[AWDL_SEQ_SLOTS];
+    memcpy(was, c->cfg.seq, sizeof was);
+    c->switch_traffic_active = want;
+    build(c);
+    if (c->running && memcmp(was, c->cfg.seq, sizeof was)) {
+        awdl_soft_install(c, now ? now : c->last_observation);
+        awdl_sched_log(c, want ? "traffic active" : "traffic idle");
+    }
 }
 
 // One line per schedule: why, and how many slots leave the access point's channel.

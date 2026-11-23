@@ -9,7 +9,7 @@
 #include "rx.h"
 
 #define SWITCH_A3_TX_HEADROOM 202u
-#define SWITCH_A3_TX_CREDITS  4u
+#define SWITCH_A3_TX_CREDITS  8u
 
 extern struct switch_a3_tx_packet **switch_a3_tx_packets;
 extern void *switch_a3_tx_allocate(uint32_t bytes);
@@ -40,17 +40,22 @@ struct switch_a3_tx_pending {
 };
 
 static struct {
+    uint8_t enabled;
     void *wlc;
-    struct switch_a3_configuration configuration;
-    struct switch_a3_ring_binding rings;
     struct switch_a3_tx_pending *pending;
-    struct switch_a3_timer timer;
+
     union {
         struct switch_a3_owner owner;
-        struct { uint32_t session, epoch, schedule; };
+
+        struct {
+            uint32_t session, epoch, schedule;
+        };
     };
+
     uint32_t firmware, count;
-    uint8_t enabled;
+    struct switch_a3_configuration configuration;
+    struct switch_a3_ring_binding rings;
+    struct switch_a3_timer timer;
 } switch_a3_tx_state;
 
 static void *switch_a3_tx_pointer(const void *base, size_t offset)
@@ -58,7 +63,7 @@ static void *switch_a3_tx_pointer(const void *base, size_t offset)
     return *(void *const *)((const uint8_t *)base + offset);
 }
 
-__attribute__((noinline, noclone)) static uint16_t switch_a3_tx_read16(const void *address)
+__attribute__((noinline)) static uint16_t switch_a3_tx_read16(const void *address)
 {
     const uint8_t *bytes = address;
     return bytes[0] | ((uint16_t)bytes[1] << 8);
@@ -221,6 +226,12 @@ int switch_a3_tx_configure(void *wlc, const struct switch_a3_configuration *conf
     return 0;
 }
 
+static int switch_a3_tx_rate_valid(uint32_t rate)
+{
+    /* Bitmask of (rate >> 2) for valid OFDM rates: 0, 12, 24, 48, 72, 108 (500 kbps units). */
+    return !(rate & 3u) && rate <= 108u && ((0x08041049u >> (rate >> 2)) & 1u);
+}
+
 static int switch_a3_tx_validate(struct switch_a3_tx_pending *pending, const uint8_t *bytes, uint32_t length)
 {
     if (length < 14 + sizeof pending->header)
@@ -238,7 +249,7 @@ static int switch_a3_tx_validate(struct switch_a3_tx_pending *pending, const uin
         header->firmware_generation != switch_a3_tx_state.firmware || !header->expiry_tsf ||
         header->earliest_tsf > header->expiry_tsf ||
         (header->flags & ~SWITCH_A3_TX_NO_ACK) != SWITCH_A3_TX_ON_CHANNEL_ONLY ||
-        (header->rate && header->rate != 12))
+        !switch_a3_tx_rate_valid(header->rate))
         return SWITCH_A3_TX_FAILED;
     const uint8_t *frame = bytes + 14 + sizeof *header;
     const uint16_t fc = switch_a3_tx_read16(frame);
@@ -297,7 +308,8 @@ static __attribute__((noinline, noclone)) void switch_a3_tx_air(struct switch_a3
     if (timing)
         packet->flags = (packet->flags & ~7u) | 7u;
     SWITCH_A3_DIAG_COUNT(TX_NATIVE);
-    const int accepted = switch_a3_tx_sendctl(wlc, packet, queue, scb, bsscfg, 0, NULL, 12);
+    const uint32_t rate = pending->header.rate ? pending->header.rate : 12u;
+    const int accepted = switch_a3_tx_sendctl(wlc, packet, queue, scb, bsscfg, 0, NULL, rate);
     pending->submitting = 0;
     if (!accepted && !pending->completed) {
         switch_a3_tx_unregister(pcb, switch_a3_tx_completed, pending, 1);

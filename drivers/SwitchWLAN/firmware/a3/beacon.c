@@ -12,7 +12,7 @@ static struct {
     uint8_t dtim_period, dtim_count, multicast;
 } switch_a3_beacon;
 
-static __attribute__((noinline, noclone)) uint16_t switch_a3_beacon_read16(const void *address)
+static __attribute__((noinline)) uint16_t switch_a3_beacon_read16(const void *address)
 {
     const uint8_t *bytes = address;
     return (uint16_t)(bytes[0] | ((uint16_t)bytes[1] << 8));
@@ -31,7 +31,7 @@ static int switch_a3_beacon_equal(const uint8_t *left, const uint8_t *right)
     return 1;
 }
 
-static __attribute__((noinline, noclone)) uint32_t switch_a3_beacon_phase(uint64_t elapsed, uint32_t period)
+static __attribute__((noinline)) uint32_t switch_a3_beacon_phase(uint64_t elapsed, uint32_t period)
 {
     uint32_t remainder = 0;
     for (unsigned bit = 0; bit < 64; ++bit) {

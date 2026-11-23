@@ -6,6 +6,7 @@
 const uint8_t awdl_bssid[6] = {0x00, 0x25, 0x00, 0xff, 0x94, 0x73};
 const uint8_t awdl_oui[3] = {0x00, 0x17, 0xf2};
 static const uint8_t kLlc[8] = {0xaa, 0xaa, 0x03, 0x00, 0x17, 0xf2, 0x08, 0x00};
+static const uint8_t kRfc1042[6] = {0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00};
 
 // Apple's frames name a 5 GHz 80 MHz slot by its primary channel with operating class 0x80 ({149, 0x80}, OWL's
 // CHAN_OPCLASS_149), not by the block's centre as IEEE 802.11 Annex E would. A centre index is still read as its
@@ -426,6 +427,14 @@ size_t awdl_data_encap(const uint8_t *eth, size_t len, const uint8_t self[6], ui
 static int msdu_at(const uint8_t *p, size_t n, const uint8_t *dst, const uint8_t *src, struct awdl_msdu *m,
                    uint16_t *seq)
 {
+    // Broadcom's AWDL firmware wraps MSDUs whose 802.3 length exceeds 1500 in an 8-byte RFC 1042 LLC/SNAP header.
+    if (n >= 24 && !memcmp(p, kRfc1042, sizeof kRfc1042)) {
+        const size_t inner = ((size_t)p[6] << 8) | p[7];
+        if (inner <= 1500 || inner > n - 8)
+            return 0;
+        p += 8;
+        n = inner;
+    }
     if (n < 16 || memcmp(p, kLlc, 8) || p[8] != 0x03 || p[9] != 0x04)
         return 0;
     m->dst = dst;

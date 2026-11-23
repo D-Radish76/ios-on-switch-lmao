@@ -13,19 +13,23 @@
 extern uint16_t switch_a3_tx_phy_chanspec(void *pi);
 
 static struct {
+    uint8_t installed, running, allowed, stepping, parked, clock_valid, quiescing;
+    uint16_t home, target, reason;
     void *wlc, *context;
-    struct switch_a3_schedule schedule;
-    struct switch_a3_timer timer;
     void (*changed)(void *, int);
-    uint64_t until, window_end, observed_tsf;
+    int fault;
+
     union {
         struct switch_a3_owner owner;
-        struct { uint32_t session, epoch, generation; };
+
+        struct {
+            uint32_t session, epoch, generation;
+        };
     };
-    uint16_t home, target;
-    uint8_t installed, running, allowed, stepping, parked, clock_valid, quiescing;
-    uint16_t reason;
-    int fault;
+
+    uint64_t until, window_end, observed_tsf;
+    struct switch_a3_timer timer;
+    struct switch_a3_schedule schedule;
 } switch_a3_scheduler;
 
 static uint16_t switch_a3_scheduler_channel(void *wlc)
@@ -91,7 +95,7 @@ static void switch_a3_scheduler_arm(uint64_t deadline)
     }
 }
 
-static __attribute__((noinline, noclone)) uint32_t switch_a3_scheduler_phase(uint64_t elapsed, uint32_t period)
+static __attribute__((noinline)) uint32_t switch_a3_scheduler_phase(uint64_t elapsed, uint32_t period)
 {
     uint32_t remainder = 0;
     for (unsigned bit = 0; bit < 64; ++bit) {
@@ -246,7 +250,8 @@ static void switch_a3_scheduler_step(void)
         /* Keep the native ten-TU TBTT guard without skipping an imminent beacon. */
         if (station_return <= now || station_return - now <= 10240u + 1000u) {
             SWITCH_A3_DIAG_COUNT(SCHED_BLOCK);
-            switch_a3_scheduler_arm(boundary);
+            const uint64_t retry = station_return + 2000u;
+            switch_a3_scheduler_arm(station_return > now && retry + 1000u < boundary ? retry : boundary);
             return;
         }
         const uint64_t guarded = station_return - 10240u;

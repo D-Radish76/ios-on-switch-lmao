@@ -120,11 +120,13 @@ struct awdl_core {
     struct switch_awdl_data_probe switch_probe[AWDL_MAX_PEERS];
     uint32_t switch_tcp_generation;
     uint16_t switch_tcp_lines;
+    uint32_t switch_bad_data_generation;
+    uint8_t switch_bad_data_lines;
 #endif
     struct awdl_chan switch_requested_seq[AWDL_SEQ_SLOTS];
     uint8_t switch_channels_limited;
     uint16_t switch_legal_channels;
-    uint8_t switch_timed_peer, switch_search_pass;
+    uint8_t switch_timed_peer, switch_search_pass, switch_traffic_active;
     uint64_t switch_next_search;
     struct awdl_stats stats;
     // native backend: the firmware's AWDL interface and its bring-up

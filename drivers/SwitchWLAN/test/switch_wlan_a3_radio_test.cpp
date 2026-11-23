@@ -16,7 +16,7 @@
 
 namespace {
 struct Firmware {
-    uint32_t epoch = 1, applied = 0, state = SWITCH_A3_STOPPED, credits = 4;
+    uint32_t epoch = 1, applied = 0, state = SWITCH_A3_STOPPED, credits = 8;
     uint32_t revision = 0, state_generation = 0;
     uint32_t features = SWITCH_A3_FEATURE_REQUIRED;
     uint16_t legal_social_channels = 7;
@@ -288,7 +288,7 @@ TEST_F(SwitchA3Radio, BindingUsesActualRingRangeBeforeStart)
     EXPECT_EQ(binding.first_ring, 3u);
     EXPECT_EQ(binding.ring_count, 4u);
     EXPECT_EQ(binding.max_frame, 1800u);
-    EXPECT_EQ(binding.credits, 4u);
+    EXPECT_EQ(binding.credits, 8u);
     EXPECT_EQ(binding.reserved, 0u);
     EXPECT_EQ(binding.reserved2, 0u);
     const auto &requests = switch_firmware.controls;
@@ -452,7 +452,7 @@ TEST_F(SwitchA3Radio, QueuedDmaCannotTransmitAfterItsDeadline)
     switch_drain();
     EXPECT_TRUE(switch_firmware.dma.empty());
     EXPECT_TRUE(switch_state().ready);
-    EXPECT_EQ(switch_state().tx_credits, 4u);
+    EXPECT_EQ(switch_state().tx_credits, 8u);
     unsigned expired = 0;
     for (const auto &event : switch_firmware.events)
         expired +=
@@ -511,7 +511,7 @@ TEST_F(SwitchA3Radio, UnicastCompletionRequiresActualAcknowledgement)
 TEST_F(SwitchA3Radio, StopIsAcceptedEvenWhenControlQueueIsFull)
 {
     switch_ready();
-    for (unsigned i = 0; i < 8; ++i)
+    for (unsigned i = 0; i < 16; ++i)
         ASSERT_EQ(switch_filter(), 0);
     ASSERT_EQ(switch_wlan_a3_radio_close(), 0);
     switch_drain();
@@ -768,7 +768,7 @@ TEST_F(SwitchA3Radio, MissingCanceledStatusDoesNotBlockProvenRfAndDmaRetirement)
     switch_wlan_a3_radio_dma_ready();
     switch_drain();
     EXPECT_TRUE(switch_state().ready);
-    EXPECT_EQ(switch_state().tx_credits, 4u);
+    EXPECT_EQ(switch_state().tx_credits, 8u);
     EXPECT_EQ(switch_firmware.schedules.size(), 2u);
     unsigned canceled = 0;
     for (const auto &event : switch_firmware.events)
@@ -966,13 +966,13 @@ TEST_F(SwitchA3Radio, FailedRenewalStillRetiresAConfirmedFirmwareFault)
 TEST_F(SwitchA3Radio, StateRefreshCannotOverwriteHostReservationsWithCredits)
 {
     switch_ready();
-    for (unsigned i = 0; i < 4; ++i)
+    for (unsigned i = 0; i < 8; ++i)
         ASSERT_GT(switch_send(), 0);
     ASSERT_EQ(switch_wlan_a3_radio_refresh(), 0);
     switch_drain();
     EXPECT_EQ(switch_state().tx_credits, 0u);
     EXPECT_EQ(switch_send(), -ENOBUFS);
-    ASSERT_EQ(switch_firmware.dma.size(), 4u);
+    ASSERT_EQ(switch_firmware.dma.size(), 8u);
     switch_complete(switch_firmware.dma[0]);
     EXPECT_EQ(switch_state().tx_credits, 1u);
 }
@@ -1184,6 +1184,81 @@ TEST_F(SwitchA3Radio, StationMutationFailsClosedOnUnretiredOwnership)
     EXPECT_EQ(switch_wlan_a3_radio_station_prepare(), -ETIMEDOUT);
     EXPECT_FALSE(switch_state().ready);
     EXPECT_EQ(switch_filter(), -ENXIO);
+}
+
+TEST_F(SwitchA3Radio, StationPrepareTimesOutAndRequiresRecoveryWhenFirmwareStallsWithoutTx)
+{
+    switch_ready();
+    switch_firmware.schedule_busy = 1;
+    EXPECT_EQ(switch_wlan_a3_radio_station_prepare(), -ETIMEDOUT);
+    EXPECT_FALSE(switch_state().ready);
+    EXPECT_EQ(switch_state().error, -ETIMEDOUT);
+    EXPECT_EQ(switch_filter(), -ENXIO);
+    unsigned recovery = 0;
+    for (const auto &event : switch_firmware.events)
+        recovery += event.type == SWLAN_AWDL_RECOVERY_REQUIRED;
+    EXPECT_EQ(recovery, 1u);
+}
+
+TEST_F(SwitchA3Radio, UnicastDataUsesAdaptiveOfdmRatesAndActionStaysAt6Mbps)
+{
+    switch_ready();
+    auto sendFrame = [&](uint8_t fc0, uint8_t dst0, uint32_t flags) -> uint32_t {
+        uint8_t frame[64] = {fc0, 0};
+        frame[4] = dst0;
+        memcpy(frame + 16, awdl_bssid, 6);
+        const auto state = switch_state();
+        swlan_tx_req req = {};
+        req.frame = frame;
+        req.len = sizeof frame;
+        req.freq_mhz = 2437;
+        req.rate_mcs = 0xff;
+        req.flags = flags;
+        req.deadline_tsf = state.clock.tsf_us + 65536;
+        req.generation = state.generation;
+        req.clock_epoch = state.clock.epoch;
+        const size_t before = switch_firmware.dma.size();
+        EXPECT_GT(switch_wlan_a3_radio_tx(&req), 0);
+        switch_drain();
+        EXPECT_EQ(switch_firmware.dma.size(), before + 1);
+        switch_a3_tx_header hdr = {};
+        EXPECT_TRUE(switch_a3_tx_decode(switch_firmware.dma.back().data(), switch_firmware.dma.back().size(),
+                                        state.generation, state.clock.epoch, &hdr));
+        return hdr.rate;
+    };
+
+    EXPECT_EQ(sendFrame(0xd0, 1, SWLAN_TX_NO_ACK), 12u);
+    switch_complete(switch_firmware.dma.back());
+    EXPECT_EQ(sendFrame(0x08, 1, SWLAN_TX_NO_ACK), 12u);
+    switch_complete(switch_firmware.dma.back());
+
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 108u);
+    switch_complete(switch_firmware.dma.back());
+
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 72u);
+    const auto first72 = switch_firmware.dma.back();
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 72u);
+    const auto second72 = switch_firmware.dma.back();
+    switch_complete(first72);
+    switch_complete(second72);
+
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
+    switch_complete(switch_firmware.dma.back(), 0, SWITCH_A3_TX_EXPIRED);
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
+    switch_complete(switch_firmware.dma.back(), 0, SWITCH_A3_TX_CANCELLED);
+
+    for (unsigned i = 0; i < switch_a3_host::kDataRateStepUpAcks; ++i) {
+        EXPECT_EQ(sendFrame(0x08, 2, 0), 48u);
+        switch_complete(switch_firmware.dma.back(), SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED);
+    }
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 72u);
+    switch_complete(switch_firmware.dma.back(), SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED);
+
+    switch_wlan_a3_radio_power(false);
+    switch_wlan_a3_radio_power(true);
+    switch_drain();
+    EXPECT_EQ(sendFrame(0x08, 2, 0), 108u);
+    switch_complete(switch_firmware.dma.back(), SWITCH_A3_TX_ACK_VALID | SWITCH_A3_TX_ACKED);
 }
 
 TEST_F(SwitchA3Radio, DesiredSessionIsRestoredAutomaticallyAfterFirmwareRecovery)

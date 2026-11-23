@@ -147,6 +147,8 @@ void a80211_awdl_init(struct a80211_awdl *f, struct awdl_core *core, const struc
     if (core && switch_awdl_services_clear(core))
         core->service_update_indicator++;
 #endif
+    if (core)
+        switch_awdl_core_set_traffic(core, 0, 0);
 }
 
 static void flog(struct a80211_awdl *f, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -420,8 +422,12 @@ int a80211_awdl_request(struct a80211_awdl *f, int set, int32_t type, int32_t *v
                     return start;
 #endif
                 f->traffic_registrations++;
+                if (f->traffic_registrations == 1)
+                    switch_awdl_core_set_traffic(f->core, 1, now);
             } else if (f->traffic_registrations) {
                 f->traffic_registrations--;
+                if (!f->traffic_registrations)
+                    switch_awdl_core_set_traffic(f->core, 0, now);
 #if defined(SWITCH_IPSW_KIND_24B119)
                 switch_awdl_stop_if_idle(f, now);
 #endif

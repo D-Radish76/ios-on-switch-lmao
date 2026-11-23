@@ -75,21 +75,6 @@ inline bool switch_test_run_one();
 inline void IOLockWakeup(IOLock *, const void *, bool)
 {}
 
-inline int IOLockSleepDeadline(IOLock *lock, const void *, uint64_t deadline, int)
-{
-    IOLockUnlock(lock);
-    if (switch_test_sleep_action) {
-        auto action = std::move(switch_test_sleep_action);
-        switch_test_sleep_action = {};
-        action();
-    }
-    const bool progress = switch_test_run_one();
-    if (!progress)
-        switch_test_now_ns = deadline;
-    IOLockLock(lock);
-    return progress ? 0 : THREAD_TIMED_OUT;
-}
-
 using thread_call_param_t = void *;
 
 struct switch_test_thread_call {
@@ -185,5 +170,31 @@ inline int IOLockSleep(IOLock *lock, const void *, int)
     }
     IOLockLock(lock);
     return 0;
+}
+
+inline int IOLockSleepDeadline(IOLock *lock, const void *, uint64_t deadline, int)
+{
+    IOLockUnlock(lock);
+    if (switch_test_sleep_action) {
+        auto action = std::move(switch_test_sleep_action);
+        switch_test_sleep_action = {};
+        action();
+    }
+    bool progress = switch_test_run_one();
+    if (!progress) {
+        uint64_t next = UINT64_MAX;
+        for (const auto *call : switch_test_calls)
+            if (call->pending && call->deadline < next)
+                next = call->deadline;
+        if (next <= deadline) {
+            if (next > switch_test_now_ns)
+                switch_test_now_ns = next;
+            progress = switch_test_run_one();
+        } else if (deadline > switch_test_now_ns) {
+            switch_test_now_ns = deadline;
+        }
+    }
+    IOLockLock(lock);
+    return progress ? 0 : THREAD_TIMED_OUT;
 }
 #endif

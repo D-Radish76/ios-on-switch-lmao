@@ -440,6 +440,10 @@ static uint32_t switch_test(unsigned scenario)
     if (scenario == 15) {
         switch_tbtt = switch_now + 10240;
         SWITCH_REQUIRE(!switch_start(&schedule) && !switch_starts && switch_due->snapshot.armed);
+        SWITCH_REQUIRE(switch_due->snapshot.requested_tsf == switch_tbtt + 2000);
+        switch_tbtt += 102400;
+        switch_fire(switch_due->snapshot.requested_tsf);
+        SWITCH_REQUIRE(switch_starts == 1 && switch_native_pending && switch_request.expiry_tsf == switch_tbtt - 10240);
         return 0;
     }
     if (scenario == 16) {

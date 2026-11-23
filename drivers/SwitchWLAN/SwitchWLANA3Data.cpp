@@ -157,10 +157,12 @@ int switch_wlan_a3_radio_tx(const swlan_tx_req *request)
     if (!header.request_id)
         header.request_id = (++gRequest & INT32_MAX);
     header.firmware_generation = gFirmwareGeneration;
+    const bool unicastData = (request->frame[0] & 0x0c) == 8 && !(request->frame[4] & 1);
+    const uint8_t rateIndex = unicastData ? gDataRateIndex : 0;
     header.frame_bytes = static_cast<uint16_t>(request->len);
     header.chanspec = chanspec;
     header.flags = request->flags | SWITCH_A3_TX_ON_CHANNEL_ONLY;
-    header.rate = kLegacy6Mbps;
+    header.rate = unicastData ? kDataRates[rateIndex] : kLegacy6Mbps;
     const uint64_t nowTsf = gState.clock.tsf_us + (now - gState.clock.host_ns) / 1000;
     header.expiry_tsf = nowTsf + 1000000;
     if (request->deadline_tsf && request->deadline_tsf < header.expiry_tsf)
@@ -190,6 +192,8 @@ int switch_wlan_a3_radio_tx(const swlan_tx_req *request)
                               !(request->flags & SWLAN_TX_NO_ACK) && !(request->frame[4] & 1),
                               false,
                               false,
+                              unicastData,
+                              rateIndex,
                               expires,
                               expires,
                               gState.clock.epoch,
@@ -350,6 +354,18 @@ bool switch_wlan_a3_radio_frame(const uint8_t *frame, size_t length)
                      : status.status == SWITCH_A3_TX_EXPIRED   ? ETIMEDOUT
                      : status.status == SWITCH_A3_TX_CANCELLED ? ECANCELED
                                                                : EPROTO;
+            if (pending.unicastData && status.status == SWITCH_A3_TX_SENT) {
+                if (acked) {
+                    if (gDataRateIndex < kDataRateMax && ++gDataAckStreak >= kDataRateStepUpAcks) {
+                        ++gDataRateIndex;
+                        gDataAckStreak = 0;
+                    }
+                } else if (pending.ack) {
+                    if (pending.rateIndex == gDataRateIndex && gDataRateIndex > 0)
+                        --gDataRateIndex;
+                    gDataAckStreak = 0;
+                }
+            }
 #if DEVELOPMENT || DEBUG
             gDiagnostics.tx_last_id = status.request_id;
             gDiagnostics.tx_last_status = status.status;

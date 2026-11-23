@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause-Patent */
 #include "tx_timing.h"
 
-static __attribute__((noinline, noclone)) uint16_t switch_a3_timing_read16(const uint8_t *bytes)
+static __attribute__((noinline)) uint16_t switch_a3_timing_read16(const uint8_t *bytes)
 {
     return bytes[0] | ((uint16_t)bytes[1] << 8);
 }

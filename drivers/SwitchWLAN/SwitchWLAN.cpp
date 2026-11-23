@@ -317,6 +317,7 @@ private:
     IOCommandGate *gate_ = nullptr;
     bool ioctlBusy_ = false;
     IOInterruptEventSource *msi_ = nullptr;
+    bool msiEnabled_ = false;
     swlan::TegraPcie pcie_;
     swlan::TegraPcie::Endpoint ep_ = {};
     swlan::Chip chip_;
@@ -485,6 +486,7 @@ private:
     bool bringUp();
     bool bootChip(const char **stage);
     void stop(const char *stage);
+    void disableMsi();
     void attachInterrupt();
     static void msiFired(OSObject *owner, IOInterruptEventSource *sender, int count);
     static void onEvent(void *context, const swlan::Event &event);
@@ -688,10 +690,23 @@ void SwitchWLAN::msiFired(OSObject *owner, IOInterruptEventSource *, int)
     self->gate_->commandWakeup(&self->mb_);
 }
 
+void SwitchWLAN::disableMsi()
+{
+    if (msi_ && msiEnabled_) {
+        msi_->disable();
+        msiEnabled_ = false;
+    }
+}
+
 void SwitchWLAN::attachInterrupt()
 {
-    if (msi_)
+    if (msi_) {
+        if (!msiEnabled_) {
+            msi_->enable();
+            msiEnabled_ = true;
+        }
         return;  // one owner per INTID: kept across chip recoveries
+    }
     IOService *nub = switch_interrupt_nub(kMsiIntid, false);
     msi_ = nub ? IOInterruptEventSource::interruptEventSource(this, &SwitchWLAN::msiFired, nub, 0) : nullptr;
     if (!msi_ || loop_->addEventSource(msi_) != kIOReturnSuccess) {
@@ -700,6 +715,7 @@ void SwitchWLAN::attachInterrupt()
         panic("SwitchWLAN: cannot attach the PCIe MSI interrupt (INTID %u, nub %p): %s", kMsiIntid, nub, gic);
     }
     msi_->enable();
+    msiEnabled_ = true;
 }
 
 // Work loop. Scan results into the table; the events a join or a joined station follows, and EAPOL frames, to the
@@ -964,14 +980,16 @@ IOReturn SwitchWLAN::ioctlLocked(OSObject *owner, void *argument, void *, void *
         if (!self->mb_.replyReady()) {
             char console[200];
             char mailbox[96];
-            if (mailboxAvailable)
+            if (mailboxAvailable) {
                 snprintf(mailbox, sizeof mailbox, "int %08x mask %08x", mailboxInt, mailboxMask);
-            else
+                self->chip_.consoleTail(console, sizeof(console));
+            } else {
                 snprintf(mailbox, sizeof mailbox, "unavailable (chip %s)",
                          self->gone_     ? "gone"
                          : self->halted_ ? "halted"
                                          : "not up");
-            self->chip_.consoleTail(console, sizeof(console));
+                snprintf(console, sizeof console, "unavailable");
+            }
             snprintf(self->why_, sizeof(self->why_),
                      "no answer to ioctl %u after %llu ms (mailbox %s, %u "
                      "MSIs); console: %s",
@@ -1301,6 +1319,7 @@ bool SwitchWLAN::recover(bool afterSleep)
         while (ioctlBusy_)
             gate_->commandSleep(&ioctlBusy_, THREAD_UNINT);
     });
+    disableMsi();
     swlan::TegraPcie::Endpoint ep = {};
     if (!(afterSleep ? pcie_.bringUp(ep, why_, sizeof(why_)) : pcie_.restart(ep, why_, sizeof(why_)))) {
         sleptRecover_ = afterSleep;  // the next try needs the whole bring-up too
@@ -1311,8 +1330,10 @@ bool SwitchWLAN::recover(bool afterSleep)
         return false;
     }
     const char *stage = "chip";
-    if (!bootChip(&stage))
+    if (!bootChip(&stage)) {
+        disableMsi();
         return false;
+    }
     ++recoveries_;
     IOLog("SwitchWLAN: chip back after loss %u\n", losses_);
     locked([&] {
@@ -1338,8 +1359,7 @@ void SwitchWLAN::parkForSleep()
     });
     if (wasUp)
         lost("system sleep");
-    if (msi_)
-        msi_->disable();
+    disableMsi();
     locked([&] {
         sleep_ = kParked;
         gate_->commandWakeup(&sleep_);
@@ -1347,8 +1367,6 @@ void SwitchWLAN::parkForSleep()
             gate_->commandSleep(&sleep_, THREAD_UNINT);
         sleep_ = kAwake;
     });
-    if (msi_)
-        msi_->enable();
 }
 
 void SwitchWLAN::systemSleep()
@@ -2127,13 +2145,7 @@ void SwitchWLAN::run()
         });
         if (doPower) {
             if (!powerOn) {
-                const swlan::StationChanges::Scope station(stationChanges_);
-                if (!station) {
-                    locked([&] {
-                        powerRequested_ = true;
-                    });
-                    continue;
-                }
+                const bool parked = stationChanges_.enter() == 0;
                 if (scanStationHeld_) {
                     abortScan(false);
                     finishScan();
@@ -2144,10 +2156,21 @@ void SwitchWLAN::run()
                     awdlProbeLease_ = {};
                 });
 #endif
-                leave();
+                if (parked) {
+                    leave();
+                } else {
+                    secured_ = false;
+                    sup_.wipe();
+                    __atomic_store_n(&gInfraFreq, 0u, __ATOMIC_RELEASE);
+                }
                 switch_wlan_a3_radio_power(false);
+                if (parked)
+                    stationChanges_.leave();
+                else
+                    stationChanges_.reset();
                 cmdInt(WLC_DOWN, 1);
                 setState(SWLAN_STA_OFF);
+                doLeave = false;
             } else {
                 if (cmdInt(WLC_UP, 1))
                     switch_wlan_a3_radio_power(true);
@@ -2157,14 +2180,14 @@ void SwitchWLAN::run()
                 status_.power = powerOn;
             });
         }
-        if (doLeave)
-            leave();
         if (scanOverdue)
             abortScan();
         if (scanFinished || scanOverdue)
             finishScan();
         if (!powerOn)
             continue;
+        if (doLeave)
+            leave();
         if (doJoin) {
             join(params);
             memset(&params, 0, sizeof(params));

@@ -8,9 +8,9 @@ struct switch_a3_diagnostic switch_a3_diagnostic = {
     .bytes = sizeof(struct switch_a3_diagnostic),
 };
 
-__attribute__((noinline, noclone)) void switch_a3_diagnostic_count(uint32_t offset)
+__attribute__((noinline, noclone)) void switch_a3_diagnostic_count(uint32_t word_index)
 {
-    ++*(uint32_t *)((uint8_t *)&switch_a3_diagnostic + offset);
+    ++((uint32_t *)&switch_a3_diagnostic)[word_index];
 }
 __attribute__((noinline, noclone)) void switch_a3_diagnostic_pm(uint32_t value)
 {

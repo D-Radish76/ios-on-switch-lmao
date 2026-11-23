@@ -674,6 +674,49 @@ static void switch_test_home_trial(void)
 }
 #endif
 
+static void switch_test_traffic_schedule(void)
+{
+    struct awdl_core *core = make(0x0e, 60, m_tx, switch_schedule);
+    awdl_core_set_infra(core, 5180, 0);
+    switch_awdl_core_set_channels(core, 7, 0);
+    awdl_core_start(core, 0);
+    struct awdl_core *peer = make(0x0f, 520, m_tx, NULL);
+    struct awdl_chan peer_seq[AWDL_SEQ_SLOTS];
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        peer_seq[i] = (struct awdl_chan){(i & 1) ? 44 : 149, 0x80};
+    awdl_core_set_sequence(peer, peer_seq, 0);
+    awdl_core_start(peer, 0);
+    uint8_t frame[AWDL_MAX_FRAME];
+    const size_t length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    const struct awdl_rx_meta meta = {0, 5745, -55};
+    awdl_core_rx(core, frame, length, &meta);
+    SCHECK(awdl_slots_away(switch_installed, 5180) == 4);
+    SCHECK(!switch_installed[1].number && !switch_installed[3].number && !switch_installed[9].number &&
+           !switch_installed[11].number);
+
+    switch_awdl_core_set_traffic(core, 1, 1000);
+    SCHECK(awdl_slots_away(switch_installed, 5180) == 8);
+    static const uint8_t active[AWDL_SEQ_SLOTS] = {44, 44, 149, 44, 0, 0, 0, 0, 6, 149, 44, 149, 0, 0, 0, 0};
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        SCHECK(switch_installed[i].number == active[i]);
+
+    switch_awdl_core_set_channels(core, 3, 1500);
+    SCHECK(awdl_slots_away(switch_installed, 5180) == 8);
+    SCHECK(awdl_social_map(switch_installed) == 3);
+    for (unsigned i = 4; i < 8; ++i)
+        SCHECK(!switch_installed[i].number && !switch_installed[i + 8].number);
+
+    switch_awdl_core_set_channels(core, 7, 1800);
+    switch_awdl_core_set_traffic(core, 0, 2000);
+    SCHECK(awdl_slots_away(switch_installed, 5180) == 4);
+    SCHECK(!switch_installed[1].number && !switch_installed[3].number && !switch_installed[9].number &&
+           !switch_installed[11].number);
+    awdl_core_stop(peer);
+    awdl_core_stop(core);
+    free(peer);
+    free(core);
+}
+
 void test_sched_main(void)
 {
     const int before = test_failures;
@@ -683,6 +726,7 @@ void test_sched_main(void)
     switch_test_search_windows(2437);
     switch_test_first_slot();
     switch_test_acquisition();
+    switch_test_traffic_schedule();
 #if DEVELOPMENT || DEBUG
     switch_test_home_trial();
 #endif

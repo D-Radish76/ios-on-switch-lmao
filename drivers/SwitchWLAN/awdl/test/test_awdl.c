@@ -443,6 +443,53 @@ static void test_data_encap(void)
     CHECK(awdl_data_decap(q, n, back, sizeof back, NULL, NULL) == 0);
     CHECK(awdl_data_decap(f, 39, back, sizeof back, NULL, NULL) == 0);
     CHECK(awdl_data_encap(eth, 13, self, 0, f, sizeof f) == 0);
+
+    uint8_t big_eth[1514], big_plain[1600], big_wrap[1600], big_back[1600];
+    memcpy(big_eth, dst, 6);
+    memcpy(big_eth + 6, self, 6);
+    big_eth[12] = 0x86;
+    big_eth[13] = 0xdd;
+    for (size_t i = 14; i < sizeof big_eth; ++i)
+        big_eth[i] = (uint8_t)(i * 3 + 1);
+    const size_t plain_len = awdl_data_encap(big_eth, sizeof big_eth, self, 0x456, big_plain, sizeof big_plain);
+    CHECK(plain_len == 24 + 1516);
+    memcpy(big_wrap, big_plain, 24);
+    big_wrap[0] = 0x88;
+    big_wrap[24] = 0;
+    big_wrap[25] = 0;
+    const uint8_t rfc1042[8] = {0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00, 0x05, 0xec};
+    memcpy(big_wrap + 26, rfc1042, sizeof rfc1042);
+    memcpy(big_wrap + 34, big_plain + 24, 1516);
+    const size_t wrap_len = 26 + 8 + 1516;
+    CHECK(awdl_data_decap(big_wrap, wrap_len, big_back, sizeof big_back, &seq, &retry) == sizeof big_eth);
+    CHECK(!memcmp(big_back, big_eth, sizeof big_eth) && seq == 0x456 && !retry);
+    big_wrap[wrap_len] = 0xde;
+    big_wrap[wrap_len + 1] = 0xad;
+    CHECK(awdl_data_decap(big_wrap, wrap_len + 2, big_back, sizeof big_back, &seq, &retry) == sizeof big_eth);
+    CHECK(!memcmp(big_back, big_eth, sizeof big_eth));
+    uint8_t amsdu[1600];
+    memcpy(amsdu, big_plain, 24);
+    amsdu[0] = 0x88;
+    amsdu[24] = 0x80;
+    amsdu[25] = 0;
+    memcpy(amsdu + 26, dst, 6);
+    memcpy(amsdu + 32, self, 6);
+    amsdu[38] = (uint8_t)((8 + 1516) >> 8);
+    amsdu[39] = (uint8_t)((8 + 1516) & 0xff);
+    memcpy(amsdu + 40, big_wrap + 26, 8 + 1516);
+    struct awdl_msdu msdu;
+    CHECK(awdl_data_msdus(amsdu, 40 + 8 + 1516, &msdu, 1, &seq, &retry) == 1);
+    CHECK(msdu.ethertype == 0x86dd && msdu.len == 1500 && seq == 0x456);
+    CHECK(!memcmp(msdu.payload, big_eth + 14, 1500));
+    big_wrap[32] = 0x05;
+    big_wrap[33] = 0xdc;
+    CHECK(awdl_data_decap(big_wrap, wrap_len, big_back, sizeof big_back, NULL, NULL) == 0);
+    big_wrap[32] = 0x05;
+    big_wrap[33] = 0xed;
+    CHECK(awdl_data_decap(big_wrap, wrap_len, big_back, sizeof big_back, NULL, NULL) == 0);
+    big_wrap[32] = 0x86;
+    big_wrap[33] = 0xdd;
+    CHECK(awdl_data_decap(big_wrap, wrap_len, big_back, sizeof big_back, NULL, NULL) == 0);
 }
 
 // Two nodes 1.7 s of TSF apart with 40 ppm between their crystals: the low-metric node follows the other and its AWs

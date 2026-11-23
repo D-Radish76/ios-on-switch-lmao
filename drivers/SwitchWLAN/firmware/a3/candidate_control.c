@@ -13,20 +13,24 @@
 #include "diagnostic.h"
 
 static struct {
+    uint8_t clock_valid, stopping, quiescing, native_up;
     void *wlc;
-    struct switch_a3_configuration configuration;
-    uint64_t last_tsf;
+
     union {
         struct switch_a3_owner owner;
-        struct { uint32_t session, clock_epoch, state_generation; };
+
+        struct {
+            uint32_t session, clock_epoch, state_generation;
+        };
     };
+
     uint32_t applied_generation, state;
-    struct switch_a3_ring_binding rings;
     uint32_t address_generation, schedule_generation, bound_generation;
     uint32_t state_revision;
-    uint8_t clock_valid;
-    uint8_t stopping, quiescing, native_up;
     int32_t stop_status, fault_status;
+    uint64_t last_tsf;
+    struct switch_a3_configuration configuration;
+    struct switch_a3_ring_binding rings;
 } switch_a3_control_state;
 
 static void switch_a3_control_copy(void *output, const void *input, size_t length);
@@ -85,11 +89,16 @@ static void switch_a3_control_report(struct switch_a3_reply *reply)
     reply->home_chanspec = switch_a3_channel_home(switch_a3_control_state.wlc);
 }
 
-static __attribute__((noinline, noclone)) void switch_a3_reply_init(struct switch_a3_reply *reply, uint32_t magic)
+static __attribute__((noinline)) void switch_a3_control_zero(void *output, size_t length)
 {
-    volatile uint8_t *bytes = (volatile uint8_t *)reply;
-    for (size_t index = 0; index < sizeof *reply; ++index)
+    volatile uint8_t *bytes = (volatile uint8_t *)output;
+    for (size_t index = 0; index < length; ++index)
         bytes[index] = 0;
+}
+
+static __attribute__((noinline)) void switch_a3_reply_init(struct switch_a3_reply *reply, uint32_t magic)
+{
+    switch_a3_control_zero(reply, sizeof *reply);
     reply->magic = magic;
     reply->version = SWITCH_A3_WIRE_VERSION;
     reply->header_bytes = reply->total_bytes = sizeof *reply;
@@ -104,7 +113,8 @@ static void switch_a3_control_notice(void)
     switch_a3_reply_init(&reply, SWITCH_A3_STATE_MAGIC);
     reply.session = switch_a3_control_state.session;
     switch_a3_control_report(&reply);
-    switch_a3_clock_read(switch_a3_control_state.wlc, &reply.tsf);
+    if (switch_a3_control_state.native_up)
+        switch_a3_clock_read(switch_a3_control_state.wlc, &reply.tsf);
     switch_a3_rx_event(switch_a3_control_state.wlc, &reply, sizeof reply);
 }
 
@@ -118,15 +128,12 @@ static __attribute__((noinline)) void switch_a3_control_copy(void *output, const
 
 void switch_a3_control_initialize(void *wlc)
 {
-    volatile uint8_t *state = (volatile uint8_t *)&switch_a3_control_state;
-    for (size_t index = 0; index < sizeof switch_a3_control_state; ++index)
-        state[index] = 0;
+    switch_a3_control_zero(&switch_a3_control_state, sizeof switch_a3_control_state);
     switch_a3_control_state.wlc = wlc;
     switch_a3_control_state.clock_epoch = 1;
     switch_a3_control_state.native_up = wlc && *((const uint8_t *)wlc + 25);
-    SWITCH_A3_DIAG(
-        for (size_t index = offsetof(struct switch_a3_diagnostic, session); index < sizeof switch_a3_diagnostic; ++index)
-            ((uint8_t *)&switch_a3_diagnostic)[index] = 0);
+    SWITCH_A3_DIAG(switch_a3_control_zero(
+        &switch_a3_diagnostic.session, sizeof switch_a3_diagnostic - offsetof(struct switch_a3_diagnostic, session)));
     switch_a3_scheduler_stop();
     switch_a3_beacon_reset(wlc);
     switch_a3_ack_detached();
@@ -144,7 +151,12 @@ static int32_t switch_a3_control_stop(void)
     switch_a3_control_state.schedule_generation = 0;
     switch_a3_control_state.bound_generation = 0;
     switch_a3_rx_configure(wlc, 0, 0, 0, 0, 0);
-    const int32_t ack_status = switch_a3_ack_configure(wlc, 0, 0);
+    /* wlc_down suspends the D11 core before calling switch_a3_control_down while wlc+25 is still set. */
+    int32_t ack_status = 0;
+    if (switch_a3_control_state.native_up)
+        ack_status = switch_a3_ack_configure(wlc, 0, 0);
+    else
+        switch_a3_ack_disable();
     switch_a3_beacon_reset(wlc);
     int32_t result = scheduler_status;
     if (ack_status && ack_status != -11)
@@ -514,7 +526,8 @@ int32_t switch_a3_control_request(const void *input, uint32_t input_length, void
         request.operation == SWITCH_A3_RESET_CLOCK) {
         reply.status = switch_a3_control_apply(&request, (const uint8_t *)input + sizeof request,
                                                request.total_bytes - sizeof request);
-        switch_a3_clock_read(switch_a3_control_state.wlc, &reply.tsf);
+        if (switch_a3_control_state.native_up)
+            switch_a3_clock_read(switch_a3_control_state.wlc, &reply.tsf);
     } else {
         reply.status = switch_a3_control_clock(&reply.tsf);
         if (!reply.status)

@@ -311,6 +311,7 @@ void awdl_core_set_infra(struct awdl_core *c, uint16_t infra_mhz, uint64_t now);
 uint8_t switch_awdl_core_home_trial(struct awdl_core *c, int enable, uint64_t now);
 #endif
 void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t now);
+void switch_awdl_core_set_traffic(struct awdl_core *c, int active, uint64_t now);
 // The operational AWDL interface's firmware index, -1 while absent or being configured.
 int awdl_core_fw_ifidx(const struct awdl_core *c);
 

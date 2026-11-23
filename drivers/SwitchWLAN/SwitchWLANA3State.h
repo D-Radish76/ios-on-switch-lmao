@@ -17,9 +17,12 @@ namespace switch_a3_host {
 #if DEVELOPMENT || DEBUG
 extern SwitchWLANA3Diagnostics gDiagnostics;
 #endif
-constexpr unsigned kJobs = 8;
-constexpr uint32_t kRadioCredits = 4;
+constexpr unsigned kJobs = 16;
+constexpr uint32_t kRadioCredits = 8;
 constexpr uint32_t kLegacy6Mbps = 12;
+constexpr uint32_t kDataRates[] = {12, 24, 48, 72, 108};
+constexpr uint8_t kDataRateMax = 4;
+constexpr unsigned kDataRateStepUpAcks = 8;
 constexpr uint64_t kDrainExpired = UINT64_MAX;
 
 struct TxJob {
@@ -30,7 +33,8 @@ struct TxJob {
 
 struct PendingTx {
     uint32_t id;
-    bool ack, transport, notified;
+    bool ack, transport, notified, unicastData;
+    uint8_t rateIndex;
     uint64_t expires_ns, submit_deadline_ns;
     uint32_t epoch, schedule;
 #if DEVELOPMENT || DEBUG
@@ -46,7 +50,8 @@ extern Job gJobs[kJobs];
 extern TxJob gTx[kJobs];
 extern PendingTx gPending[kJobs];
 extern swlan_awdl_event gCancelled[kJobs];
-extern unsigned gCancelCount, gHead, gCount, gTxHead, gTxCount;
+extern unsigned gCancelCount, gHead, gCount, gTxHead, gTxCount, gDataAckStreak;
+extern uint8_t gDataRateIndex;
 extern bool gBusy, gAttached, gClockQueued, gPowered, gRecoveryRequired, gDmaBlocked;
 extern bool gDrainDmaWait, gDrainPending, gDrainWaitEvent, gClosing, gHaveConfiguration, gHaveSchedule, gStopped;
 extern bool gStationPaused, gPauseReady;

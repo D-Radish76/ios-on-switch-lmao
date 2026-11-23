@@ -13,7 +13,8 @@ static int switch_ack_failure, switch_rx_failure, switch_tx_failure, switch_bind
 static int switch_clock_failure, switch_notice_failure, switch_cancel_failure;
 static int switch_timer_failure, switch_allow_away, switch_accept_excursion;
 static uint32_t switch_ack, switch_rx, switch_tx, switch_tx_generation, switch_rx_generation, switch_tx_configures;
-static uint32_t switch_ack_configures, switch_excursion_active, switch_timer_arms;
+static uint32_t switch_ack_configures, switch_ack_disables, switch_clock_reads, switch_excursion_active,
+    switch_timer_arms;
 static uint16_t switch_physical;
 static uint32_t switch_pending, switch_pending_rx;
 static uint32_t switch_bsscfg[128];
@@ -24,7 +25,7 @@ static uint32_t switch_ack_reconciles;
 static switch_a3_excursion_callback switch_excursion_callback;
 static void *switch_excursion_context;
 static struct switch_a3_excursion_request switch_excursion_request;
-__attribute__((used)) volatile uint32_t switch_control_test_results[38];
+__attribute__((used)) volatile uint32_t switch_control_test_results[39];
 volatile uint32_t switch_control_test_done;
 
 #define SWITCH_REQUIRE(condition) \
@@ -54,6 +55,7 @@ __attribute__((used)) void *memset(void *to, int value, size_t length)
 
 int switch_a3_clock_read(void *wlc, uint64_t *tsf)
 {
+    ++switch_clock_reads;
     if (wlc != switch_wlc)
         return -2;
     *tsf = switch_now;
@@ -170,6 +172,12 @@ int switch_a3_rx_event(void *wlc, const void *data, uint32_t length)
 
 void switch_a3_ack_detached(void)
 {}
+
+void switch_a3_ack_disable(void)
+{
+    ++switch_ack_disables;
+    switch_ack = 0;
+}
 
 int32_t switch_a3_ack_prepare(void *wlc)
 {
@@ -321,7 +329,8 @@ static void switch_reset(void)
     switch_channel = 0x1006;
     switch_ack_failure = switch_rx_failure = switch_tx_failure = 0;
     switch_ack = switch_rx = switch_tx = 0;
-    switch_tx_configures = switch_ack_configures = switch_excursion_active = switch_timer_arms = 0;
+    switch_tx_configures = switch_ack_configures = switch_ack_disables = switch_clock_reads = 0;
+    switch_excursion_active = switch_timer_arms = 0;
     switch_physical = 0;
     switch_pending = 0;
     switch_pending_rx = 0;
@@ -745,6 +754,33 @@ static uint32_t switch_test_loss_epoch(void)
     return 0;
 }
 
+static uint32_t switch_test_down_no_d11(void)
+{
+    switch_reset();
+    SWITCH_REQUIRE(!switch_configure());
+    struct switch_a3_schedule schedule = {
+        .anchor_tsf = 1000,
+        .period_us = 1048576,
+        .slot_count = 1,
+        .infra_chanspec = 0x1006,
+        .slots = {{.chanspec = 0x1006, .dwell_us = 1048576}},
+    };
+    SWITCH_REQUIRE(!switch_install(schedule));
+    SWITCH_REQUIRE(!switch_bind());
+    SWITCH_REQUIRE(!switch_request(SWITCH_A3_START, 10, 1, 0, 0));
+    SWITCH_REQUIRE(switch_ack && switch_reply.state == SWITCH_A3_RUNNING);
+    const uint32_t reads = switch_clock_reads, ack_configures = switch_ack_configures;
+    switch_a3_control_down();
+    SWITCH_REQUIRE(!switch_ack && switch_ack_disables == 1 && switch_ack_configures == ack_configures &&
+                   switch_clock_reads == reads && !switch_notice.tsf);
+    SWITCH_REQUIRE(!switch_request(SWITCH_A3_GET_STATE, 0, 0, 0, 0));
+    SWITCH_REQUIRE(switch_clock_reads == reads && !switch_reply.tsf);
+    SWITCH_REQUIRE(!switch_request(SWITCH_A3_STOP, 0, 0, 0, 0));
+    SWITCH_REQUIRE(switch_clock_reads == reads && switch_ack_configures == ack_configures && switch_ack_disables == 2 &&
+                   !switch_reply.tsf);
+    return 0;
+}
+
 #include "candidate_contract_cases.h"
 
 void switch_control_test_run(void)
@@ -762,5 +798,6 @@ void switch_control_test_run(void)
     switch_control_test_results[35] = switch_test_live_ack_loss(0);
     switch_control_test_results[36] = switch_test_live_ack_loss(1);
     switch_control_test_results[37] = switch_test_transient_clock_sample();
+    switch_control_test_results[38] = switch_test_down_no_d11();
     switch_control_test_done = 0x53574133;
 }

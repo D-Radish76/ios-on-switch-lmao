@@ -403,6 +403,28 @@ void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struc
     const size_t n = awdl_data_msdus(f, len, msdus, AWDL_MAX_MSDUS, &seq, &retry);
     if (!n) {
         c->stats.data_bad++;
+#if DEVELOPMENT || DEBUG
+        if (c->switch_bad_data_generation != c->switch_generation) {
+            c->switch_bad_data_generation = c->switch_generation;
+            c->switch_bad_data_lines = 0;
+        }
+        if (c->switch_bad_data_lines < 16) {
+            c->switch_bad_data_lines++;
+            char hex[145];
+            size_t at = 0;
+            const size_t show = len < 48 ? len : 48;
+            static const char digits[] = "0123456789abcdef";
+            for (size_t i = 0; i < show && at + 3 < sizeof hex; ++i) {
+                if (i)
+                    hex[at++] = ' ';
+                hex[at++] = digits[f[i] >> 4];
+                hex[at++] = digits[f[i] & 0xf];
+            }
+            hex[at] = 0;
+            const uint16_t fc = len >= 2 ? (uint16_t)(f[0] | ((uint16_t)f[1] << 8)) : 0;
+            awdl_probe(c, "AWDL: bad data frame len %zu fc %#x freq %u: %s", len, fc, m->freq_mhz, hex);
+        }
+#endif
         return;
     }
     if (!awdl_is_group(f + 4) && !awdl_addr_eq(f + 4, c->cfg.addr))

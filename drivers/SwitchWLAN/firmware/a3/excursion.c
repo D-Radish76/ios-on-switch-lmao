@@ -12,13 +12,13 @@ extern int switch_a3_excursion_scan_request(void *, int, const uint8_t *, int, v
                                             int, int, void *, void (*)(void *, void *, uint32_t *), void *);
 
 static struct {
-    struct switch_a3_timer timer;
-    uint64_t station_return_tsf;
-    struct switch_a3_excursion_result result;
+    uint8_t active, submitting, completed, entered;
     switch_a3_excursion_callback callback;
     void *context;
     uint32_t token;
-    uint8_t active, submitting, completed, entered;
+    uint64_t station_return_tsf;
+    struct switch_a3_excursion_result result;
+    struct switch_a3_timer timer;
 } switch_a3_excursion;
 
 static uint32_t switch_a3_excursion_serial;

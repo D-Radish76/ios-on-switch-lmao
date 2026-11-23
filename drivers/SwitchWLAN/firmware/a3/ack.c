@@ -44,6 +44,11 @@ static void switch_a3_ack_forget_key(void)
     switch_a3_ack_state.key_index = 0;
 }
 
+void switch_a3_ack_disable(void)
+{
+    switch_a3_ack_state.enabled = 0;
+}
+
 void switch_a3_ack_detached(void)
 {
     switch_a3_ack_state.enabled = 0;
