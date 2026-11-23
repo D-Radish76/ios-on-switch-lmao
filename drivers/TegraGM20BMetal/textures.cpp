@@ -388,12 +388,12 @@ void Device::destroyTexture(Texture &t)
     closeSparseWindow(t);
     if (t.xrPlanes && t.chroma && t.chroma->memoryless)
         t.chroma->tic = 0;  // its header is the pair's second, freed with the pair
-    for (Texture *plane : {t.luma, t.chroma, t.planarStandIn, t.stencilTemp})
+    for (Texture *plane : {t.luma, t.chroma, t.planarStandIn, t.stencilTemp, t.sampleRows})
         if (plane) {
             destroyTexture(*plane);
             delete plane;
         }
-    t.luma = t.chroma = t.planarStandIn = t.stencilTemp = nullptr;
+    t.luma = t.chroma = t.planarStandIn = t.stencilTemp = t.sampleRows = nullptr;
     delete t.ycbcrStore;
     t.ycbcrStore = nullptr;
     if (t.standIn) {

@@ -462,6 +462,9 @@ struct Texture {
     // stencil_copy_temp)
     bool zeta = false;
     Texture *stencilTemp = nullptr;
+    // A 4x colour texture's sample grid as pitch rows, which its copies with a buffer go through
+    // (BlitEncoder::copyBufferSamples), made on its first
+    Texture *sampleRows = nullptr;
 
     // Device::createView's: a header of its own over its parent's memory. Whatever else it was copied from the parent with
     // (planes, stand-ins, images) stays the parent's, which outlives it: destroyTexture frees its header alone.
@@ -1667,7 +1670,8 @@ public:
     // `w` x `h` texels between rows `pitch` bytes apart at `va` (both multiples of the texel's component, at most 4 bytes) and
     // (x, y) of plane z of `t`, pitch or block-linear: into `t` where `toTexture`, else out of it (vkCmdCopyBufferToImage,
     // vkCmdCopyImageToBuffer); the buffer's texels bufferUnit each. A Depth32Float_Stencil8 aspect's copy is NVK's
-    // (nvk_remap_extract_aspect, insert_aspect): depth its texel's first word, stencil its fifth byte through t.stencilTemp
+    // (nvk_remap_extract_aspect, insert_aspect): depth its texel's first word, stencil its fifth byte through t.stencilTemp.
+    // A multisampled `t`'s buffer texels are each texel's samples in order (copyBufferSamples)
     void copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t, uint32_t x, uint32_t y, uint32_t z, uint32_t w,
                           uint32_t h, bool toTexture, uint8_t aspect = kAspectWhole);
     // A planar texture's image from its surface's planes (Texture::planar): two remapped copies, the luma codes into green
@@ -1715,6 +1719,13 @@ private:
     const void *read_[kAccesses] = {}, *written_[kAccesses] = {};
     uint8_t reads_ = 0, writes_ = 0;
     void room(uint32_t words = 56);  // at least `words` words left in the reservation
+    // copyBufferTexels of a multisampled colour texture, an M4 Max's layout both ways: row y of the buffer holds texel
+    // (x, y)'s samples in order. A 2x sample grid's rows are those rows; a 4x grid's rows 2y and 2y + 1 meet in buffer
+    // row y two samples at a time, through t.sampleRows (made at record: bufferCopy): the grid's rows moved whole
+    // between the texture and the temp, the temp's even and odd rows between alternate pairs of each buffer texel by
+    // remapped launches (texels of up to four bytes), else a launch a column or a row of pairs, whichever are fewer
+    void copyBufferSamples(uint64_t va, uint32_t pitch, const Texture &t, uint32_t x, uint32_t y, uint32_t w,
+                           uint32_t h, bool toTexture);
     void fillRun(uint64_t at, uint32_t width, uint32_t height, uint32_t unit);  // a constant fill's launch
     LoopStream stream();
 };
@@ -2331,6 +2342,9 @@ public:
                          const ArenaAt *at = nullptr);
     // A Depth32Float_Stencil8 texture's stencil temp (Texture::stencilTemp), made on its first stencil copy
     bool stencilTemp(Texture &t);
+    // A 4x colour texture's sample rows (Texture::sampleRows), made on its first copy with a buffer; true for one of other
+    // samples, which needs none
+    bool sampleRows(Texture &t);
     // A 1D texture: NIL's 1D image, one block-linear row (y_log2 0) under a ONE_D header, in block-linear memory the CPU
     // writes through its tiled view (a 1D header takes no pitch layout)
     bool createLine(uint32_t width, uint32_t format, Texture &t, const ArenaAt *at = nullptr);

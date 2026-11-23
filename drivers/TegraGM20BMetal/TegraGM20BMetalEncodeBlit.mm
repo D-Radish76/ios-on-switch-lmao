@@ -64,14 +64,14 @@ void gm20bCopyPlanes(gm20b::BlitEncoder *be, gm20b::CommandBuffer *rc, const gm2
                      uint32_t w, uint32_t h, uint32_t planes, bool intoTexture, uint8_t aspect)
 {
     gm20b::toElements(t, x, y, w, h);  // (whole blocks: checked at record)
-    const uint32_t unit = gm20b::bufferUnit(t, aspect);
+    const uint32_t unit = gm20b::bufferUnit(t, aspect), rowBytes = w * unit * std::max<uint32_t>(t.samples, 1);
     for (uint32_t k = 0; k < std::max(planes, 1u); k++) {
         const uint64_t at = offset + k * image;
         BufferRows rows;
-        bufferRows(at, row, h, w * unit, unit, intoTexture, rows);
+        bufferRows(at, row, h, rowBytes, unit, intoTexture, rows);
         const uint64_t first = bufferRow(rows, at, row, 0);
         if (!b.wc)
-            rc->clean(b.cpu + first, bufferRow(rows, at, row, h - 1) - first + w * unit, !intoTexture);
+            rc->clean(b.cpu + first, bufferRow(rows, at, row, h - 1) - first + rowBytes, !intoTexture);
         copyRows(be, b.va, rows, at, row, t, x, y, z + k, w, h, intoTexture, aspect);
     }
 }

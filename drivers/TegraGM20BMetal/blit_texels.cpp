@@ -106,6 +106,8 @@ void BlitEncoder::copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t
 {
     if (t.xrPlanes && t.luma)  // plane 0's words alone (xr.h bufferTexelBytes): the alpha plane stays as it is
         return copyBufferTexels(va, pitch, *t.luma, x, y, z, w, h, toTexture, aspect);
+    if (t.samples > 1 && !t.zeta)
+        return copyBufferSamples(va, pitch, t, x, y, w, h, toTexture);
     if (!toTexture)
         cb_->bufferWrites_.note(va, uint64_t(pitch) * h + uint64_t(w) * 16);
     cb_->use(t, toTexture);
@@ -157,6 +159,65 @@ void BlitEncoder::copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t
         return;
     }
     copySides(p_, from, to, w, h, t.bpp, dev_->stats);
+}
+
+void BlitEncoder::copyBufferSamples(uint64_t va, uint32_t pitch, const Texture &t, uint32_t x, uint32_t y, uint32_t w,
+                                    uint32_t h, bool toTexture)
+{
+    uint32_t gx = 0, gy = 0;
+    sampleGrid(t.samples, gx, gy);
+    Texture grid = t;
+    grid.width <<= gx;
+    grid.height <<= gy;
+    grid.samples = 1;
+    const uint32_t bpp = t.bpp, pair = 2 * bpp;
+    if (!toTexture)
+        cb_->bufferWrites_.note(va, uint64_t(pitch) * (h - 1) + uint64_t(w) * (bpp << (gx + gy)));
+    cb_->use(t, toTexture);
+    room(48);
+    const CopySide rows{va, pitch}, texels = sideOf(grid, x << gx, y << gy, 0);
+    if (!gy) {
+        copySides(p_, toTexture ? rows : texels, toTexture ? texels : rows, w << gx, h, bpp, dev_->stats);
+        return;
+    }
+    const Texture &s = *t.sampleRows;
+    cb_->use(s, true);
+    // every launch after the copies before it: the temp is every buffer copy's of the texture, which access() orders by
+    // the textures' names alone
+    const CopySide temp{s.va, s.pitch};
+    if (!toTexture)
+        copyRemapped(p_, texels, temp, w << gx, h << gy, texelRemap(bpp), bpp, dev_->stats, true);
+    for (uint32_t k = 0; k < 2; k++) {
+        const CopySide half{s.va + uint64_t(k) * s.pitch, 2 * s.pitch};
+        if (bpp <= 4) {
+            const uint32_t into = k ? remapOf(kRemapNoWrite, kRemapNoWrite, 0, 1, bpp, 2, 4)
+                                    : remapOf(0, 1, kRemapNoWrite, kRemapNoWrite, bpp, 2, 4);
+            const uint32_t out = k ? remapOf(2, 3, kRemapNoWrite, kRemapNoWrite, bpp, 4, 2)
+                                   : remapOf(0, 1, kRemapNoWrite, kRemapNoWrite, bpp, 4, 2);
+            room(32);
+            if (toTexture)
+                copyRemapped(p_, rows, half, w, h, out, pair, dev_->stats, true);
+            else
+                copyRemapped(p_, half, rows, w, h, into, pair, dev_->stats, true);
+            continue;
+        }
+        // a pair of eight- or sixteen-byte samples: no remap holds two, so each launch moves one pair a line, a column of
+        // them down the rows or a row of them across, whichever takes fewer launches
+        const bool columns = w <= h;
+        for (uint32_t c = 0; c < (columns ? w : h); c++) {
+            const CopySide line = columns ? CopySide{half.va + uint64_t(c) * pair, half.pitch}
+                                          : CopySide{half.va + uint64_t(c) * half.pitch, pair},
+                           slots = columns ? CopySide{va + uint64_t(c) * 2 * pair + uint64_t(k) * pair, pitch}
+                                           : CopySide{va + uint64_t(c) * pitch + uint64_t(k) * pair, 2 * pair};
+            room(32);
+            copyRemapped(p_, toTexture ? slots : line, toTexture ? line : slots, pair / 16, columns ? h : w,
+                         texelRemap(16), pair, dev_->stats, true);
+        }
+    }
+    if (toTexture) {
+        room(32);
+        copyRemapped(p_, temp, texels, w << gx, h << gy, texelRemap(bpp), bpp, dev_->stats, true);
+    }
 }
 
 }  // namespace gm20b
