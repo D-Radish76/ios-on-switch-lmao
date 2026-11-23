@@ -6819,8 +6819,13 @@ host_test(
     srcs = ["translate_budget_test.cpp"],
     data = [
         "//drivers/TegraGM20BMetal:translate/NativeMetalDirect.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectAbi.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalDirectCompute.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectDraw.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectLayout.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectProbe.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalDirectTess.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectWrites.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalOffline.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalReflection.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.rs",

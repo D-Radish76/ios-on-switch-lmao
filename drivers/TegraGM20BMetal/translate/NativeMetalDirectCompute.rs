@@ -11,10 +11,12 @@ use crate::descriptors::{
     DescriptorFunction, NmbComputePipelineDescriptorOf, NmbSamplerDescriptor, compute_descriptor, e, get, guard, raw,
     sampler_descriptor,
 };
-use crate::direct::{
-    HEAP_ARRAYS, Layout, NMB_DIRECT_IMMUTABLE, NmbDirectBinding, NmbDirectSamplerState, NmbDirectStage, NmbDirectWrite,
-    UNNAMED_RESIDUAL, compile_error, residual_words, sampler_state, spill_table, write_of,
+use crate::direct::compile_error;
+use crate::direct_abi::{
+    HEAP_ARRAYS, NMB_DIRECT_IMMUTABLE, NmbDirectBinding, NmbDirectSamplerState, NmbDirectStage, NmbDirectWrite,
 };
+use crate::direct_layout::{Layout, sampler_state};
+use crate::direct_writes::{UNNAMED_RESIDUAL, residual_words, spill_table, write_of};
 use crate::kernel_textures::{TWO_PLANES, kernel_texture};
 use crate::offline::{Devices, NmbOfflineComputePipelineDescriptor, offline_devices};
 use ash::vk as avk;
@@ -86,7 +88,7 @@ pub struct NmbDirectKernelWrite {
 pub struct NmbDirectKernel {
     pub device: u64,
     pub layout: u64,
-    pub layout_data: *const crate::direct::NmbDirectLayout,
+    pub layout_data: *const crate::direct_abi::NmbDirectLayout,
     pub set0: u64,
     pub set0_bindings: *const NmbDirectBinding,
     pub set0_binding_count: u32,

@@ -300,7 +300,8 @@ bool layout(const NmbDirectDraw &d, std::vector<LayoutEntry> &out, std::string &
                           " a render stage binds on " + SWITCH_METAL_KIND;
                     return false;
                 }
-                // the direct compile binds a texture of each argument's declared type (NativeMetalDirect.rs declared_slots)
+                // the direct compile binds a texture of each argument's declared type (NativeMetalDirectProbe.rs
+                // declared_slots)
                 e.tex = w.viewType == kViewType3D ? Tex::Texture3D : Tex::Slot;
                 e.texSlot = uint8_t(w.slot);
                 if ((w.type == StorageImage || w.type == StorageTexelBuffer) && w.stage == 2) {

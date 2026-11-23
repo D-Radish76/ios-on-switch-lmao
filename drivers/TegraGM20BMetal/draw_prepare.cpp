@@ -161,8 +161,8 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
             cb_->useAddress(b.va, b.size, bufferStorage(e));
         // A slot whose record names no residual word is one its programs read through the root table's address, never
         // its descriptor: the translation gives each slot it reads through a view its SlotBindOffset residual
-        // (translate/NativeMetalDirect.rs residual_words; a slot read by address has none), and every record is the
-        // direct compile's, which places them. That descriptor takes the base aligned down.
+        // (translate/NativeMetalDirectWrites.rs residual_words; a slot read by address has none), and every record is
+        // the direct compile's, which places them. That descriptor takes the base aligned down.
         BufferDescriptor desc;
         if (!bufferDescriptor(e, b.va, b.size, desc))
             desc.residual = 0;
