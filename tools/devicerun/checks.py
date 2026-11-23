@@ -354,18 +354,18 @@ GROUPS: dict[str, list[Check]] = {
             'gm20b.zbc-full-lines',
             'zcull-comp',
             'table is full (every process',
-            REPORT,
+            'repeats == 0',
             subsystem=GPU_METAL_SUBSYSTEM,
             level='error',
             regex=(
-                r"^SwitchMetal: the GPU's ZBC (?P<type>colour|depth) table is full \(every process's, never "
-                r'emptied\)'
+                r"^SwitchMetal: (?P<process>\S+)\[(?P<pid>\d+)\] the GPU's ZBC (?P<type>colour|depth) table is full "
+                r"\(every process's, never emptied\)"
             ),
-            show=('process', 'type'),
+            show=('process', 'pid', 'type'),
             source='drivers/TegraGM20BMetal/comp.cpp',
             note='one line a process and type (zbc.h firstFull); gpu.gm20b.zbc_full fills the colour table for the '
-            'rest of the boot, so each process that then asks a colour logs one; two of one type from one process '
-            '(this list counts by name: a relaunched process is another) is a repeat',
+            'rest of the boot, so each process that then asks a colour logs one; a second of one type from one '
+            'process (its pid: a relaunched process is another) is a repeat',
         ),
         Check(
             'gpu.vic-read-refused',
