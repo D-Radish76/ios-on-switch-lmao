@@ -33,6 +33,7 @@
 #include "compiler_sandbox.h"
 #include "compiler_store.h"
 #include "compiler_times.h"
+#include "../../../kits/SwitchRefusal/SwitchRefusal.h"
 #include "../cache_io.h"
 #include "../reflection_blob.h"
 #include "../compute_facts_entry.h"
@@ -208,6 +209,12 @@ int32_t Service::run(Work &work)
     if (result == TegraGM20BCompileFailed || result == TegraGM20BCompileUnavailable)
         os_log_error(logger(), "SwitchShaderCompiler: pid %d's state not made: %{public}s | %{public}.300s", asked.pid,
                      why.c_str(), p.key.key.c_str());
+    if (result == TegraGM20BCompileRefused) {
+        const RefusalLine line = refusalLine(p.request, asked.pid, why);
+        switch_refusal_k(
+            switch_refusal_key_with(switch_refusal_key("m2v", line.reason), switch_refusal_key(line.text.c_str(), "")),
+            "m2v", line.reason, "%s", line.text.c_str());
+    }
 #if SWITCH_DEBUG
     os_log(logger(),
            "SwitchShaderCompiler: %{public}s in %llu ms, queued %llu ms (class 0x%x) for pid %d: %{public}.400s",

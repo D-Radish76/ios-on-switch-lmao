@@ -32,8 +32,10 @@ pub fn set_error(why: String) {
     });
 }
 
-/// Runs `body`, turning an error or a panic into the per-thread reason and `fallback`.
+/// Runs `body`, turning an error or a panic into the per-thread reason and `fallback`. A call that succeeds leaves no
+/// reason, so a caller tells an answer that is `fallback` from a failure.
 pub fn guard<T>(fallback: T, body: impl FnOnce() -> Result<T, String>) -> T {
+    LAST.with(|last| last.borrow_mut().clear());
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
         Ok(Ok(value)) => value,
         Ok(Err(why)) => {
@@ -82,24 +84,10 @@ where
         .ok_or_else(|| format!("{what} {value} is not a Metal value"))
 }
 
-/// The error of `what` as the caller's text, and m2v's refusal of work iPadOS sent, logged once per call and kind of error
-/// in the process (kits/SwitchRefusal: an error line, kept in release). The kind is the error's variant and first field
-/// (`NotImplemented(Format`, `Unsupported(Unsupported { feature: FramebufferFetch`) without digits, so a value that varies
-/// per call makes no line of its own.
+/// The error of `what` as the caller's text: the shader compiler logs each request it refuses once, with this text and the
+/// function it is of (compiler/compiler_service.mm)
 pub fn e<E: std::fmt::Debug>(what: &'static str) -> impl FnOnce(E) -> String {
-    move |error| {
-        let text = format!("{what}: {error:?}");
-        let kind: String = text[what.len() + 2..]
-            .split([',', ')'])
-            .next()
-            .unwrap_or_default()
-            .chars()
-            .filter(|c| !c.is_ascii_digit())
-            .collect();
-        let key = switch_refusal::key_with(switch_refusal::key("m2v", what), switch_refusal::key("", &kind));
-        switch_refusal::refuse(c"m2v", what, key, || text.clone());
-        text
-    }
+    move |error| format!("{what}: {error:?}")
 }
 
 #[unsafe(no_mangle)]
@@ -551,4 +539,25 @@ pub fn sampler_descriptor(d: &NmbSamplerDescriptor) -> Result<SamplerDescriptor,
     out.lod_min_clamp = d.lod_min;
     out.lod_max_clamp = d.lod_max;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{guard, nmb_last_error};
+    use std::ffi::CStr;
+
+    fn last_error() -> String {
+        // SAFETY: nmb_last_error's string lives until this thread's next guarded call.
+        unsafe { CStr::from_ptr(nmb_last_error()) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn a_call_that_succeeds_leaves_no_reason_of_an_earlier_failure() {
+        assert_eq!(guard(-1, || Err::<i64, _>("no vertex attributes".to_string())), -1);
+        assert_eq!(last_error(), "no vertex attributes");
+        assert_eq!(guard(-1, || Ok(-1)), -1);
+        assert_eq!(last_error(), "");
+    }
 }

@@ -39,4 +39,14 @@ struct Prepared {
 
 bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, Prepared &out, std::string &why);
 
+// The one error line a refused request makes (compiler_service.mm, SwitchRefusal under the translator's domain "m2v"):
+// the request's kind as its reason key, and what was refused, of whose functions by the names their client made them
+// under, for which process, with the compiler's reason, which the client's NSError carries too
+struct RefusalLine {
+    const char *reason;  // a literal: SwitchRefusal keeps the pointer
+    std::string text;
+};
+
+RefusalLine refusalLine(const gm20b::CompileRequest &r, int32_t pid, const std::string &why);
+
 }  // namespace switch_compiler

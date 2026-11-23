@@ -776,6 +776,49 @@ TEST(CompileRequest, TheCompilerRefusesWhatItCannotTrust)
     EXPECT_FALSE(switch_compiler::SystemLibraries::resolve("", "/System/Library/../../etc/x.metallib", real, why));
 }
 
+// A refusal's one error line names the kind of request as its reason key, then what was refused, of which functions by the
+// names their client made them under, for which process, with the compiler's reason (MPS's facts request of its identity
+// kernel, whose private functions were the front end's specializations and stitches, was refused with no line at all)
+TEST(CompileRequest, ARefusalsLineNamesItsFunctionsAndReason)
+{
+    gm20b::CompileRequest facts;
+    facts.kind = gm20b::RequestKind::Facts;
+    facts.stages = {stage("k", "ndArrayIdentity", 0, "#122:33:01000100"), stage("kp", "prefixPrimary_f", 1),
+                    stage("kp", "prefixPrimary_i8", 2)};
+    facts.stages[1].function = "prefixPrimary_i8_to_f";
+    const switch_compiler::RefusalLine refused =
+        switch_compiler::refusalLine(facts, 595, "no compute prepare: Linking");
+    EXPECT_STREQ(refused.reason, "facts");
+    EXPECT_EQ(
+        refused.text,
+        "pid 595's compute state of ndArrayIdentity with 2 linked functions refused: no compute prepare: Linking");
+
+    gm20b::CompileRequest kernel = facts;
+    kernel.kind = gm20b::RequestKind::Kernel;
+    kernel.stages.resize(2);
+    kernel.kernel.threads[0] = 8;
+    kernel.kernel.threads[1] = 8;
+    kernel.kernel.threads[2] = 1;
+    const switch_compiler::RefusalLine dispatch = switch_compiler::refusalLine(kernel, 7, "plan: Format");
+    EXPECT_STREQ(dispatch.reason, "kernel");
+    EXPECT_EQ(dispatch.text,
+              "pid 7's kernel ndArrayIdentity at 8,8,1 threads with 1 linked functions refused: plan: Format");
+
+    gm20b::CompileRequest render = renderRequest();
+    render.stages[1].name = "fetch_add";
+    const switch_compiler::RefusalLine state = switch_compiler::refusalLine(render, 604, "plan: FramebufferFetch");
+    EXPECT_STREQ(state.reason, "state");
+    EXPECT_EQ(state.text,
+              "pid 604's render state of vertex_fn and fetch_add (fragment_fn) refused: plan: FramebufferFetch");
+
+    gm20b::CompileRequest library;
+    library.kind = gm20b::RequestKind::Library;
+    library.codeGenType = gm20b::kCodeGenSource;
+    EXPECT_STREQ(switch_compiler::refusalLine(library, 1, "error").reason, "library");
+    EXPECT_EQ(switch_compiler::refusalLine(library, 1, "error").text,
+              "pid 1's library of front end request type 13 refused: error");
+}
+
 TEST(CompileRequest, ConstantsReadBackAsTheirText)
 {
     MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
