@@ -304,14 +304,14 @@ void BlitEncoder::timestamp(uint64_t va, bool afterCopies)
 }
 
 void BlitEncoder::generate(Texture &t, uint32_t fmt2d, uint32_t first, uint32_t last,
-                           [[maybe_unused]] uint32_t unproven, uint32_t firstLayer, uint32_t layers)
+                           [[maybe_unused]] uint32_t unproven, uint32_t firstLayer, uint32_t layers, bool point)
 {
     Texture::Chain *c = t.chain;
     if (!c || !fmt2d || first >= last || last >= c->layout.levels)
         return;
     cb_->use(t, true);
     room(uint32_t(fx::generateWords(c->layout, first, last) * layers));
-    fx::emitGenerateLayers(p_, c->layout, c->va, fmt2d, first, last, firstLayer, layers);
+    fx::emitGenerateLayers(p_, c->layout, c->va, fmt2d, first, last, firstLayer, layers, point);
     SWITCH_METAL_DIAGNOSTIC(dev_->stats.chainGenerates++);
     SWITCH_METAL_DIAGNOSTIC(dev_->stats.mipTwodLevels += last - first);
     SWITCH_METAL_DIAGNOSTIC(dev_->stats.mipTwodUnproven += unproven);

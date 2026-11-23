@@ -493,6 +493,13 @@ bool encodeMipmaps(gm20b::CommandBuffer *rc, SwitchMetalTexture *t, uint32_t pro
         be = rc->blit();
         return ok;
     }
+    if (gm20b::fx::integerFormat(t->_raw.format)) {
+        useTexture(rc, t, true);
+        be->access(memoryOf(t), memoryOf(t));
+        be->generate(owner->_raw, gm20b::fx::twodPointFormat(t->_raw.bpp), first, last, 0, t->_slicesBase,
+                     t->_raw.layers, true);
+        return true;
+    }
     const uint32_t fmt2d = probe2d                                ? probe2d
                            : t->_raw.format == owner->_raw.format ? chain.fmt2d
                                                                   : gm20b::fx::twodChainFormat(t->_raw.format);

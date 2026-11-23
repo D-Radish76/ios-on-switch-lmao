@@ -1687,9 +1687,10 @@ public:
     // chroma image into their bytes of each pair, the other two NO_WRITE; an odd width's last pair keeps its second luma byte
     void mergePlane(const Texture &t);
     // generateMipmaps of a mipmapped texture (Texture::chain) on the 2D engine as surface format `fmt2d`: levels first + 1 ..
-    // last from the one above, in place (fx_mip_route.h MipRun; `unproven` of its steps)
+    // last from the one above, in place (fx_mip_route.h MipRun; `unproven` of its steps); `point`: an integer format's
+    // levels, each texel one of the level above's (fx::emitPointGenerate)
     void generate(Texture &t, uint32_t fmt2d, uint32_t first, uint32_t last, uint32_t unproven, uint32_t firstLayer,
-                  uint32_t layers);
+                  uint32_t layers, bool point = false);
     // The next command reads the memory `read` names and writes the memory `write` names (null: none; a name is any pointer
     // that stands for one memory): where it reads or writes what an earlier command of this encoder wrote, or writes what one
     // read, it waits for those first (barrier), as Metal orders a blit encoder's commands on one resource
