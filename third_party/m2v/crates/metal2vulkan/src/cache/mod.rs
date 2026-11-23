@@ -60,7 +60,7 @@ mod tests;
 /// unchanged version, and its bless records the version. Independent of the crate's version and of
 /// [`ARTIFACT_FORMAT_VERSION`]. The commit that bumps it says what changed; this comment keeps no
 /// history.
-pub const SEMANTICS_VERSION: u32 = 1705;
+pub const SEMANTICS_VERSION: u32 = 1706;
 
 /// The byte-layout version of encoded artifacts (`CompiledFunction::to_bytes` and the
 /// [`PipelineArtifact`] encodings). Every encoded artifact carries it, and a decode under another
@@ -70,7 +70,7 @@ pub const SEMANTICS_VERSION: u32 = 1705;
 /// re-typed in an encoded type, its `codec` body or its `envelope`. A variant removed while its tag
 /// stays unused needs no bump: an entry holding it fails to decode, which is a miss. The commit that
 /// bumps it says what changed; this comment keeps no history.
-pub const ARTIFACT_FORMAT_VERSION: u32 = 401;
+pub const ARTIFACT_FORMAT_VERSION: u32 = 402;
 
 /// The version of what this crate's runtime does with a compiled pipeline: instantiating a binding
 /// plan (`BindingPlan::instantiate_*`: descriptor ranges, push bytes, root, argument, and handle
@@ -93,7 +93,7 @@ pub const ARTIFACT_FORMAT_VERSION: u32 = 401;
 /// changes no behaviour, and then updates that hash alone with the commit saying why, or changes
 /// behaviour and also bumps this version. The commit that bumps it says what changed; this comment
 /// keeps no history.
-pub const RUNTIME_VERSION: u32 = 1211;
+pub const RUNTIME_VERSION: u32 = 1212;
 
 /// The digest of the sources this build of the crate was compiled from: SHA-256, as lowercase hex,
 /// of the manifest, the build script, and exactly the files the crate roots' module tree compiles
@@ -338,6 +338,12 @@ pub struct VariantKey {
     /// (`LoweringInputs::shader_stencil`). The plan of a pipeline compiled under it states it.
     #[cfg_attr(feature = "serde", serde(default))]
     pub shader_stencil: bool,
+    /// Under `shader_tests`, the depth attachment is `Depth16Unorm`: the stand-in holds its codes
+    /// as floats, and the variant's function tests and writes the code Metal stores for its depth
+    /// (`LoweringInputs::shader_tests_unorm16`). The plan of a pipeline compiled under it states
+    /// it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub shader_tests_unorm16: bool,
     /// Under `shader_tests` at more than one sample, on a device whose fragment function computes
     /// each sample's depth (`VkProperty::CenterFragCoordDepth`): the vertex function also writes
     /// its window depth for it (`LoweringInputs::window_depth_varying`).
@@ -480,6 +486,7 @@ impl VariantKey {
             && !self.read_only_tests
             && !self.shader_tests
             && !self.shader_stencil
+            && !self.shader_tests_unorm16
             && !self.window_depth_varying
             && self.cubic_samplers.is_empty()
             && self.captured_positions.is_none()
@@ -601,6 +608,7 @@ impl VariantKey {
             out.read_only_tests = self.read_only_tests;
             out.shader_tests = self.shader_tests;
             out.shader_stencil = self.shader_stencil;
+            out.shader_tests_unorm16 = self.shader_tests_unorm16;
             out.extended_shadows = self.extended_shadows.clone();
         }
         out.window_depth_varying =

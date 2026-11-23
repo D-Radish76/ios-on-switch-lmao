@@ -675,6 +675,7 @@ fn the_inputs_encoding_is_the_earlier_derived_debug() {
                 .replace(", read_only_tests: false", "")
                 .replace(", shader_tests: false", "")
                 .replace(", shader_stencil: false", "")
+                .replace(", shader_tests_unorm16: false", "")
                 .replace(", window_depth_varying: false", "")
                 .replace(", rotated_colors: {}", "")
                 .replace(", rotated_factors: {}", "")

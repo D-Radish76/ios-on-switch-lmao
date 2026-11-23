@@ -574,11 +574,14 @@ pub enum RuntimeFact {
     /// (`GraphicsState::shader_tests`). `formatless`: the module declares the stand-in without a
     /// format (`Unknown`), else as `R32f`. `multisampled`: compiled for a pipeline of more than
     /// one sample, the stand-in holds each sample, `planes` as a single-sample 2D array of one
-    /// layer per sample, else as a multisampled image.
+    /// layer per sample, else as a multisampled image. `unorm16`: compiled for a `Depth16Unorm`
+    /// attachment (`LoweringInputs::shader_tests_unorm16`), the stand-in holds its codes as floats
+    /// and the function tests and writes the code Metal stores for the fragment's depth.
     ShaderTests {
         formatless: bool,
         multisampled: bool,
         planes: bool,
+        unorm16: bool,
     },
     /// The function writes `half` texels to the storage texture bound to the slot, whose storage
     /// choice declares no format, and reads whether its channels are 16-bit floats

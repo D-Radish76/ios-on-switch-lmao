@@ -360,6 +360,10 @@ pub fn function_key(
         h.bytes(b"shader-stencil");
     }
     // Appended only when set.
+    if inputs.shader_tests_unorm16 {
+        h.bytes(b"shader-tests-unorm16");
+    }
+    // Appended only when set.
     if inputs.window_depth_varying {
         h.bytes(b"window-depth-varying");
     }

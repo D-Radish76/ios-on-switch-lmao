@@ -1060,12 +1060,13 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
     // The variant whose function runs the depth test itself, and the stencil test too where
     // `stencil`, or the refusal of the device or the attachment that lacks it.
     let in_shader = |stencil: bool| -> Result<(bool, bool, bool, bool), BindError> {
-        // The stand-in holds 32-bit float depth (link refuses Metal's other depth formats).
-        let float = matches!(
+        // The stand-in holds 32-bit float depth, or a `Depth16Unorm`'s codes as floats (link
+        // refuses Metal's other depth formats).
+        let held = matches!(
             p.graphics.depth_format,
-            Some(vk::Format::D32_SFLOAT | vk::Format::D32_SFLOAT_S8_UINT)
+            Some(vk::Format::D32_SFLOAT | vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D16_UNORM)
         );
-        if !float {
+        if !held {
             return Err(BindError::Unsupported(
                 Unsupported::not_implemented(Feature::FramebufferFetch)
                     .at_attachment(Attachment::Depth),
@@ -1145,11 +1146,17 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
             }
             _ => (false, false, false, false),
         };
+    let shader_tests_unorm16 =
+        shader_tests && p.graphics.depth_format == Some(vk::Format::D16_UNORM);
     let compiled_tests = tested.is_some_and(|(early, _)| early);
     let compiled_shader_tests = p
         .dependencies
         .iter()
         .any(|d| matches!(d.fact, RuntimeFact::ShaderTests { .. }));
+    let compiled_shader_tests_unorm16 = p
+        .dependencies
+        .iter()
+        .any(|d| matches!(d.fact, RuntimeFact::ShaderTests { unorm16: true, .. }));
     let compiled_shader_stencil = p
         .dependencies
         .iter()
@@ -2007,6 +2014,7 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
     variant.read_only_tests = read_only_tests;
     variant.shader_tests = shader_tests;
     variant.shader_stencil = shader_stencil;
+    variant.shader_tests_unorm16 = shader_tests_unorm16;
     variant.window_depth_varying = window_depth_varying;
     // A pipeline compiled in the capture form states its variant: a consumer asks for it, and no
     // bind shape does.
@@ -2045,7 +2053,8 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
                 || compiled_range != depth_clamp_range
                 || compiled_tests != read_only_tests
                 || compiled_shader_tests != shader_tests
-                || compiled_shader_stencil != shader_stencil,
+                || compiled_shader_stencil != shader_stencil
+                || compiled_shader_tests_unorm16 != shader_tests_unorm16,
             amplifications,
             indirect_first_instance_missing: !profile
                 .fields()

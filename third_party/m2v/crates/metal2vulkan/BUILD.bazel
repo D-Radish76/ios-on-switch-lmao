@@ -244,6 +244,27 @@ rust_test(
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
 )
 
+# A Depth16Unorm attachment's in-shader depth test (lower/fragment/depth_test.rs): the stand-in holds its codes as
+# floats, the variant tests and writes the code Metal stores, and neither form links into the other's pipeline
+rust_test(
+    name = "depth16_shader_tests_test",
+    args = ["tests::engine_depth16_shader_tests::"],
+    compile_data = glob(["tests/**"]),
+    crate = ":metal2vulkan",
+    data = [
+        "//third_party/m2v:translation_test_inputs",
+        "@gpu_llvm_as//:bin/llvm-as",
+        "@spirv_tools//:spirv-dis",
+        "@spirv_tools//:spirv-val",
+    ],
+    env = {
+        "METAL2VULKAN_LLVM_AS": "$(rootpath @gpu_llvm_as//:bin/llvm-as)",
+        "METAL2VULKAN_SPIRV_DIS": "$(rootpath @spirv_tools//:spirv-dis)",
+        "METAL2VULKAN_SPIRV_VAL": "$(rootpath @spirv_tools//:spirv-val)",
+    },
+    deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
+)
+
 # RGB10A8_2P_XR10 in its two planes (pipeline/two_plane.rs): the output split, the input attachments and storage views
 # of a fetch, the alpha index
 rust_test(

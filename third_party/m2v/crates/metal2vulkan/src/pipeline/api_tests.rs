@@ -210,6 +210,7 @@ mod serde_round_trips {
             read_only_tests: true,
             shader_tests: true,
             shader_stencil: true,
+            shader_tests_unorm16: true,
             window_depth_varying: true,
             address_maps: BTreeMap::from([(
                 slot(Stage::Kernel, SlotClass::Texture, 7),
@@ -372,6 +373,7 @@ mod serde_round_trips {
             read_only_tests: true,
             shader_tests: true,
             shader_stencil: true,
+            shader_tests_unorm16: true,
             window_depth_varying: true,
             rotated_colors: BTreeSet::from([4]),
             rotated_factors: BTreeMap::from([(

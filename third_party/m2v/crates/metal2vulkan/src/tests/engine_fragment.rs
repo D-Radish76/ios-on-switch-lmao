@@ -3183,6 +3183,7 @@ fn a_discarding_fetch_beside_depth_stores_before_the_tests_its_draws_check() {
             formatless: false,
             multisampled: false,
             planes: false,
+            unorm16: false,
         }));
     let stand_in = tested.graphics.shader_tests.expect("the stand-in").depth;
     assert_eq!(stand_in.format, crate::vk::Format::R32_SFLOAT);
@@ -3285,6 +3286,7 @@ fn a_per_sample_depth_test_takes_each_sample_s_depth_where_measured() {
                     formatless: false,
                     multisampled: true,
                     planes,
+                    unorm16: false,
                 }),
             "{stem}"
         );

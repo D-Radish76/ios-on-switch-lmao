@@ -183,6 +183,7 @@ fn every_fact() -> Vec<RuntimeFact> {
             formatless: false,
             multisampled: true,
             planes: true,
+            unorm16: false,
         },
         RuntimeFact::StorageTextureHalfChannels { slot },
         RuntimeFact::StorageTextureIntegerChannels { slot },

@@ -1165,7 +1165,7 @@ codec_enum! {
         ConstexprSampled { slot, modes },
         CubicSampler { slot },
         CubicArgumentSampler { stage },
-        ShaderTests { formatless, multisampled, planes },
+        ShaderTests { formatless, multisampled, planes, unorm16 },
         StorageTextureHalfChannels { slot },
         CapturedPositions { form },
         HeapRawSamples { stage, sampler },

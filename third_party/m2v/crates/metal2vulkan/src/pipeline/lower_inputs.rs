@@ -449,6 +449,13 @@ pub struct LoweringInputs {
     /// `RuntimeFact::ShaderStencilTest`.
     #[cfg_attr(feature = "serde", serde(default))]
     pub shader_stencil: bool,
+    /// Under `shader_tests`, the depth attachment is `Depth16Unorm`
+    /// (`VariantKey::shader_tests_unorm16`): the stand-in holds its codes as floats, and the
+    /// function tests the code Metal stores for the fragment's depth (rounded to nearest from the
+    /// exact product with 65535) against the stand-in's code, writes that code, and states it in
+    /// `RuntimeFact::ShaderTests`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub shader_tests_unorm16: bool,
     /// A vertex function's fragment function runs its draw's depth test itself at more than one
     /// sample from each sample's computed depth (`VariantKey::window_depth_varying`): the function
     /// also writes its position's window depth `z / w` to a no-perspective varying
