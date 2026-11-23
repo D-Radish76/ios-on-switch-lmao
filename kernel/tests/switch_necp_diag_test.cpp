@@ -290,6 +290,41 @@ TEST(SwitchNecpDiagSource, EverySocketPolicyAddAndDeleteIsSeenUnderTheExclusiveL
     EXPECT_THAT(apply, HasSubstr("lck_rw_lock_exclusive(&necp_kernel_policy_lock);"));
 }
 
+TEST(SwitchNecpSigningIdSource, SigningIdentifierIsEvaluatedOutsideAppIdAndRetriesOnDrop)
+{
+    const std::string necp = switch_ios::test::SourceText("../xnu-12377.121.6/bsd/net/necp.c");
+    const std::string header = switch_ios::test::SourceText("../xnu-12377.121.6/bsd/net/necp.h");
+    EXPECT_THAT(header, HasSubstr("#define NECP_POLICY_DROP_FLAG_RETRY_SIGNING_IDENTIFIER  0x08"));
+    EXPECT_THAT(header, HasSubstr("#define NECP_KERNEL_POLICY_DROP_FLAG_RETRY_SIGNING_IDENTIFIER   "
+                                  "NECP_POLICY_DROP_FLAG_RETRY_SIGNING_IDENTIFIER"));
+    const std::string check = switch_ios::test::Body(necp, "\nnecp_socket_check_policy(");
+    const std::string app_block = switch_ios::test::Between(
+        check, "if (kernel_policy->condition_mask & NECP_KERNEL_CONDITION_APP_ID) {", "\n\t}\n");
+    EXPECT_THAT(app_block, Not(HasSubstr("NECP_KERNEL_CONDITION_SIGNING_IDENTIFIER")));
+    EXPECT_THAT(
+        check, HasSubstr("if (!check_signing_id && !(kernel_policy->condition_mask & NECP_KERNEL_CONDITION_APP_ID)) {\n"
+                         "\t\t\tif (skipped_signing_id != NULL) {\n"
+                         "\t\t\t\t*skipped_signing_id = true;\n"
+                         "\t\t\t}\n"
+                         "\t\t\treturn FALSE;\n"
+                         "\t\t}"));
+    const std::string find = switch_ios::test::Body(necp, "\nnecp_socket_find_policy_match_with_info_locked(");
+    EXPECT_THAT(find, HasSubstr("policy_search_array[i]->result == NECP_KERNEL_POLICY_RESULT_DROP &&\n"
+                                "\t\t\t\t    skipped_signing_id &&\n"
+                                "\t\t\t\t    (policy_search_array[i]->result_parameter.drop_flags & "
+                                "NECP_KERNEL_POLICY_DROP_FLAG_RETRY_SIGNING_IDENTIFIER)"));
+    EXPECT_THAT(find, HasSubstr("\"RETRY SESSION (Signing Identifier Drop)\""));
+    const size_t trace_pos = find.find("\"RETRY SESSION (Signing Identifier Drop)\"");
+    const size_t rewind_pos = find.find("i = session_start_index - 1;");
+    ASSERT_NE(trace_pos, std::string::npos);
+    ASSERT_NE(rewind_pos, std::string::npos);
+    EXPECT_LT(trace_pos, rewind_pos);
+    const std::string unnecessary = switch_ios::test::Body(necp, "\nnecp_kernel_socket_policy_is_unnecessary(");
+    EXPECT_THAT(unnecessary, HasSubstr("compared_policy->condition_mask & NECP_KERNEL_CONDITION_SIGNING_IDENTIFIER"));
+    const std::string older = switch_ios::test::SourceText("../xnu-10063.141.1/bsd/net/necp.c");
+    EXPECT_THAT(older, Not(HasSubstr("RETRY_SIGNING_IDENTIFIER")));
+}
+
 TEST(SwitchCryptexMapSource, ARefusalIsLoggedBeforeItsErrorIsReplaced)
 {
     const std::string vm_unix = switch_ios::test::SourceText("../xnu-12377.121.6/bsd/vm/vm_unix.c");

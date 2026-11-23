@@ -649,6 +649,7 @@ host_test(
         "//kernel/xnu-10063.141.1/bsd:net/necp.c",
         "//kernel/xnu-10063.141.1/bsd:vm/vm_unix.c",
         "//kernel/xnu-12377.121.6/bsd:net/necp.c",
+        "//kernel/xnu-12377.121.6/bsd:net/necp.h",
         "//kernel/xnu-12377.121.6/bsd:vm/vm_unix.c",
     ],
     includes = ["."],
