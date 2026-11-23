@@ -120,7 +120,7 @@ struct awdl_core {
     uint8_t switch_home_trial_channel;
     struct switch_awdl_data_probe switch_probe[AWDL_MAX_PEERS];
     uint32_t switch_tcp_generation;
-    uint8_t switch_tcp_lines;
+    uint16_t switch_tcp_lines;
 #endif
     struct awdl_chan switch_requested_seq[AWDL_SEQ_SLOTS];
     uint8_t switch_channels_limited;

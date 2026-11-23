@@ -103,7 +103,7 @@ static int tracing(struct awdl_core *c)
         c->switch_tcp_generation = c->switch_generation;
         c->switch_tcp_lines = 0;
     }
-    return c->switch_tcp_lines < 96;
+    return c->switch_tcp_lines < 800;
 }
 
 // Transmit lines print retry -1: the radio's own retransmissions are not reported per frame.

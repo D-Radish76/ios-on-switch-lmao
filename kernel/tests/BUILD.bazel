@@ -62,7 +62,7 @@
 #   switch_fsctl_diag_test   <switch/fsctl_diag.h>: a refused APFS fsctl's file described by its first bytes (an Apple
 #                            texture's format, size and internal LZFSE, a KTX's format and size), and both trees'
 #                            fsctl_internal reporting each filesystem fsctl after its answer, nothing in release
-#   switch_necp_diag_test    <switch/necp.h>: the first local-network drop of each of 64 processes is logged; 12377's
+#   switch_necp_diag_test    <switch/necp.h>: the first local-network drop of each of 256 processes is logged; 12377's
 #                            NECP reports client and alerted socket drops under its policy lock, 10063's has no
 #                            hook, nothing in release
 #   switch_protection_test   <switch/protection_rules.h>: an unlabelled vnode reads as D before the epoch and as a new one

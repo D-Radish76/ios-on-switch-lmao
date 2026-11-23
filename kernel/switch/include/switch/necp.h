@@ -39,7 +39,7 @@ struct switch_necp_drop {
     uint32_t skip_id;
 };
 
-#define SWITCH_NECP_PROBE_PIDS 64u
+#define SWITCH_NECP_PROBE_PIDS 256u
 
 /* True the first time `pid` is seen while one of `slots` (zero when free) is still free. */
 static inline bool switch_necp_probe_claim(int32_t *slots, unsigned count, int32_t pid)
