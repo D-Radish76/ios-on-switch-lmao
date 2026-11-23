@@ -7,6 +7,7 @@
 #import "TegraGM20BMetalResolveAsk.h"
 #import "TegraGM20BMetalTargetViews.h"
 #include "format_standin.h"
+#include "rotation.h"
 #include "samples.h"
 
 static const gm20b::DepthStencilState &depthWrites()
@@ -166,8 +167,9 @@ bool SwitchMetalRangeEncode::resolvePasses()
             return fail(PredEncPassRender, kNoPart, r.attachment);
         }
         const gm20b::Texture &source = *from[r.attachment];
-        const uint32_t width = std::min({reachWidth, source.width, into->width}),
-                       height = std::min({reachHeight, source.height, into->height});
+        const gm20b::Rect within =
+            gm20b::frameWithin(*into, std::min(reachWidth, source.width), std::min(reachHeight, source.height));
+        const uint32_t width = within.x1, height = within.y1;
         useTexture(rc, r.into, true);
         if (gm20b::formatStandIn(into->format)) {
             gm20b::ColorAttachment a;
