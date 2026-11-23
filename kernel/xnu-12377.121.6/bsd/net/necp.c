@@ -26,6 +26,7 @@
  * @APPLE_OSREFERENCE_LICENSE_HEADER_END@
  */
 
+#include <switch/necp.h>
 #include <string.h>
 #include <sys/systm.h>
 #include <sys/types.h>
@@ -8543,6 +8544,7 @@ necp_application_find_policy_match_internal(proc_t proc,
 
 	if (returned_result->routing_result == NECP_KERNEL_POLICY_RESULT_DROP &&
 	    returned_result->routing_result_parameter.drop_flags & NECP_KERNEL_POLICY_DROP_FLAG_LOCAL_NETWORK) {
+		SWITCH_NECP_CLIENT_LOCAL_DROP(info, matched_policy, skip_policy_id, proc, effective_proc, responsible_proc, necp_kernel_application_policies_condition_mask);
 		if (!(matched_policy->result_parameter.drop_flags & NECP_KERNEL_POLICY_DROP_FLAG_SUPPRESS_ALERTS)) {
 			// Trigger the event that we dropped due to a local network policy
 #if defined(XNU_TARGET_OS_OSX)
@@ -10872,6 +10874,7 @@ necp_socket_find_policy_match(struct inpcb *inp, struct sockaddr *override_local
 		    !(matched_policy->result_parameter.drop_flags & NECP_KERNEL_POLICY_DROP_FLAG_SUPPRESS_ALERTS)) {
 			// Trigger the event that we dropped due to a local network policy
 			send_local_network_denied_event = true;
+			SWITCH_NECP_SOCKET_LOCAL_DROP(2, info, matched_policy, skip_policy_id, so, effective_proc, necp_kernel_socket_policies_condition_mask);
 		}
 	} else {
 		bool drop_all = false;
@@ -13142,6 +13145,7 @@ skip_agent_check:
 		    !(matched_policy->result_parameter.drop_flags & NECP_KERNEL_POLICY_DROP_FLAG_SUPPRESS_ALERTS)) {
 			// Trigger the event that we dropped due to a local network policy
 			send_local_network_denied_event = true;
+			SWITCH_NECP_SOCKET_LOCAL_DROP(3, info, matched_policy, return_skip_policy_id ? *return_skip_policy_id : ~0u, so, effective_proc, necp_kernel_socket_policies_condition_mask);
 		}
 
 		if (matched_policy->result == NECP_KERNEL_POLICY_RESULT_DROP ||
