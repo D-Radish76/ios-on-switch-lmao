@@ -374,7 +374,9 @@ void RenderEncoder::end()
     cb_->segment(start, p.at);
     d.push_.head = uint64_t(reinterpret_cast<uint8_t *>(p.at) - d.push_.bo.cpu);
     SWITCH_METAL_ENCODE_END(prologueSpan);
-    [[maybe_unused]] const uint64_t bodyWords = appendBodies(cb_->segments_, bodies_, d.push_.bo.cpu, d.push_.bo.va);
+    [[maybe_unused]] const uint64_t bodyWords = appendBodies(cb_->segments_, bodies_, [&d](const uint32_t *word) {
+        return d.pushVa(word);
+    });
     SWITCH_METAL_DIAGNOSTIC(d.stats.pushBytes += (bodyWords + uint64_t(p.at - start)) * 4);
     bodies_.clear();
     // shadow targets the pass stores: their pool images back over what it rendered (the render area; a Clear's reach past it),

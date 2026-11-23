@@ -1829,6 +1829,9 @@ private:
     void retire(Ring &r, uint32_t seqno);
     bool ownWords(const Ring &r, uint64_t at, uint64_t bytes) const;
     bool outgrow(Ring &r, uint32_t bytes, uint64_t &at);
+    // The GPU address of a word the open command buffer wrote into the push ring: the ring's own, or that of a ring it
+    // grew out of since (Device::outgrow), which keeps its words until the command buffer's work completes
+    uint64_t pushVa(const uint32_t *word) const;
     uint32_t allocTic();
     void freeTic(uint32_t tic);  // lock_ held
     // Two headers at consecutive indices (an over-planes RGB10A8_2P_XR10 texture's), the first's index; 0: none left. lock_ held
