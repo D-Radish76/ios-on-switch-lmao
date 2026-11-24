@@ -1,11 +1,27 @@
 # Build checklist for the Mac
 
-Nothing on the `erista-port` branch has been built with Bazel. This file is the list to run on an Apple silicon Mac, in
+The Bazel test run of commit c790f50e is recorded below. Nothing else on the `erista-port` branch has been built with
+Bazel yet. This file is the list to run on an Apple silicon Mac, in
 order, and what each step should show. The commands are the ones the repository documents (`README.md`, `tools/emu/README.md`,
 `.github/workflows/ci.yml`) and the targets the changes added. Targets and flags marked "unchecked" were not run anywhere.
 
 None of these steps boots the Erista. The board table keeps its row at `boot 0`, so a build never produces a card the
 Erista accepts.
+
+## Run on the Mac
+
+Commit `c790f50e4`, Apple silicon, Bazel 9.3.1, Xcode 27.2 (27B52), with the real GoogleTest:
+
+```sh
+bazel test //kits/SwitchBoard/test:all //boot/loader/test:all //tools/package/test:all
+```
+
+Result as reported: `Executed 18 out of 18 tests: 18 tests pass.` in 30.314 s. Every target in those three packages
+passed, so the Bazel entries for `switch_board_test`, `board_args_test`, `boot_script_board_test`,
+`native_oled_adt_board_test` and `diag_boot_test` build and run there.
+
+Not run yet: the step 1 style checks, `//tools/mc_carveout:all`, `bazel test //...`, any `bazel build //:boot`, and
+the emulator checks. The per target counts were not part of the report.
 
 ## What ran here, and with what
 
@@ -13,8 +29,8 @@ Linux has no Bazel execution platform, no GoogleTest and no `lz4`. The results b
 
 | Check | Result | Run with |
 |---|---|---|
-| `kits/SwitchBoard/test` (21 tests) | pass | GoogleTest stand-in, not GoogleTest |
-| `boot/loader/test` board_args_test (3 tests) | pass | GoogleTest stand-in, not GoogleTest |
+| `kits/SwitchBoard/test` (21 tests) | pass | GoogleTest stand-in here; real GoogleTest on the Mac (above) |
+| `boot/loader/test` board_args_test (3 tests) | pass | GoogleTest stand-in here; real GoogleTest on the Mac (above) |
 | `tools/package/test` boot_script_board_test (11), native_oled_adt_board_test (4), native_xnu_layout_test (22) | pass | Python `unittest`, no Bazel runfiles |
 | `tools/mc_carveout` test_dump (7) | pass | Python `unittest`, fake `busybox` |
 | `bazel/pinned/SHA256SUMS` | all files match, including `erista-sku0.dtb` | `sha256sum -c` |
