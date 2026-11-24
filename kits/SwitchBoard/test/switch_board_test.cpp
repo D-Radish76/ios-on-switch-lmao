@@ -258,7 +258,7 @@ TEST(SwitchBoard, TheDeviceTreeAloneNamesTheRowForTheCpuIdleCheck)
 
 TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)
 {
-    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_CACHE_IDLE << 1) - 1);
+    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_BUTTONS << 1) - 1);
 }
 
 TEST(SwitchBoard, AFeatureNeedsEveryBitAsked)

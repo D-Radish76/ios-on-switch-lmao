@@ -34,14 +34,14 @@ enum switch_feature {
     SWITCH_FEATURE_SE2 = 1u << 13,  // the second security engine, which only the T210B01 has
     SWITCH_FEATURE_RTC_MARK = 1u << 14,  // DEVELOPMENT only: the boot mark in the MAX77620 RTC alarm (a write to the RTC)
     SWITCH_FEATURE_CACHE_IDLE = 1u << 15,  // osfmk/arm64/cpu.c: idle with the L1 and L2 retained (Cortex-A57 only)
+    SWITCH_FEATURE_BUTTONS = 1u << 16,     // the GPIO controller's eager start and SwitchButtons (PMC_CNTRL, MAX77620 IRQ masks)
 };
 
-#define SWITCH_FEATURES_ALL 0xffffu
+#define SWITCH_FEATURES_ALL 0x1ffffu
 
 // X(id, "name", t210b01, sku, boot, features, model, compatible). boot_script.py parses the first five fields.
 // model and compatible are what the board's device tree says about itself (root model, and the board entry of the root
-// compatible list); NULL is not known. The Erista's are as reported from its Switchroot DTB (nx-plat.dtimg entry 0);
-// the pinned file has not been read here yet.
+// compatible list); NULL is not known. The Erista's are read from the pinned bazel/pinned/firmware/erista-sku0.dtb.
 #define SWITCH_BOARDS(X)                                                                               \
     X(OLED, "oled", 1, 3, 1, SWITCH_FEATURES_ALL, "Nintendo Switch (OLED model)", "nintendo,aula")    \
     X(ERISTA, "erista", 0, 0, 0, 0, "Nintendo Switch (2017)", "nintendo,icosa")
