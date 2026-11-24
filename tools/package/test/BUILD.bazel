@@ -27,6 +27,7 @@ py_test(
         "//bazel/pinned:firmware/exporter.uimg",
         "//bazel/pinned:firmware/oled-sku3.dtb",
         "//boot:u-boot-script.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
         "//tools:lz4",
     ],
     # compress_window runs lz4 from PATH: //tools:lz4, by its runfiles path (relative to the test's working directory).
@@ -36,6 +37,18 @@ py_test(
         "//tools/package:boot_script",
         "//tools/package:kernel_window",
     ],
+)
+
+# The boot script's board check, from kits/SwitchBoard/SwitchBoard.h.
+py_test(
+    name = "boot_script_board_test",
+    size = "small",
+    srcs = ["boot_script_board_test.py"],
+    data = [
+        "//boot:u-boot-script.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = ["//tools/package:boot_script"],
 )
 
 # adt_edit.py over a minimal Switch tree: the selected IPSW kind's iPad's answers on /arm-io, the root and /product

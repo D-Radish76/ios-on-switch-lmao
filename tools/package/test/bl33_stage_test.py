@@ -33,6 +33,7 @@ BL33 = Path('bazel/pinned/firmware/bl33.bin')
 EXPORTER = Path('bazel/pinned/firmware/exporter.uimg')
 DTB = Path('bazel/pinned/firmware/oled-sku3.dtb')
 TEMPLATE = Path('boot/u-boot-script.txt')
+BOARDS = Path('kits/SwitchBoard/SwitchBoard.h')
 
 
 def window_and_stage():
@@ -65,7 +66,7 @@ class Bl33StageTests(unittest.TestCase):
             'PACKED_BYTES': len(cls.staged),
         }
         cls.dtb = DTB.read_bytes()
-        cls.script = boot_script(TEMPLATE.read_text(), cls.constants, len(cls.dtb))
+        cls.script = boot_script(TEMPLATE.read_text(), cls.constants, len(cls.dtb), BOARDS.read_text())
         cls.loader = legacy_image(
             random.Random(5).randbytes(0x1D000), Header(os_type=5, kind=2, name='Loader', load=LOAD, entry=LOAD)
         )

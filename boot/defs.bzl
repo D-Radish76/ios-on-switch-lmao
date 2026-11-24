@@ -369,9 +369,10 @@ def _boot_package_impl(ctx):
     args.add("--template", ctx.file.script_template)
     args.add("--constants", constants)
     args.add("--dtb", ctx.file.dtb)
+    args.add("--boards", ctx.file.boards)
     args.add("--text", script_text)
     args.add("--image", script)
-    _run(ctx, ctx.executable._boot_script, [args], [ctx.file.script_template, constants, ctx.file.dtb], [script_text, script], "BootScript", "Writing U-Boot's boot script")
+    _run(ctx, ctx.executable._boot_script, [args], [ctx.file.script_template, constants, ctx.file.dtb, ctx.file.boards], [script_text, script], "BootScript", "Writing U-Boot's boot script")
 
     u_boot = out("u-boot.bin")
     _run(ctx, ctx.executable._bl33, ["patch", ctx.file.bl33.path, u_boot.path], [ctx.file.bl33], [u_boot], "BootUBoot", "Patching U-Boot's default environment")
@@ -467,6 +468,11 @@ boot_package = rule(
         "system_trust": attr.label(mandatory = True, allow_single_file = True, doc = "the System cryptex's module"),
         "data_seed": attr.label(mandatory = True, allow_single_file = True),
         "script_template": attr.label(mandatory = True, allow_single_file = True),
+        "boards": attr.label(
+            default = "//kits/SwitchBoard:SwitchBoard.h",
+            allow_single_file = True,
+            doc = "the board table whose boot rows the script's board check accepts",
+        ),
         "bl31": attr.label(mandatory = True, allow_single_file = True),
         "bl33": attr.label(mandatory = True, allow_single_file = True),
         "dtb": attr.label(mandatory = True, allow_single_file = True),

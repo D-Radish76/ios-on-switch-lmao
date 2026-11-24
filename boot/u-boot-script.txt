@@ -15,10 +15,8 @@ else
     done
 fi
 base 0
-setenv handoff_status READY
-if test "${t210b01}" != "1" -o "${sku}" != "3"; then
-    setenv handoff_status WRONG_BOARD
-fi
+# The boards that boot, from kits/SwitchBoard/SwitchBoard.h; U-Boot sets t210b01 and sku itself.
+@BOARD_GATE@
 
 # The U-Boot build the exporter and the two cache helpers below were written for.
 if test "${handoff_status}" = "READY"; then
