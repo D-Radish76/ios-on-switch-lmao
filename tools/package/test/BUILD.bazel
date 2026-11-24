@@ -56,6 +56,26 @@ py_test(
     ],
 )
 
+# The read only diagnostic: its commands, its addresses, its image, its entry.
+py_test(
+    name = "diag_boot_test",
+    size = "small",
+    srcs = ["diag_boot_test.py"],
+    data = [
+        "//bazel/pinned:firmware/bl31.bin",
+        "//bazel/pinned:firmware/bl33.bin",
+        "//boot:diag/u-boot-diag-script.txt",
+        "//boot:loader/loader.c",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:bl33",
+        "//tools/package:boot_script",
+        "//tools/package:diag_boot",
+        "//tools/package:loader_abi",
+    ],
+)
+
 # generate_adt per board: the OLED's tree byte for byte, the Erista's identity.
 py_test(
     name = "native_oled_adt_board_test",

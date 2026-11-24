@@ -147,6 +147,17 @@ py_binary(
     ],
 )
 
+# The read only memory controller diagnostic's own hekate entry (boot/diag).
+py_binary(
+    name = "diag_boot",
+    srcs = ["diag_boot.py"],
+    deps = [
+        ":bl33",
+        ":boot_script",
+        ":loader_abi",
+    ],
+)
+
 py_binary(
     name = "boot_script",
     srcs = ["boot_script.py"],
