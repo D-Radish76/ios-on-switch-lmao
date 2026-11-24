@@ -16,7 +16,7 @@ Linux has no Bazel execution platform, no GoogleTest and no `lz4`. The results b
 | `kits/SwitchBoard/test` (21 tests) | pass | GoogleTest stand-in, not GoogleTest |
 | `boot/loader/test` board_args_test (3 tests) | pass | GoogleTest stand-in, not GoogleTest |
 | `tools/package/test` boot_script_board_test (11), native_oled_adt_board_test (4), native_xnu_layout_test (22) | pass | Python `unittest`, no Bazel runfiles |
-| `tools/mc_carveout` test_dump (5) | pass | Python `unittest`, fake `devmem` |
+| `tools/mc_carveout` test_dump (7) | pass | Python `unittest`, fake `busybox` |
 | `bazel/pinned/SHA256SUMS` | all files match, including `erista-sku0.dtb` | `sha256sum -c` |
 | `SwitchBoard.h`, `SwitchBoardKernel.h`, the new `cpu.c` check | no warnings | clang `-Wall -Wextra -Werror`, shim headers, no XNU |
 | `SwitchRootBoot.c` | compiles apart from two shim gaps | shim headers |
@@ -43,7 +43,7 @@ does not say the test builds with the real GoogleTest, so the Mac run below is s
    bazel test //kits/SwitchBoard/test:all //boot/loader/test:all //tools/package/test:all //tools/mc_carveout:all
    ```
 
-   Expect `switch_board_test` (21), `board_args_test` (3), `boot_script_board_test` (11), `native_oled_adt_board_test` (4) and `test_dump` (5) to pass, and
+   Expect `switch_board_test` (21), `board_args_test` (3), `boot_script_board_test` (11), `native_oled_adt_board_test` (4) and `test_dump` (7) to pass, and
    `bl33_stage_test` to run for the first time (needs `lz4` on the Mac). If `boot_script_board_test` cannot find
    `native_oled_adt`, the new dependency in `tools/package/test/BUILD.bazel` is wrong.
 

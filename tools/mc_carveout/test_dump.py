@@ -18,11 +18,19 @@ def gate_table():
     return [(int(a, 16), int(v, 0)) for a, v in re.findall(r'\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+|\d+)\}', body)]
 
 
-def run(devmem_body):
+def run(devmem_body, applet=True, standalone=False):
+    """dump.sh with a fake busybox whose devmem applet runs `devmem_body`; a standalone devmem that must never run."""
     with tempfile.TemporaryDirectory() as tmp:
-        fake = Path(tmp) / 'devmem'
-        fake.write_text('#!/bin/sh\n' + devmem_body)
+        fake = Path(tmp) / 'busybox'
+        fake.write_text(
+            '#!/bin/sh\nif [ "$1" = --list ]; then ' + ('echo devmem; ' if applet else '') + 'exit 0; fi\n'
+            '[ "$1" = devmem ] || exit 9\nshift\n' + devmem_body
+        )
         fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        if standalone:
+            loose = Path(tmp) / 'devmem'
+            loose.write_text('#!/bin/sh\necho 0xdead\n')
+            loose.chmod(loose.stat().st_mode | stat.S_IXUSR)
         env = {**os.environ, 'PATH': f'{tmp}:/usr/bin:/bin'}
         return subprocess.run(['/bin/sh', str(SCRIPT)], capture_output=True, text=True, env=env, check=False)
 
@@ -44,13 +52,24 @@ class DumpTest(unittest.TestCase):
         self.assertEqual(out.returncode, 0)
         self.assertIn('DIFFERENT', out.stdout)
 
+    def test_a_standalone_devmem_is_never_used(self):
+        out = run('echo 0x1\n', standalone=True)
+        self.assertNotIn('dead', out.stdout)
+        self.assertIn('DIFFERENT', out.stdout)
+
+    def test_without_the_busybox_applet_it_stops(self):
+        out = run('echo 0\n', applet=False, standalone=True)
+        self.assertEqual((out.returncode, out.stdout), (2, ''))
+
     def test_an_unreadable_register_stops_it(self):
         self.assertEqual(run('exit 1\n').returncode, 3)
 
     def test_the_reader_is_only_called_to_read(self):
         text = SCRIPT.read_text()
-        self.assertEqual(re.findall(r'\$reader [^\n]*', text), ['$reader "$address" 32) || { echo "$address unreadable" >&2; exit 3; }'])
-        self.assertNotRegex(text, r'/dev/mem|\bdd\b|devmem2')
+        code = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('#'))
+        calls = re.findall(r'busybox devmem[^\n]*', code)
+        self.assertEqual(calls, ['busybox devmem "$address" 32) || { echo "$address unreadable" >&2; exit 3; }'])
+        self.assertNotRegex(code, r'/dev/mem|\bdd\b|devmem2|\$reader')
 
 
 if __name__ == '__main__':

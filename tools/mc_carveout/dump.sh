@@ -1,21 +1,18 @@
 #!/bin/sh
 # Reads the memory controller registers that native_gate (boot/loader/loader.c) compares, from Linux, and prints each next to
-# the OLED value. Read only: the reader is only ever called as `<devmem> <address> 32`, which busybox opens O_RDONLY.
-# On an Erista, run it from Switchroot Linux, twice (two boots, and two cards if there are two), and keep the output.
+# the OLED value. Read only: BusyBox's devmem is the only reader, and it is only ever called as `busybox devmem <address> 32`,
+# which BusyBox opens read only. A standalone devmem or devmem2 is never used.
+# These are the values Linux sees. They are a reference, not the values the loader sees, and do not settle native_gate.
 set -eu
 
-if command -v devmem >/dev/null 2>&1; then
-    reader="devmem"
-elif command -v busybox >/dev/null 2>&1 && busybox --list | grep -qx devmem; then
-    reader="busybox devmem"
-else
-    echo "devmem not found (apt install busybox)" >&2
+command -v busybox >/dev/null 2>&1 && busybox --list | grep -qx devmem || {
+    echo "busybox with the devmem applet not found (apt install busybox)" >&2
     exit 2
-fi
+}
 
 while read -r address oled; do
     [ -n "$address" ] || continue
-    value=$($reader "$address" 32) || { echo "$address unreadable" >&2; exit 3; }
+    value=$(busybox devmem "$address" 32) || { echo "$address unreadable" >&2; exit 3; }
     if [ "$((value))" -eq "$((oled))" ]; then mark=same; else mark=DIFFERENT; fi
     printf '%s 0x%08x oled %s %s\n' "$address" "$((value))" "$oled" "$mark"
 done <<'TABLE'

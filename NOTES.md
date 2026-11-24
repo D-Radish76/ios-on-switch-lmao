@@ -75,7 +75,7 @@ Reported, not re-run here. It boots iOS 16 (xnu-8796) on Erista through a custom
 
 ## Next
 
-1. Read the MC carveout registers on the Erista with `tools/mc_carveout/dump.sh`, then write `native_gate`'s Erista values.
+1. Read the MC carveout registers from Linux on the Erista with `tools/mc_carveout/dump.sh` as a reference. `native_gate`'s Erista values wait for the loader's own reading, because Linux's view is not guaranteed to match it.
 2. Adjust BPMP/EMC and the DFLL/MAX77621 path.
 3. Add LCD `TegraPanel` and backlight, then lift the SC7 panel gate.
 4. Touch.

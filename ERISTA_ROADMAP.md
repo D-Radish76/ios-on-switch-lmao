@@ -45,14 +45,18 @@ OLED. Nothing in the repository or the DTB gives the Erista's. The OLED DTB's `/
 region (`0xb0000000`, 2 MiB) and two empty framebuffer carveouts that hekate fills in, so the pinned Erista DTB will not
 show the MC security carveouts either.
 
-The way to get them without a boot test of this project: read the 25 words from Switchroot Linux on the Erista, read only,
-with `tools/mc_carveout/dump.sh` (steps in its README). It calls `devmem <address> 32` and nothing else, prints each value
-next to the OLED's and stops if the kernel refuses `/dev/mem`. Run it on the OLED too, from the same Linux, to see that
-the method reproduces what `native_gate` holds. Making the loader print the values on an Erista is not an option: that
-needs `boot 1` and a boot of this project.
+A reference without a boot test of this project: read the 25 words from Switchroot Linux on the Erista, read only, with
+`tools/mc_carveout/dump.sh` (steps in its README). It calls `busybox devmem <address> 32` and nothing else, prints each
+value next to the OLED's and stops if the kernel refuses `/dev/mem`. Run it on the OLED too, from the same Linux, to see
+how far Linux's view differs from the loader's there.
 
-A dump alone is not enough to enable the row. The values must be the same on every Erista unit and boot chain, so dump at
-least two cards or two boots. Register names for the 25 addresses are not mapped yet (Linux `tegra210` MC and hekate's
+What the dump cannot do: Linux reads the registers late in the boot, the loader reads them early, and nothing guarantees
+the carveouts are the same at both moments. Several equal Linux dumps do not turn the Linux values into the loader's.
+`native_gate` gets Erista values only from the loader's own reading, which needs `boot 1` and a reviewed boot test of this
+project, so that step stays on hold with the rest of the console work. Until then the dump only shows where the Erista's
+carveouts probably differ from the OLED's.
+
+Register names for the 25 addresses are not mapped yet (Linux `tegra210` MC and hekate's
 `mc.h` are the sources).
 
 ### Where the OLED is assumed
@@ -182,7 +186,7 @@ Each feature bit needs its own review for the HAC-001 before it is set.
 
 Without the console:
 
-1. Write the `native_gate` values from the dump (`tools/mc_carveout`), not from the OLED.
+1. Take the Linux dump (`tools/mc_carveout`) as a reference. The `native_gate` values wait for the loader's own reading.
 2. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
 
 Needs the console, held back:
