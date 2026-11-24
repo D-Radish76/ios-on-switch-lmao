@@ -54,6 +54,14 @@ py_test(
     ],
 )
 
+# generate_adt per board: the OLED's tree byte for byte, the Erista's identity.
+py_test(
+    name = "native_oled_adt_board_test",
+    size = "small",
+    srcs = ["native_oled_adt_board_test.py"],
+    deps = ["//tools/package:native_oled_adt"],
+)
+
 # adt_edit.py over a minimal Switch tree: the selected IPSW kind's iPad's answers on /arm-io, the root and /product
 # (from Apple's tree of it, //ipsw:device_tree), which VideoToolbox and MobileGestalt read before iOS uses a feature.
 py_test(

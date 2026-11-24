@@ -223,11 +223,15 @@ TEST(SwitchBoard, TheDeviceTreeMustNameTheRow)
     EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_GPU));
 }
 
-TEST(SwitchBoard, ARowWithoutDeviceTreeStringsCannotBeConfirmed)
+TEST(SwitchBoard, AnEristaThatAllThreeWitnessesNameIsKnownButHasNothingToStart)
 {
-    const switch_board *erista = switch_board_by_name("erista");
-    EXPECT_EQ(switch_board_resolve("erista", 0x21u << 8 | 1u << 4, 0, "anything\0", 9), &switch_board_unknown);
-    EXPECT_EQ(erista->compatible, nullptr);
+    static const char list[] = "nvidia,odin\0nintendo,icosa\0nintendo,nx\0nvidia,tegra210";
+    const switch_board *board = switch_board_resolve("erista", 0x21u << 8 | 1u << 4, 0, list, sizeof(list));
+    EXPECT_STREQ(board->name, "erista");
+    EXPECT_EQ(board->boot, 0);
+    EXPECT_EQ(board->features, 0u);
+    EXPECT_EQ(switch_board_resolve("erista", 0x21u << 8 | 1u << 4, 0, "nintendo,aula", 14), &switch_board_unknown);
+    EXPECT_EQ(switch_board_resolve("oled", 0x21u << 8 | 1u << 4, 0, list, sizeof(list)), &switch_board_unknown);
 }
 
 TEST(SwitchBoard, TheOledNamesItselfAndNoOtherBoardGuesses)
@@ -235,8 +239,8 @@ TEST(SwitchBoard, TheOledNamesItselfAndNoOtherBoardGuesses)
     const switch_board *oled = switch_board_by_name("oled");
     EXPECT_STREQ(oled->model, "Nintendo Switch (OLED model)");
     EXPECT_STREQ(oled->compatible, "nintendo,aula");
-    EXPECT_EQ(switch_board_by_name("erista")->model, nullptr);
-    EXPECT_EQ(switch_board_by_name("erista")->compatible, nullptr);
+    EXPECT_STREQ(switch_board_by_name("erista")->model, "Nintendo Switch (2017)");
+    EXPECT_STREQ(switch_board_by_name("erista")->compatible, "nintendo,icosa");
     EXPECT_EQ(switch_board_by_name("nope")->model, nullptr);
 }
 

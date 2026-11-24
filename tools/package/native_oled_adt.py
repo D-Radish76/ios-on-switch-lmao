@@ -27,6 +27,21 @@ GICD_BASE, GICD_SIZE = 0x50041000, 0x1000
 GICC_BASE, GICC_SIZE = 0x50042000, 0x100
 MODEL = 'Nintendo Switch (OLED model)'
 COMPATIBLE = ('nvidia,fric', 'nintendo,aula', 'nintendo,nx', 'nvidia,tegra210b01')
+
+
+class Identity(NamedTuple):
+    """What a board's own device tree says at its root; the last compatible entry is the SoC."""
+
+    model: str
+    compatible: tuple[str, ...]
+
+
+# Keyed like kits/SwitchBoard/SwitchBoard.h; a test ties each entry to its row. The Erista's is as reported from its
+# Switchroot DTB (nx-plat.dtimg entry 0), not yet read from the pinned file.
+IDENTITIES = {
+    'oled': Identity(MODEL, COMPATIBLE),
+    'erista': Identity('Nintendo Switch (2017)', ('nvidia,odin', 'nintendo,icosa', 'nintendo,nx', 'nvidia,tegra210')),
+}
 ROOT_VOLUME_UUID = '04769D26-2CA0-4825-B443-E2E5F88300F2'
 
 
@@ -169,8 +184,15 @@ def _cpus(native_smp: bool) -> bytes:
     )
 
 
-def generate_adt(seed: bytes | None, profile: Profile) -> bytes:
-    """Serialize only the audited native resources; deterministic seed for tests."""
+def generate_adt(seed: bytes | None, profile: Profile, board: str = 'oled') -> bytes:
+    """Serialize only the audited native resources; deterministic seed for tests.
+
+    `board` picks the root identity and the SoC the arm-io bus names. Everything else is the OLED's, so an Erista's tree is
+    not usable until its panel, touch and the rest are audited.
+    """
+    if board not in IDENTITIES:
+        raise ValueError(f'unknown board {board!r}')
+    identity = IDENTITIES[board]
     if seed is None:
         seed = os.urandom(SEED_BYTES)
     if not isinstance(seed, bytes) or len(seed) != SEED_BYTES:
@@ -180,8 +202,8 @@ def generate_adt(seed: bytes | None, profile: Profile) -> bytes:
     return node(
         'device-tree',
         [
-            ('model', MODEL.encode('ascii') + b'\0'),
-            ('compatible', b'\0'.join(s.encode('ascii') for s in COMPATIBLE) + b'\0'),
+            ('model', identity.model.encode('ascii') + b'\0'),
+            ('compatible', b'\0'.join(s.encode('ascii') for s in identity.compatible) + b'\0'),
         ],
         [
             node(
@@ -219,7 +241,10 @@ def generate_adt(seed: bytes | None, profile: Profile) -> bytes:
                 [
                     node(
                         'product',
-                        [('product-name', MODEL.encode('ascii') + b'\0'), ('model', MODEL.encode('ascii') + b'\0')],
+                        [
+                            ('product-name', identity.model.encode('ascii') + b'\0'),
+                            ('model', identity.model.encode('ascii') + b'\0'),
+                        ],
                     )
                 ]
                 if userspace_fixture or root_boot
@@ -228,7 +253,7 @@ def generate_adt(seed: bytes | None, profile: Profile) -> bytes:
             node(
                 'arm-io',
                 [
-                    ('device_type', b'nvidia,tegra210b01\0'),
+                    ('device_type', identity.compatible[-1].encode('ascii') + b'\0'),
                     # Exactly the contiguous GICD/GICC span. The driver adds bus base
                     # to these relative reg offsets; no wider Tegra bus is invented.
                     ('ranges', struct.pack('<3Q', 0, GICD_BASE, GICC_BASE + GICC_SIZE - GICD_BASE)),

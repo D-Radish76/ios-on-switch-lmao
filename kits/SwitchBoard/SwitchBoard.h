@@ -39,11 +39,12 @@ enum switch_feature {
 #define SWITCH_FEATURES_ALL 0xffffu
 
 // X(id, "name", t210b01, sku, boot, features, model, compatible). boot_script.py parses the first five fields.
-// model and compatible are what the board's device tree says about itself; NULL is not known yet. Nothing fills in a
-// guess for the Erista: it stays NULL until the string is read off the console's own DTB.
+// model and compatible are what the board's device tree says about itself (root model, and the board entry of the root
+// compatible list); NULL is not known. The Erista's are as reported from its Switchroot DTB (nx-plat.dtimg entry 0);
+// the pinned file has not been read here yet.
 #define SWITCH_BOARDS(X)                                                                               \
     X(OLED, "oled", 1, 3, 1, SWITCH_FEATURES_ALL, "Nintendo Switch (OLED model)", "nintendo,aula")    \
-    X(ERISTA, "erista", 0, 0, 0, 0, NULL, NULL)
+    X(ERISTA, "erista", 0, 0, 0, 0, "Nintendo Switch (2017)", "nintendo,icosa")
 
 struct switch_board {
     const char *name;

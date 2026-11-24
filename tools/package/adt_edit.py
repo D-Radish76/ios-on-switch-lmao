@@ -190,7 +190,7 @@ def _identity(tree: list, apple: list) -> None:
     put(tree, 'model', root['model'])  # hw.model; idle code matches "compatible"
     put(tree, 'target-type', root['target-type'])
     # The audio server keys its routing database on the board name; the Switch entries stay
-    # after it (switch_idle_board looks for nintendo,aula).
+    # after it (switch_board_by_compatible finds the board's own entry).
     board = root['compatible'].split(b'\0', 1)[0] + b'\0'
     compatible = next(p[2] for p in tree[0] if p[0] == 'compatible')
     if not compatible.startswith(board):

@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from boot_script import board_gate, boards, boot_script
-from native_oled_adt import COMPATIBLE, MODEL
+from native_oled_adt import COMPATIBLE, IDENTITIES, MODEL
 
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
 TEMPLATE = Path('boot/u-boot-script.txt').read_text()
@@ -77,8 +77,13 @@ class BoardIdentityTest(unittest.TestCase):
         self.assertEqual(model, MODEL)
         self.assertIn(compatible, COMPATIBLE)
 
-    def test_the_erista_row_has_no_guessed_strings(self):
-        self.assertEqual(identity('erista'), (None, None))
+    def test_the_erista_row_is_what_its_reported_tree_says(self):
+        model, compatible = identity('erista')
+        self.assertEqual(model, IDENTITIES['erista'].model)
+        self.assertIn(compatible, IDENTITIES['erista'].compatible)
+
+    def test_every_row_has_an_identity_and_nothing_else_does(self):
+        self.assertEqual({name for name, *_ in boards(HEADER)}, set(IDENTITIES))
 
 
 if __name__ == '__main__':
