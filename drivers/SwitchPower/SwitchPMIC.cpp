@@ -777,9 +777,11 @@ extern "C" int switch_pmic_start(void)
             }
         }
         gRTC = publishRTC(rtcMode, &rtcSecs, &rtcStamp);
-        int recordMillic = 0;
-        const enum switch_thermal_sensor recorded = switch_pmic_thermal_take(&recordMillic);
-        switch_panic_save_thermal(recorded, recordMillic);
+        if (switch_board_has(SWITCH_FEATURE_THERMAL)) {
+            int recordMillic = 0;
+            const enum switch_thermal_sensor recorded = switch_pmic_thermal_take(&recordMillic);
+            switch_panic_save_thermal(recorded, recordMillic);
+        }
 #if DEVELOPMENT || DEBUG
         if (switch_board_has(SWITCH_FEATURE_RTC_MARK))
             switch_pmic_mark_start();
