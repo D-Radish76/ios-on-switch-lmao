@@ -16,6 +16,9 @@
 #   firmware/bl31.bin, bl33.bin, oled-sku3.dtb
 #       switchroot's ATF and U-Boot (Ubuntu Noble 5.1.2 entry; U-Boot 2024.NX02 @ 722e2b86) and the OLED device tree
 #       (nx-plat.dtimg entry 3), as the boot entry chains them.
+#   firmware/erista-sku0.dtb
+#       The original Switch's device tree (nx-plat.dtimg entry 0, tegra210-odin.dts), extracted from a Switchroot card.
+#       Only the board table's tests read it; no boot entry chains it yet.
 #   firmware/exporter.uimg
 #       The RAM metadata exporter (bazel run //boot:firmware_export rebuilds it).
 #   firmware/BCM4356A3.hcd

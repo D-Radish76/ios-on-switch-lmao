@@ -5,6 +5,7 @@ still ends in WRONG_BOARD; a row someone later enables adds one clause; a table 
 """
 
 import re
+import struct
 import unittest
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from boot_script import board_gate, boards, boot_script
 from native_oled_adt import COMPATIBLE, IDENTITIES, MODEL
 
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
+DTBS = {'oled': Path('bazel/pinned/firmware/oled-sku3.dtb'), 'erista': Path('bazel/pinned/firmware/erista-sku0.dtb')}
 TEMPLATE = Path('boot/u-boot-script.txt').read_text()
 CONSTANTS = {'PACKED_BYTES': 0x1000, 'STREAM_BYTES': 0x800, 'STAGE_ID': 0x1122334455667788}
 
@@ -25,6 +27,32 @@ fi"""
 def table(*rows):
     body = ' \\\n'.join(f'    X({name.upper()}, "{name}", {t}, {sku}, {boot}, 0, NULL, NULL)' for name, t, sku, boot in rows)
     return f'#define SWITCH_BOARDS(X) \\\n{body}\n'
+
+
+def root_strings(dtb):
+    """(model, compatible entries) of a flattened device tree's root node."""
+    magic, _, off_struct, off_strings, *_ = struct.unpack('>4I', dtb[:16])
+    assert magic == 0xD00DFEED
+    found, depth, at = {}, 0, off_struct
+    while True:
+        (token,) = struct.unpack('>I', dtb[at : at + 4])
+        at += 4
+        if token == 1:
+            at = (dtb.index(b'\0', at) + 4) // 4 * 4
+            depth += 1
+        elif token == 3:
+            length, name_at = struct.unpack('>II', dtb[at : at + 8])
+            value = dtb[at + 8 : at + 8 + length]
+            at = (at + 8 + length + 3) // 4 * 4
+            name = dtb[off_strings + name_at : dtb.index(b'\0', off_strings + name_at)].decode()
+            if depth == 1 and name in ('model', 'compatible'):
+                found[name] = value.rstrip(b'\0').decode().split('\0')
+        elif token == 2:
+            depth -= 1
+            if depth == 0:
+                return found['model'][0], tuple(found['compatible'])
+        elif token != 4:
+            raise ValueError(f'unexpected token {token}')
 
 
 def identity(name):
@@ -81,6 +109,12 @@ class BoardIdentityTest(unittest.TestCase):
         model, compatible = identity('erista')
         self.assertEqual(model, IDENTITIES['erista'].model)
         self.assertIn(compatible, IDENTITIES['erista'].compatible)
+
+    def test_each_pinned_dtb_says_what_its_row_says(self):
+        for name, path in DTBS.items():
+            model, compatible = root_strings(path.read_bytes())
+            self.assertEqual((model, compatible), (IDENTITIES[name].model, IDENTITIES[name].compatible), name)
+            self.assertEqual((model, identity(name)[1] in compatible), (identity(name)[0], True), name)
 
     def test_every_row_has_an_identity_and_nothing_else_does(self):
         self.assertEqual({name for name, *_ in boards(HEADER)}, set(IDENTITIES))

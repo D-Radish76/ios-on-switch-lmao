@@ -45,6 +45,8 @@ py_test(
     size = "small",
     srcs = ["boot_script_board_test.py"],
     data = [
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//bazel/pinned:firmware/oled-sku3.dtb",
         "//boot:u-boot-script.txt",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
