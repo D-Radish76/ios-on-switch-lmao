@@ -8,9 +8,8 @@ on hardware, and the boot gate, voltage settings and boot test stay untouched un
 ### BL31
 
 - Ours: `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4`, 45,655 bytes.
-- ios-switch publishes only `dea0ecd4...e2b4` (its card's `switchroot/ubuntu-noble/bl31.bin`, Noble 5.1.2). Our pin comment
-  names the same entry. The full hash of ios-switch's file is not published, so identity is likely but not proven. To prove it,
-  hash `switchroot/ubuntu-*/bl31.bin` on the Erista card from the Mac and compare the full digest.
+- The full SHA256 of `bl31.bin` on a Switchroot SD card equals ours (hashed by the user, not seen here), so it is the build
+  ios-switch's card carries. It does not show that the pinned U-Boot's PSCI/SMC use works on an Erista.
 - Source: `CTCaer/switch-l4t-atf`, branch `switch-v5-atf2.6`. `plat_setup.c` supports T210 and T210B01. The commit behind the
   pinned binary is unknown.
 
@@ -28,15 +27,39 @@ An Erista gives `t210b01=0`, `sku=0`. This matches switchroot's `boot.scr`, wher
 
 ### Erista DTB
 
-Switchroot's boot script loads the sku entry from a DTBO-format image (`dtimg load ... ${sku}`). Three ways to get entry 0,
-none needing the console:
+Extracted by the user from `nx-plat.dtimg` entry 0 on a Switchroot card (Android dt_table, magic `0xD7B7AB1E`; entry 3 is
+`oled-sku3.dtb`). As reported: `erista-sku0.dtb`, 168,190 bytes, FDT version 17, SHA256
+`e6b1b64543f9980d2ce38c4848ec0eb2a702048282002beee6924560fd6f1c84`, source `tegra210-odin.dts`, model
+`Nintendo Switch (2017)`, compatible `nvidia,odin`, `nintendo,icosa`, `nintendo,nx`, `nvidia,tegra210`.
 
-1. Read `nx-plat.dtimg` from the Switchroot Linux install on the SD card (FAT, readable on the Mac) and extract entry 0. The
-   file is Android's dt_table format (magic `0xD7B7AB1E`); entry 3 is what became `oled-sku3.dtb` (`bazel/pinned/BUILD.bazel`).
-2. Under Switchroot Linux on the Erista: `/sys/firmware/fdt`.
-3. Rebuild it from `CTCaer/switch-l4t-platform-t210-nx` (`nx-platforms`). Not tried.
+The file did not reach the session that wrote this, so two steps are open: check its SHA256 and pin it next to
+`oled-sku3.dtb` (`bazel/pinned/BUILD.bazel`, `SHA256SUMS`, with the comment), and read model and compatible from it to
+confirm the table row. The OLED's own DTB has the same shape (`nvidia,fric`, `nintendo,aula`, `nintendo,nx`,
+`nvidia,tegra210b01`), which is what the row's second entry follows.
 
-The DTB is the Erista input for the board table below. It must be pinned with its SHA256 like the others.
+The Erista row now holds `Nintendo Switch (2017)` and `nintendo,icosa`, and `generate_adt(board='erista')` uses the four
+strings above. The rest of that tree is still the OLED's: the arm-io bus is only the GIC, but the display, touch and the
+storage probe are not audited for the HAC-001.
+
+### MC carveout values
+
+`native_gate` compares 25 registers (`0x70019050`, `0x70019648` and others up to `0x70019d54`) with values read on the
+OLED. Nothing in the repository or the DTB gives the Erista's. The OLED DTB's `/reserved-memory` holds only the ramoops
+region (`0xb0000000`, 2 MiB) and two empty framebuffer carveouts that hekate fills in, so the pinned Erista DTB will not
+show the MC security carveouts either.
+
+Ways to get them without a boot test of this project:
+
+1. Read the 25 words from Switchroot Linux on the Erista with `devmem` or `/dev/mem` (read only, one `devmem <addr> 32`
+   per register). The loader reads them from EL1 non-secure, so the access is allowed there; whether the Switchroot kernel
+   permits `/dev/mem` is not known. This is the safest route.
+2. Compare the same dump on the OLED from the same Linux, to see that the method reproduces the values `native_gate`
+   holds.
+3. Do not make the loader print them on an Erista: that needs `boot 1` and a boot of this project.
+
+A dump alone is not enough to enable the row. The values must be the same on every Erista unit and boot chain, so dump at
+least two cards or two boots. Register names for the 25 addresses are not mapped yet (Linux `tegra210` MC and hekate's
+`mc.h` are the sources).
 
 ### Where the OLED is assumed
 
@@ -165,7 +188,8 @@ Each feature bit needs its own review for the HAC-001 before it is set.
 
 Without the console:
 
-1. Pin the Erista DTB once extracted; write the `native_gate` values from a measurement, not from the OLED.
+1. Pin the Erista DTB (the file is needed here) and check the row's strings against it; write the `native_gate` values from
+   a dump, not from the OLED.
 2. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
 
 Needs the console, held back:
