@@ -28,18 +28,15 @@ An Erista gives `t210b01=0`, `sku=0`. This matches switchroot's `boot.scr`, wher
 ### Erista DTB
 
 Extracted by the user from `nx-plat.dtimg` entry 0 on a Switchroot card (Android dt_table, magic `0xD7B7AB1E`; entry 3 is
-`oled-sku3.dtb`). As reported: `erista-sku0.dtb`, 168,190 bytes, FDT version 17, SHA256
-`e6b1b64543f9980d2ce38c4848ec0eb2a702048282002beee6924560fd6f1c84`, source `tegra210-odin.dts`, model
-`Nintendo Switch (2017)`, compatible `nvidia,odin`, `nintendo,icosa`, `nintendo,nx`, `nvidia,tegra210`.
+`oled-sku3.dtb`). Pinned as `bazel/pinned/firmware/erista-sku0.dtb`: 168,190 bytes, FDT version 17, SHA256
+`e6b1b64543f9980d2ce38c4848ec0eb2a702048282002beee6924560fd6f1c84` (read here and equal to the reported hash), source
+`tegra210-odin.dts`. Its root says model `Nintendo Switch (2017)` and compatible `nvidia,odin`, `nintendo,icosa`,
+`nintendo,nx`, `nvidia,tegra210`. The Erista row (`Nintendo Switch (2017)`, `nintendo,icosa`) and `generate_adt(board='erista')`
+equal it, and a test checks both pinned DTBs against their rows. The OLED's DTB has the same shape (`nvidia,fric`,
+`nintendo,aula`, `nintendo,nx`, `nvidia,tegra210b01`).
 
-The file did not reach the session that wrote this, so two steps are open: check its SHA256 and pin it next to
-`oled-sku3.dtb` (`bazel/pinned/BUILD.bazel`, `SHA256SUMS`, with the comment), and read model and compatible from it to
-confirm the table row. The OLED's own DTB has the same shape (`nvidia,fric`, `nintendo,aula`, `nintendo,nx`,
-`nvidia,tegra210b01`), which is what the row's second entry follows.
-
-The Erista row now holds `Nintendo Switch (2017)` and `nintendo,icosa`, and `generate_adt(board='erista')` uses the four
-strings above. The rest of that tree is still the OLED's: the arm-io bus is only the GIC, but the display, touch and the
-storage probe are not audited for the HAC-001.
+No boot entry chains the file, and the row is still `boot 0`. The rest of the Erista ADT is still the OLED's: the arm-io bus
+is only the GIC, but the display, touch and the storage probe are not audited for the HAC-001.
 
 ### MC carveout values
 
@@ -48,14 +45,11 @@ OLED. Nothing in the repository or the DTB gives the Erista's. The OLED DTB's `/
 region (`0xb0000000`, 2 MiB) and two empty framebuffer carveouts that hekate fills in, so the pinned Erista DTB will not
 show the MC security carveouts either.
 
-Ways to get them without a boot test of this project:
-
-1. Read the 25 words from Switchroot Linux on the Erista with `devmem` or `/dev/mem` (read only, one `devmem <addr> 32`
-   per register). The loader reads them from EL1 non-secure, so the access is allowed there; whether the Switchroot kernel
-   permits `/dev/mem` is not known. This is the safest route.
-2. Compare the same dump on the OLED from the same Linux, to see that the method reproduces the values `native_gate`
-   holds.
-3. Do not make the loader print them on an Erista: that needs `boot 1` and a boot of this project.
+The way to get them without a boot test of this project: read the 25 words from Switchroot Linux on the Erista, read only,
+with `tools/mc_carveout/dump.sh` (steps in its README). It calls `devmem <address> 32` and nothing else, prints each value
+next to the OLED's and stops if the kernel refuses `/dev/mem`. Run it on the OLED too, from the same Linux, to see that
+the method reproduces what `native_gate` holds. Making the loader print the values on an Erista is not an option: that
+needs `boot 1` and a boot of this project.
 
 A dump alone is not enough to enable the row. The values must be the same on every Erista unit and boot chain, so dump at
 least two cards or two boots. Register names for the 25 addresses are not mapped yet (Linux `tegra210` MC and hekate's
@@ -188,8 +182,7 @@ Each feature bit needs its own review for the HAC-001 before it is set.
 
 Without the console:
 
-1. Pin the Erista DTB (the file is needed here) and check the row's strings against it; write the `native_gate` values from
-   a dump, not from the OLED.
+1. Write the `native_gate` values from the dump (`tools/mc_carveout`), not from the OLED.
 2. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
 
 Needs the console, held back:

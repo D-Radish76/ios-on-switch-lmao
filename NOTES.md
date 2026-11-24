@@ -5,6 +5,7 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 
 ## Confirmed
 
+- The Erista DTB (`bazel/pinned/firmware/erista-sku0.dtb`, nx-plat.dtimg entry 0, `tegra210-odin.dts`, 168,190 bytes, SHA256 `e6b1b64543f9980d2ce38c4848ec0eb2a702048282002beee6924560fd6f1c84`) was read: model `Nintendo Switch (2017)`, compatible `nvidia,odin`, `nintendo,icosa`, `nintendo,nx`, `nvidia,tegra210`. The board table's Erista row equals it. It comes from a Switchroot card, not from a console this session had.
 - The pinned `bl31.bin` is the file on a Switchroot SD card: its full SHA256 equals `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4`. The user hashed it on the card; the card's file was not seen here. That makes it the same build ios-switch runs on an Erista. It does not show that the pinned U-Boot's PSCI/SMC use works on an Erista, which only a boot test shows.
 - hekate's L4T launcher starts BL31 on both chips (`l4t.c`). That says nothing about whether the pinned `bl31.bin` supports Erista; see "BL31 on Erista".
 - U-Boot sets `t210b01` and `sku` itself (disassembly of the pinned `bl33.bin`): `t210b01` is 1 when HIDREV major (0x70000804 bits 7:4) is 2, else 0. `sku` is 0 when the major is not 2. On T210B01 it follows FUSE 0x7000F9D8 bits 19:16: 2 gives 2, 4 gives 3, anything else 1. An Erista should therefore report `t210b01=0`, `sku=0`. Not run on hardware.
@@ -17,7 +18,6 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 
 ## Unverified
 
-- The Erista DTB, as reported from `nx-plat.dtimg` entry 0 (`tegra210-odin.dts`): 168,190 bytes, FDT version 17, SHA256 `e6b1b64543f9980d2ce38c4848ec0eb2a702048282002beee6924560fd6f1c84`, model `Nintendo Switch (2017)`, compatible `nvidia,odin`, `nintendo,icosa`, `nintendo,nx`, `nvidia,tegra210`. The file was not attached to the session that wrote the board table row, so the hash was not checked and the file is not pinned. The row's strings come from this report.
 - Power-down order against hekate `_display_panel_and_hw_end`: panel reset low, 10 ms, LCD AVDD off, BL_PWM pad to PWM0 with pull-down, 10 ms, then clocks off. This matches. hekate never clears WLED enable (V1) there; the backlight is turned off before by driving V0 low (`display_backlight(false)`). Ours leaves V1 alone as well. hekate also hands V0 back to the PWM controller (`gpio_config` SPIO), which `TegraGPIO` has no call for, so V0 stays a GPIO output. Backlight ownership belongs to the future LCD `SwitchBacklight`.
 - Boot gate design: accept a board only when `t210b01`, `sku` and the DTB model agree with a table row (OLED 1/3, Erista expected 0/0 from the Console info photo). A row without a verified DTB stays refused.
 - hekate leaves its framebuffer lit at handoff, so the first screen needs no new display code. This comes from hekate's L4T launcher and ios-switch's notes (framebuffer 0xF5A00000, 720x1280). The U-Boot script checks the same address and format on the OLED.
@@ -75,11 +75,10 @@ Reported, not re-run here. It boots iOS 16 (xnu-8796) on Erista through a custom
 
 ## Next
 
-1. Pin the Erista DTB (needs the file) and check the row's strings against it.
-2. Read the MC carveout registers on the Erista (see `ERISTA_ROADMAP.md`), then write `native_gate`'s Erista values.
-3. Adjust BPMP/EMC and the DFLL/MAX77621 path.
-4. Add LCD `TegraPanel` and backlight, then lift the SC7 panel gate.
-5. Touch.
+1. Read the MC carveout registers on the Erista with `tools/mc_carveout/dump.sh`, then write `native_gate`'s Erista values.
+2. Adjust BPMP/EMC and the DFLL/MAX77621 path.
+3. Add LCD `TegraPanel` and backlight, then lift the SC7 panel gate.
+4. Touch.
 
 Done: the board table, the table-driven boot gate, the board profile in boot-args, per-board model strings and `generate_adt(board=)`.
 
