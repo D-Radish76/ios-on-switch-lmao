@@ -36,8 +36,7 @@ class Identity(NamedTuple):
     compatible: tuple[str, ...]
 
 
-# Keyed like kits/SwitchBoard/SwitchBoard.h; a test ties each entry to its row. The Erista's is as reported from its
-# Switchroot DTB (nx-plat.dtimg entry 0), not yet read from the pinned file.
+# Keyed like kits/SwitchBoard/SwitchBoard.h; a test ties each entry to its row and to the root of its pinned DTB.
 IDENTITIES = {
     'oled': Identity(MODEL, COMPATIBLE),
     'erista': Identity('Nintendo Switch (2017)', ('nvidia,odin', 'nintendo,icosa', 'nintendo,nx', 'nvidia,tegra210')),
