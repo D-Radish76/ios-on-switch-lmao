@@ -28,6 +28,40 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 - Touch: the OLED uses FTM4CD60. ios-switch reports an STM FTS4 at I2C3 0x49 (chip 0x3670) on Erista. Not confirmed on this console.
 - Every register in the Erista display path. The tables are from hekate, but the runtime order and sleep times are untested.
 
+## BL31 on Erista
+
+What was read: `bazel/pinned/firmware/bl31.bin` (45,655 bytes, stripped, SHA256 `dea0ecd4...e2b4`, the same hash ios-switch reports), hekate `bootloader/l4t/l4t.c`, and upstream TF-A `plat/nvidia/tegra/soc/t210` through a mirror. The repo has no BL31 source, so switchroot's fork was not read. Upstream already branches on `tegra_chipid_is_t210_b01()`, so the pinned binary is probably built for both chips. That is a guess until its build config or a hardware result confirms it.
+
+T210B01 specific handling in the BL31 path (upstream, switchroot unverified):
+
+- SE2 is mapped only on T210B01. `tegra_se_save_tzram` and `tegra_se_resume` run only there.
+- On T210 the PMC security bit is set again in `plat_late_platform_setup` and `tegra_pmc_resume` runs on cluster idle exit.
+- `plat_supports_system_suspend` is true on T210B01 and, on T210, only when hekate hands over an SC7-Entry firmware.
+- `plat_late_platform_setup` powers the BPMP off when an SC7-Entry firmware is present, and hekate passes one on T210 only. After BL31 starts, an Erista has no BPMP to answer `MRQ_PING`, `MRQ_CLK` or `MRQ_EMC_DVFS_TABLE`.
+- Upstream asserts `tegra_chipid_is_t210()` in `plat_early_platform_setup`. Release builds compile that out.
+
+What hekate does differently per chip before it starts BL31:
+
+- Erista needs `bootloader/sys/l4t/` to hold `sc7entry`, `bpmpfw.bin` and `sc7exit`, and needs Minerva. Without Minerva hekate stops with "Minerva missing". Mariko loads `bpmpfw_b01.bin` and `mtc_tbl_b01.bin`. The existing Switchroot Linux install should provide the Erista set; this is not checked on the card.
+- DRAM: Erista trains the MTC table with Minerva, sets 800 MHz and hands the table to BL31 (`emc_table_base`). Mariko puts the tables into the BPMP-FW DTB and starts at 1866 or 2133 MHz through ARC. DRAM voltage is written only with `ram_oc` keys, which `ios.ini` does not set.
+- Erista patches the SC7-Exit firmware with the console's RSA modulus read from eMMC (read only). Mariko uses `pkg1_warmboot_config`.
+- Carveouts use one layout. Only the LP0 scratch registers that save them differ.
+- Both chips get `PMC_SCRATCH201 = BIT(1)`, which marks MAX77621 or MAX77812 as the CPU PMIC.
+
+Where this repo assumes T210B01 (all fail safe or are untested on Erista):
+
+- `emc.c` raises EMC only after a BPMP ping and a table match, so with no BPMP it should leave DRAM at 800 MHz. It checks VDD_CORE against the T210B01 table, which does not apply to Erista.
+- `TegraBPMP.c` returns `-ENODEV` without a mailbox.
+- `TegraDFLL` returns `-ENODEV` unless the chip is T210B01 A01, before any clock or rail change. The CPU then stays at whatever clock BL31 leaves, which costs speed but no safety.
+- `SwitchThermal.cpp` and `TegraGM20B/platform.c` probe MAX77812 at I2C5 0x31 or 0x33. Erista has MAX77621 at 0x1B, so those reads should NACK and stop before any write. Not run.
+- The BQ24193 limit of 4208 mV was tuned for the OLED battery. Check it against the HAC-001 battery before any charger write is allowed.
+
+Open checks before a boot test:
+
+- BL31 build config and its T210 support, from switchroot's source or a boot log.
+- Whether U-Boot's `t210b01` and `sku` come from its own board code (hekate's `l4t.c` does not set them).
+- The Erista SD0 voltage and the VDD_CORE needed at 800 MHz.
+
 ## ios-switch (urielc918)
 
 Reported, not re-run here. It boots iOS 16 (xnu-8796) on Erista through a custom BL33 shim instead of U-Boot, and its notes list the MAX77621 CPU rail at I2C5 0x1B and SD0 at 1125 mV. The repo is MIT with APSL-2.0 XNU patches; this repo is GPL-2.0, so no code is copied.
