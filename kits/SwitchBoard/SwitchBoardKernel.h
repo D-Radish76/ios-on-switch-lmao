@@ -14,9 +14,6 @@
 extern "C" {
 #endif
 
-#define SWITCH_BOARD_ARG        "switch-board"
-#define SWITCH_BOARD_NAME_BYTES 16
-
 static inline const struct switch_board *switch_board_current(void)
 {
     char name[SWITCH_BOARD_NAME_BYTES] = "";

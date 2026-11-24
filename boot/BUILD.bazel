@@ -164,8 +164,10 @@ boot_package(
         ":loader/stage.h",
         ":loader/stamps.h",
         ":storage/sd_reference.h",
+        "//kits/SwitchBoard:SwitchBoard.h",
     ],
     loader_include_markers = [
+        "//kits/SwitchBoard:SwitchBoard.h",
         ":loader/stage.h",
         ":handoff/record.h",
         ":storage/sd_reference.h",

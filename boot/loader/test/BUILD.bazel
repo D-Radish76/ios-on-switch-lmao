@@ -231,3 +231,12 @@ host_test(
     srcs = ["boot_args_test.cpp"],
     deps = [":boot_args"],
 )
+
+host_test(
+    name = "board_args_test",
+    srcs = [
+        "board_args_test.cpp",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [":boot_args"],
+)

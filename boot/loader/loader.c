@@ -10,6 +10,7 @@
 #include "emc.h"
 #include "seed.h"
 #include "boot_args.h"
+#include "SwitchBoard.h"
 
 #ifndef LOAD_FAST_COPY
 #define LOAD_FAST_COPY 0
@@ -240,9 +241,12 @@ static uint64_t stage_check(void)
 }
 #endif
 
-static uint64_t native_gate(void)
+static uint64_t native_gate(const struct switch_board *board)
 {
 #if LOAD_NATIVE_GATES
+    // The carveout values below were read on the OLED: no other board has been measured.
+    if (!switch_board_streq(board->name, "oled"))
+        return 0x402;
     // U-Boot's inherited stack must be where hardware showed it before we switch to ours.
     // The full RAM profile later retires completed U-Boot allocations; live
     // FDT reservations, secure carveouts and the display remain protected.
@@ -267,6 +271,8 @@ static uint64_t native_gate(void)
     const uint32_t addresses[] = {0x50041000, 0x50041004, 0x50041100, 0x50042000, 0x50042004, 0x500420fc};
     for (unsigned i = 0; i < 6; ++i)
         probe_record[L_GICD_CTLR + i] = *(const volatile uint32_t *)(uintptr_t)addresses[i];
+#else
+    (void)board;
 #endif
     return 0;
 }
@@ -280,7 +286,14 @@ void loader_after_transition(void)
     if (r[R_EL1_EL] != 4 || (r[R_EL1_SCTLR] & 0x1005) || (r[R_EL1_DAIF] & 0x3c0) != 0x3c0 ||
         r[R_EL1_CNTFRQ] != 19200000 || r[R_HCR_AFTER] != 0x80000000 || r[R_CNTHCTL_AFTER] != 3 || r[R_CNTVOFF_AFTER])
         refuse(0x301);
+    // The board from the registers, not from what U-Boot said: the script's check does not cover a loader that runs without it,
+    // and nothing below (the BPMP, the carveouts) may run on a console that is not a booting row of the board table.
+    const struct switch_board *const board = switch_board_detect(*(const volatile uint32_t *)(uintptr_t)0x70000804,
+                                                                   *(const volatile uint32_t *)(uintptr_t)0x7000f9d8);
+    if (!board->boot)
+        refuse(0x306);
 #if LOAD_EMC_KHZ
+    if (switch_board_has_feature(board, SWITCH_FEATURE_EMC))
     {
         /* DRAM from hekate's 204 MHz to the kernel's EMC rate (emc.h) first: every check below reads RAM
          * uncached, one access at a time, and runs that much faster. It needs none of them (it touches only BPMP
@@ -354,7 +367,7 @@ void loader_after_transition(void)
     if (failure)
         refuse(failure);
 #endif
-    failure = native_gate();
+    failure = native_gate(board);
     if (failure)
         refuse(failure);
 #if LOAD_STAMPS_ADT_OFFSET
@@ -452,6 +465,15 @@ void loader_after_transition(void)
             (const volatile char *)(uintptr_t)SWITCH_BOOT_ARGS_PA, SWITCH_BOOT_ARGS_BYTES, &verbose);
         if (result)
             refuse(0x760 + (uint64_t)result);
+        // After bootargs.txt: XNU keeps the last of two equal boot-args, so the card's file cannot name another board.
+        char word[SWITCH_BOARD_WORD_BYTES];
+        int unused = 0;
+        const size_t word_bytes = switch_board_word(word, sizeof(word), board);
+        if (!word_bytes)
+            refuse(0x307);
+        const int added = switch_boot_args_append((volatile char *)(uintptr_t)(LOAD_ARGS + SWITCH_BOOT_ARGS_COMMAND_LINE), word, (uint32_t)word_bytes, &unused);
+        if (added)
+            refuse(0x760 + (uint64_t)added);
 #if SWITCH_VERBOSE_CONSOLE
         if (verbose)
             *(volatile uint64_t *)(uintptr_t)(LOAD_ARGS + SWITCH_BOOT_ARGS_VIDEO_DISPLAY) = 0;

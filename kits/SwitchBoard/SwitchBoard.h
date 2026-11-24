@@ -51,11 +51,11 @@ struct switch_board {
 
 // A board that boots in the minimal mode lists no features: every capability is switched on one reviewed bit at a time.
 #define SWITCH_BOARD_ROW(id, name, t210b01, sku, boot, features) {name, t210b01, sku, boot, features},
-__attribute__((unused)) static const struct switch_board switch_boards[] = {SWITCH_BOARDS(SWITCH_BOARD_ROW)};
+static const struct switch_board switch_boards[] = {SWITCH_BOARDS(SWITCH_BOARD_ROW)};
 #undef SWITCH_BOARD_ROW
 
 // What is not in the table: boots nowhere and has no features.
-__attribute__((unused)) static const struct switch_board switch_board_unknown = {"unknown", 0xff, 0xff, 0, 0};
+static const struct switch_board switch_board_unknown = {"unknown", 0xff, 0xff, 0, 0};
 
 static inline int switch_board_streq(const char *a, const char *b)
 {
@@ -104,6 +104,29 @@ static inline const struct switch_board *switch_board_by_name(const char *name)
         if (switch_board_streq(switch_boards[i].name, name))
             return &switch_boards[i];
     return &switch_board_unknown;
+}
+
+#define SWITCH_BOARD_ARG        "switch-board"
+#define SWITCH_BOARD_NAME_BYTES 16
+#define SWITCH_BOARD_WORD_BYTES (sizeof(SWITCH_BOARD_ARG) + SWITCH_BOARD_NAME_BYTES)
+
+// "switch-board=<name>" and its zero in out, which the loader appends to the command line after bootargs.txt. Returns the
+// bytes written, or 0 when the name does not fit.
+static inline size_t switch_board_word(char *out, size_t capacity, const struct switch_board *board)
+{
+    size_t at = 0;
+    for (const char *p = SWITCH_BOARD_ARG "="; *p; p++, at++) {
+        if (at + 1 >= capacity)
+            return 0;
+        out[at] = *p;
+    }
+    for (const char *p = board->name; *p; p++, at++) {
+        if (at + 1 >= capacity || at >= SWITCH_BOARD_WORD_BYTES - 1)
+            return 0;
+        out[at] = *p;
+    }
+    out[at++] = 0;
+    return at;
 }
 
 static inline int switch_board_has_feature(const struct switch_board *board, enum switch_feature feature)
