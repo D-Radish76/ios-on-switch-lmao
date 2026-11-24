@@ -5,7 +5,8 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 
 ## Confirmed
 
-- hekate runs `bpmpfw.bin` on Erista too (`l4t.c`), so BL31 starts on both chips.
+- hekate's L4T launcher starts BL31 on both chips (`l4t.c`). That says nothing about whether the pinned `bl31.bin` supports Erista; see "BL31 on Erista".
+- U-Boot sets `t210b01` and `sku` itself (disassembly of the pinned `bl33.bin`): `t210b01` is 1 when HIDREV major (0x70000804 bits 7:4) is 2, else 0. `sku` is 0 when the major is not 2. On T210B01 it follows FUSE 0x7000F9D8 bits 19:16: 2 gives 2, 4 gives 3, anything else 1. An Erista should therefore report `t210b01=0`, `sku=0`. Not run on hardware.
 - Display power-up and power-down in `TegraDisplayPower.cpp` now branch on HIDREV major (1 = T210) using hekate's T210 tables (`TegraDisplayErista.h`). The 43-entry JDI panel table matches hekate `di.inl` entry for entry.
 - The file passes `g++ -std=c++20 -fsyntax-only -Wall -Wextra` against stub headers. It is 613 lines, over the 500-line guideline.
 - Nothing reviewed writes fuses or touches eMMC (U-Boot `boot_targets=mmc1`). The loader's `emc.c` only reads the MAX77620 SD0 rail. The PMIC writes in `SwitchThermal.cpp` and `TegraGM20B/platform.c` are read, verify, write, read back. DFLL returns ENODEV unless it finds a T210B01 A01.
@@ -19,7 +20,7 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 - This project's BL31 (switchroot `bl31.bin`) on Erista. hekate starting `bpmpfw.bin` on both chips does not show that BL31 and U-Boot's PSCI/SMC use are compatible. Needs a check of the BL31 build target and its T210 support.
 - Boot gate design: accept a board only when `t210b01`, `sku` and the DTB model agree with a table row (OLED 1/3, Erista expected 0/0 from the Console info photo). A row without a verified DTB stays refused.
 - hekate leaves its framebuffer lit at handoff, so the first screen needs no new display code. This comes from hekate's L4T launcher and ios-switch's notes (framebuffer 0xF5A00000, 720x1280). The U-Boot script checks the same address and format on the OLED.
-- Erista values of `t210b01` and `sku` in U-Boot (expected 0 and 0). Needs a hekate "Console info" photo.
+- The values `t210b01=0` and `sku=0` on a real Erista. The Console info photo only checks the hardware type.
 - The Erista sku-0 DTB. Source: `nx-plat.dtimg` entry 0, or `/sys/firmware/fdt` under Switchroot Linux.
 - Whether the MC carveout values in `native_gate` hold on Erista.
 - BPMP ping and EMC DVFS table match on Erista (`emc.c` only raises EMC when both match).
@@ -30,9 +31,9 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 
 ## BL31 on Erista
 
-What was read: `bazel/pinned/firmware/bl31.bin` (45,655 bytes, stripped, SHA256 `dea0ecd4...e2b4`, the same hash ios-switch reports), hekate `bootloader/l4t/l4t.c`, and upstream TF-A `plat/nvidia/tegra/soc/t210` through a mirror. The repo has no BL31 source, so switchroot's fork was not read. Upstream already branches on `tegra_chipid_is_t210_b01()`, so the pinned binary is probably built for both chips. That is a guess until its build config or a hardware result confirms it.
+What was read: `bazel/pinned/firmware/bl31.bin` (45,655 bytes, stripped, SHA256 `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4`), hekate `bootloader/l4t/l4t.c`, and upstream TF-A `plat/nvidia/tegra/soc/t210` through a mirror. The repo has no BL31 source. The source is `CTCaer/switch-l4t-atf` (named in `SwitchSuspend.cpp`); its branch `switch-v5-atf2.6` `plat/nvidia/tegra/soc/t210/plat_setup.c` asserts `tegra_chipid_is_t210()` and branches on `tegra_chipid_is_t210_b01()`, so the source covers both chips. Which commit built the pinned binary is not known, and the binary was not disassembled. ios-switch records only the abbreviated hash `dea0ecd4...e2b4` for its own `bl31.bin` (the card's `switchroot/ubuntu-noble/bl31.bin`, Noble 5.1.2), and this repo's pin comment names the same Noble 5.1.2 entry. Matching ends make an identical file very likely, not proven.
 
-T210B01 specific handling in the BL31 path (upstream, switchroot unverified):
+T210B01 specific handling in the BL31 path (upstream TF-A, and `plat_setup.c` of the switchroot branch above):
 
 - SE2 is mapped only on T210B01. `tegra_se_save_tzram` and `tegra_se_resume` run only there.
 - On T210 the PMC security bit is set again in `plat_late_platform_setup` and `tegra_pmc_resume` runs on cluster idle exit.
@@ -58,8 +59,7 @@ Where this repo assumes T210B01 (all fail safe or are untested on Erista):
 
 Open checks before a boot test:
 
-- BL31 build config and its T210 support, from switchroot's source or a boot log.
-- Whether U-Boot's `t210b01` and `sku` come from its own board code (hekate's `l4t.c` does not set them).
+- The commit and build options of the pinned `bl31.bin`. Hash the card's `switchroot/ubuntu-*/bl31.bin` on the Mac (`shasum -a 256`): the full hash must equal ours.
 - The Erista SD0 voltage and the VDD_CORE needed at 800 MHz.
 
 ## ios-switch (urielc918)
