@@ -99,27 +99,56 @@ and a short run.
 Not part of the mode and not decided: display. hekate's framebuffer is on screen at handoff; the new LCD power-up code only
 matters after the first sleep.
 
+## Done without the console
+
+Committed on `erista-port`, not built with Bazel, not run on hardware.
+
+1. Board table: `kits/SwitchBoard/SwitchBoard.h`. The boot script's check is generated from it, and the loader reads
+   HIDREV and FUSE_RESERVED_ODM4 with the MMU off and refuses a row with `boot 0` (0x306). The Erista row has `boot 0` and
+   no features.
+2. Minimal mode: the loader appends `switch-board=<name>` after `bootargs.txt`. XNU's boot-arg parser keeps scanning, so the
+   last one wins and the card's file cannot override it. `switch_board_has(feature)` gates every board driver in
+   `SwitchRootBoot.c` and the clock, EMC and thermal calls in `switch_pmic_start`.
+3. Model strings: the OLED row holds `Nintendo Switch (OLED model)` and `nintendo,aula`. The Erista row holds `NULL`.
+
+Choices to confirm:
+
+- A kernel with no `switch-board` word is treated as the OLED, so the emulator checks and every kernel not started by this
+  loader behave as before. An unknown name gets no features. The alternative, no word meaning no features, would change the
+  OLED path.
+- `cpu.c` in both XNU trees still compares against `nintendo,aula`. It is an allowlist, so an Erista device tree fails it and
+  the OLED-only cache-retaining idle stays off.
+
+Side effects checked for the mode: power-off is a MAX77620 soft reset and the RTC is read only. Panic records and logs go to
+the SD card, not the eMMC. `switch_pmic_mark_start` writes the MAX77620 RTC alarm in DEVELOPMENT builds only.
+
+Still open before the Erista row may be enabled:
+
+- SE2 (`tegra_se_start`) is T210B01 only. It is off by the empty feature mask, but the Erista needs a review of what it does
+  when the engine is absent.
+- Each feature bit needs its own review for the HAC-001 before it is set.
+
 ## Order of work
 
-Without the console, in this order:
+Without the console:
 
-1. Board table in the script and the loader, Erista row disabled, with host tests for every accepted and refused pair.
-2. Profile id through boot-args and one `switch_board_has(feature)` helper for the services above.
-3. Model strings from the board row instead of constants.
-4. Pin the Erista DTB once extracted; write the `native_gate` values from a measurement, not from the OLED.
-5. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
+1. Pin the Erista DTB once extracted; write the `native_gate` values from a measurement, not from the OLED.
+2. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
 
 Needs the console, held back:
 
 - Console info photo, `t210b01=0`/`sku=0` check, `native_gate` MC values, Erista SD0 and VDD_CORE, touch chip, PD controller,
-  charger limits for the HAC-001 battery, and every boot test.
+  charger limits for the HAC-001 battery, the Erista model strings, and every boot test.
 
 ## Checks run without Bazel or hardware
 
 Bazel cannot run here: `MODULE.bazel` registers a macOS arm64 execution platform only. The Mac build is still to do.
 
 - `bazel/pinned/SHA256SUMS`: every pinned file matches.
-- `tools/package/test/native_xnu_layout_test.py`: 22 tests pass. `bl33_stage_test.py` needs `lz4`, and the other Python tests need
-  Bazel runfiles. The C++ host tests need GoogleTest. None of those ran.
+- `tools/package/test/native_xnu_layout_test.py`: 22 tests pass. `boot_script_board_test.py`: 9 pass. `bl33_stage_test.py`
+  needs `lz4`, and the other Python tests need Bazel runfiles.
+- Board kit (13 tests) and loader boot-args (3 tests): run against a small GoogleTest stand-in, because GoogleTest and `lz4`
+  cannot be installed here (no package network). The real GoogleTest run is still to do on the Mac.
+- `SwitchRootBoot.c` and `SwitchBoard.h`: clang `-Wall -Wextra -Werror` syntax checks with shim headers.
 - `TegraDisplayPower.cpp`: `g++ -std=c++20 -fsyntax-only -Wall -Wextra` with stub headers, no warnings.
 - JDI panel table: 43 of 43 entries equal hekate `di.inl`.
