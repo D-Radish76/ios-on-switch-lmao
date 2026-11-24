@@ -1,0 +1,24 @@
+# The board table, the loader's and the kernel's view of it (header-only).
+#
+#   bazel test //kits/SwitchBoard/test:all
+load("//bazel/lint:defs.bzl", "lint_files")
+load("//kernel/rules:kernel.bzl", "kernel_headers")
+
+package(default_visibility = ["//visibility:public"])
+
+lint_files()
+
+exports_files(glob(
+    ["**"],
+    exclude = ["BUILD.bazel"],
+))
+
+filegroup(
+    name = "all_files",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD.bazel"],
+    ),
+)
+
+kernel_headers()

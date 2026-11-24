@@ -132,6 +132,7 @@ filegroup(
         "//kits/AirNir:all_files",
         "//kits/ArmSmmu4K:all_files",
         "//kits/NativePrelink:all_files",
+        "//kits/SwitchBoard:all_files",
         "//kits/SwitchBootArgs:all_files",
         "//kits/SwitchCAR:all_files",
         "//kits/SwitchCRC:all_files",

@@ -1,0 +1,23 @@
+# kits/SwitchBoard on the host.
+#
+#   bazel test //kits/SwitchBoard/test:all
+load("//bazel/lint:defs.bzl", "lint_files")
+load("//bazel/testing:defs.bzl", "host_shims", "host_test")
+
+lint_files()
+
+host_shims(
+    name = "kernel",
+    headers = ["pexpert/pexpert.h"],
+    stubs = "switch_board_stubs.h",
+)
+
+host_test(
+    name = "switch_board_test",
+    srcs = [
+        "switch_board_test.cpp",
+        "//kits/SwitchBoard:SwitchBoard.h",
+        "//kits/SwitchBoard:SwitchBoardKernel.h",
+    ],
+    deps = [":kernel"],
+)
