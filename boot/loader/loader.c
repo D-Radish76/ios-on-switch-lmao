@@ -532,9 +532,11 @@ void loader_after_transition(void)
     display_text(16, 200, "COPY COMPLETE", DISPLAY_GREEN);
 #endif
 #if LOAD_SEED_ADT_OFFSET
-    /* /chosen/random-seed from SE2's DRBG (seed.h), into the copied ADT; never refuses. 2 ms per wait. */
-    (void)switch_seed_mix(LOAD_ADT_PA + LOAD_SEED_ADT_OFFSET, LOAD_ADT_PA + LOAD_SEED_SOURCE_ADT_OFFSET, ticks,
-                          r[R_EL1_CNTFRQ] / 500u);
+    /* /chosen/random-seed from SE2's DRBG (seed.h), into the copied ADT; never refuses. 2 ms per wait. A board without
+     * SE2 keeps the pinned seed, as when the engine does not answer. */
+    if (switch_board_has_feature(board, SWITCH_FEATURE_SE2))
+        (void)switch_seed_mix(LOAD_ADT_PA + LOAD_SEED_ADT_OFFSET, LOAD_ADT_PA + LOAD_SEED_SOURCE_ADT_OFFSET, ticks,
+                              r[R_EL1_CNTFRQ] / 500u);
 #endif
 #if LOAD_STAMPS_ADT_OFFSET
     stamps_commit();

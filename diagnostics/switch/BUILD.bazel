@@ -48,6 +48,7 @@ _C_COPTS = [
 _HDR_DEPS = [
     "drivers/SwitchSuspend",
     "kits/SwitchBoard",
+    "kits/SwitchCAR",
     "kits/SwitchDMA",
     "kits/SwitchMMIO",
     "kits/SwitchTime",

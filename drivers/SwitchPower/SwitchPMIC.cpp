@@ -781,7 +781,8 @@ extern "C" int switch_pmic_start(void)
         const enum switch_thermal_sensor recorded = switch_pmic_thermal_take(&recordMillic);
         switch_panic_save_thermal(recorded, recordMillic);
 #if DEVELOPMENT || DEBUG
-        switch_pmic_mark_start();
+        if (switch_board_has(SWITCH_FEATURE_RTC_MARK))
+            switch_pmic_mark_start();
 #endif
         gPmc = switch_mmio_map(kPmcPA, 0x1000);
         PE_halt_restart = haltRestart;

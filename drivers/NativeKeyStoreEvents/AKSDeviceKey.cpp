@@ -21,6 +21,7 @@
 #include <libkern/crypto/aes.h>
 #include <libkern/crypto/sha2.h>
 #include "AKSKeyWrap.h"
+#include "../../kits/SwitchBoard/SwitchBoardKernel.h"
 #include "../../kits/SwitchCAR/SwitchCAR.h"
 #include "../../kits/SwitchMMIO/SwitchMMIO.h"
 
@@ -151,7 +152,8 @@ extern "C" void native_aks_device_key_start(void)
     gDeviceKeyReady = true;
 #if DEVELOPMENT || DEBUG
     // Read-only: whether the Security Engine's per-console slot is usable from here (TegraSecurityEngine.cpp).
-    native_aks_se_probe();
+    if (switch_board_has(SWITCH_FEATURE_SE2))
+        native_aks_se_probe();
 #endif
 }
 
