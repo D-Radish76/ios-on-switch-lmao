@@ -55,11 +55,11 @@ TEST(TegraSMMUSource, VicAttachesThroughTheSharedDomain)
 TEST(TegraSMMUSource, TheMcErrorInterruptStartsAheadOfItsClients)
 {
     const std::string boot = SourceText("../../../diagnostics/switch/SwitchRootBoot.c");
-    const size_t mc = boot.find("if (tegra_mc_errors_start())");
+    const size_t mc = boot.find("tegra_mc_errors_start,");
     ASSERT_NE(mc, std::string::npos);
     for (const char *client :
-         {"if (switch_usb_start())", "if (tegra_gm20b_probe())", "if (tegra_nvdec_probe())", "if (tegra_nvenc_probe())",
-          "if (tegra_vic_probe())", "if (tegra_nvjpg_probe())", "if (switch_wlan_publish())"}) {
+         {"switch_usb_start,", "tegra_gm20b_probe,", "tegra_nvdec_probe,", "tegra_nvenc_probe,", "tegra_vic_probe,",
+          "tegra_nvjpg_probe,", "switch_wlan_publish,"}) {
         const size_t at = boot.find(client);
         ASSERT_NE(at, std::string::npos) << client;
         EXPECT_LT(mc, at) << client;
