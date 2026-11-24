@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from boot_script import board_gate, boards, boot_script
+from native_oled_adt import COMPATIBLE, MODEL
 
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
 TEMPLATE = Path('boot/u-boot-script.txt').read_text()
@@ -22,8 +23,13 @@ fi"""
 
 
 def table(*rows):
-    body = ' \\\n'.join(f'    X({name.upper()}, "{name}", {t}, {sku}, {boot}, 0)' for name, t, sku, boot in rows)
+    body = ' \\\n'.join(f'    X({name.upper()}, "{name}", {t}, {sku}, {boot}, 0, NULL, NULL)' for name, t, sku, boot in rows)
     return f'#define SWITCH_BOARDS(X) \\\n{body}\n'
+
+
+def identity(name):
+    row = re.search(rf'X\(\w+, "{name}", [^\n]*?, ("[^"]*"|NULL), ("[^"]*"|NULL)\)', HEADER)
+    return tuple(None if v == 'NULL' else v.strip('"') for v in row.groups())
 
 
 class BoardGateTest(unittest.TestCase):
@@ -63,6 +69,16 @@ class BoardGateTest(unittest.TestCase):
     def test_every_clause_names_a_board_of_the_table(self):
         names = {name for name, *_ in boards(HEADER)}
         self.assertEqual(set(re.findall(r'^# (\w+)$', board_gate(HEADER), re.M)), {n for n, *_, boot in boards(HEADER) if boot} & names)
+
+
+class BoardIdentityTest(unittest.TestCase):
+    def test_the_oled_row_is_what_the_native_tree_says(self):
+        model, compatible = identity('oled')
+        self.assertEqual(model, MODEL)
+        self.assertIn(compatible, COMPATIBLE)
+
+    def test_the_erista_row_has_no_guessed_strings(self):
+        self.assertEqual(identity('erista'), (None, None))
 
 
 if __name__ == '__main__':

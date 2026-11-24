@@ -36,10 +36,12 @@ enum switch_feature {
 
 #define SWITCH_FEATURES_ALL 0x3fffu
 
-// X(id, "name", t210b01, sku, boot, features). boot_script.py parses these lines.
-#define SWITCH_BOARDS(X)                                  \
-    X(OLED, "oled", 1, 3, 1, SWITCH_FEATURES_ALL)         \
-    X(ERISTA, "erista", 0, 0, 0, 0)
+// X(id, "name", t210b01, sku, boot, features, model, compatible). boot_script.py parses the first five fields.
+// model and compatible are what the board's device tree says about itself; NULL is not known yet. Nothing fills in a
+// guess for the Erista: it stays NULL until the string is read off the console's own DTB.
+#define SWITCH_BOARDS(X)                                                                               \
+    X(OLED, "oled", 1, 3, 1, SWITCH_FEATURES_ALL, "Nintendo Switch (OLED model)", "nintendo,aula")    \
+    X(ERISTA, "erista", 0, 0, 0, 0, NULL, NULL)
 
 struct switch_board {
     const char *name;
@@ -47,15 +49,18 @@ struct switch_board {
     uint8_t sku;
     uint8_t boot;
     uint32_t features;
+    const char *model;
+    const char *compatible;
 };
 
 // A board that boots in the minimal mode lists no features: every capability is switched on one reviewed bit at a time.
-#define SWITCH_BOARD_ROW(id, name, t210b01, sku, boot, features) {name, t210b01, sku, boot, features},
+#define SWITCH_BOARD_ROW(id, name, t210b01, sku, boot, features, model, compatible) \
+    {name, t210b01, sku, boot, features, model, compatible},
 static const struct switch_board switch_boards[] = {SWITCH_BOARDS(SWITCH_BOARD_ROW)};
 #undef SWITCH_BOARD_ROW
 
 // What is not in the table: boots nowhere and has no features.
-static const struct switch_board switch_board_unknown = {"unknown", 0xff, 0xff, 0, 0};
+static const struct switch_board switch_board_unknown = {"unknown", 0xff, 0xff, 0, 0, NULL, NULL};
 
 static inline int switch_board_streq(const char *a, const char *b)
 {

@@ -129,6 +129,16 @@ TEST(SwitchBoard, NoWordIsAKernelNotStartedByTheLoader)
     EXPECT_STREQ(switch_board_current()->name, "oled");
 }
 
+TEST(SwitchBoard, TheOledNamesItselfAndNoOtherBoardGuesses)
+{
+    const switch_board *oled = switch_board_by_name("oled");
+    EXPECT_STREQ(oled->model, "Nintendo Switch (OLED model)");
+    EXPECT_STREQ(oled->compatible, "nintendo,aula");
+    EXPECT_EQ(switch_board_by_name("erista")->model, nullptr);
+    EXPECT_EQ(switch_board_by_name("erista")->compatible, nullptr);
+    EXPECT_EQ(switch_board_by_name("nope")->model, nullptr);
+}
+
 TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)
 {
     EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_SE2 << 1) - 1);
@@ -136,7 +146,7 @@ TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)
 
 TEST(SwitchBoard, AFeatureNeedsEveryBitAsked)
 {
-    const switch_board partial = {"partial", 9, 9, 0, SWITCH_FEATURE_GPU};
+    const switch_board partial = {"partial", 9, 9, 0, SWITCH_FEATURE_GPU, nullptr, nullptr};
     EXPECT_TRUE(switch_board_has_feature(&partial, SWITCH_FEATURE_GPU));
     EXPECT_FALSE(switch_board_has_feature(&partial, static_cast<switch_feature>(SWITCH_FEATURE_GPU | SWITCH_FEATURE_VIDEO)));
 }

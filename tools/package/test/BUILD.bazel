@@ -48,7 +48,10 @@ py_test(
         "//boot:u-boot-script.txt",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
-    deps = ["//tools/package:boot_script"],
+    deps = [
+        "//tools/package:boot_script",
+        "//tools/package:native_oled_adt",
+    ],
 )
 
 # adt_edit.py over a minimal Switch tree: the selected IPSW kind's iPad's answers on /arm-io, the root and /product
