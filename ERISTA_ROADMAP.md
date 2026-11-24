@@ -171,14 +171,14 @@ These run for the Erista too, once its row is enabled. None of them is gated, an
 
 - SD root: `NativeSwitchBlock` writes MAX77620 LDO2_CFG (0x27) on I2C5 0x3c to set the SDMMC1 supply (3.3 V, 1.8 V for UHS),
   and drives SDMMC1 and PLLP. The same PMIC family and the card wiring are assumed.
-- `SwitchPMIC`: reads ONOFFCNFG1, publishes the RTC (read only), installs the MAX77620 soft reset as the power-off, reads
-  the thermal record, maps PMC.
-- `NativeSwitchWatchdog` and `SwitchButtons`: write MAX77620 interrupt masks (ONOFF_IRQ_MASK, IRQTOP mask, low battery
-  threshold interrupt enable) and read the power and volume inputs.
-- `TegraGPIO`: CAR clock and reset for the GPIO block, pinmux reads.
+- `SwitchPMIC`: reads ONOFFCNFG1, publishes the RTC (read only), installs the MAX77620 soft reset as the power-off,
+  maps PMC. The thermal record read is now behind THERMAL.
+- `NativeSwitchWatchdog`: no hardware writes (WDT4 in debug kernels only).
+- `TegraGPIO` eager start and `SwitchButtons` are behind BUTTONS (bit 16) and off for the Erista. GPIO still starts when a
+  driver asks for a pin interrupt or output.
 - MC error interrupt: SoC internal. The NVRAM controller was not read for this list.
 
-The next gating candidate is the low battery threshold write, which also arms a PMIC interrupt.
+The line by line audit is in `ERISTA_RESEARCH.md`.
 
 Each feature bit needs its own review for the HAC-001 before it is set.
 

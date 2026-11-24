@@ -17,13 +17,27 @@ Confirmed
   (`kPowerControlInl`), then SET_DISPLAY_ON.
 - Suspend and resume refuse any panel but the OLED's: `NativeLegacyDisplay.cpp:5344` (`sc7Display`) panics otherwise.
 
+Gaps found (backlight, confirmed by reading both sides)
+- hekate lights an LCD panel with three steps (`bdk/display/di.c`): `display_backlight_pwm_init` (line 603) enables the
+  PWM clock, writes PWM0's CSR enable bit and switches pin LCD_BL_PWM to function 1 (PWM0); `display_backlight(true)`
+  (line 620) drives the backlight GPIO high; `display_backlight_brightness` (line 671) steps PWM0's CSR duty (bits 23:16)
+  for an LCD panel, and uses DCS 0x51 only for the OLED.
+- Ours has the WLED GPIOs (`kWledPwm` V0, `kWledEnable` V1, `TegraDisplayPower.cpp:72`) driven low then enable high in
+  power up, and the pin put back to PWM0 with pull down in power down (`:504`). It has no PWM0 programming at all: the
+  only PWM code is the fan's PWM1 in `SwitchThermal.cpp:566-601`, which is off on the Erista. Nothing sets the duty,
+  so an LCD backlight would stay at whatever the bootloader left.
+- `drivers/SwitchBrightness/TegraPanel.cpp` is DCS only and `sc7Display` panics for any other panel. The brightness
+  API (0..2047 candela) has no LCD back end.
+- Needed to close it: a PWM0 back end behind `tegra_panel_set_brightness` (clock, CSR duty, pin function), the
+  backlight enable on resume, and the `sc7Display` gate widened for the INL panel's suspend and resume.
+
 Unknown
 - Whether this code lights a real P062CCA-AZ1. It has never run on one.
-- Backlight: `drivers/SwitchBrightness/TegraPanel.h` has no LCD path in what I read. The LCD backlight (PWM pin
-  `kPinmuxLcdBlPwm`, the PMIC/backlight enable) is unreviewed.
+- Whether the first boot re-initializes the display or adopts what hekate and U-Boot left lit. If it adopts, the
+  backlight gap does not matter for a first boot.
 - Touch and the panel's brightness range for the ADT are not looked at.
 
-Held: lifting the `sc7Display` gate and any backlight code need a console.
+Held: writing the PWM back end and widening `sc7Display` are small but untestable without the panel, so they wait.
 
 ## 2. generate_adt: what is still OLED only
 
@@ -57,46 +71,93 @@ Unknown, needs a console
 
 Held: ODM and SD tuning on device.
 
-## 4. Diagnostic mode for the MC carveouts
+## 4. Read only diagnostic mode (design, not built)
 
-Goal: read the 25 MC registers that `boot/loader/loader.c` `native_gate` compares (0x70019050 to 0x70019d54) at
-loader time, without opening the normal gate.
+Goal: read the 25 MC registers `boot/loader/loader.c` `native_gate` compares (0x70019050 to 0x70019d54) as the loader
+would see them, without touching the normal gate or the normal boot path.
 
 Confirmed
-- `native_gate` refuses every non-OLED board and refuses on any register mismatch. `tools/mc_carveout/dump.sh` reads
-  the same registers under Switchroot Linux with BusyBox `devmem`, 32 bit reads only. Linux time values are a
-  reference, not loader time values.
+- The pinned `bazel/pinned/firmware/bl33.bin` (U-Boot) contains the `md` help text ("memory display") and "reset", so
+  `md.l` exists. The normal script uses `itest.l`, `setexpr.l`, `mw.b`, `cp.b`, `fatsize`, `load`, `fdt`, `echoe`,
+  `sleep` and `setenv stdout vidconsole` (`boot/u-boot-script.txt`), so those also exist.
+- The script is a template (`boot/u-boot-script.txt`) filled by `tools/package/boot_script.py` and sourced from a slot
+  in bl33.bin. A second template makes a second bl33.bin without changing the first.
+- The loader itself reads these 25 registers from the same non-secure world before it decides (`native_gate`), so a
+  non-secure read is permitted on an OLED at that point. `dump.sh` reads them the same way under Linux.
+- The normal script refuses a board whose row has `boot 0` (`board_gate`), which is why the Erista cannot run it.
 
-Options, in the order I recommend
-1. A U-Boot script variant that runs `md.l` over the register list and stops. A test would check the script contains
-   only a whitelist of commands (`md.l`, `echo`, `reset`/`poweroff`) and no `mw`, `cp`, `bootm`, `booti`, `go`, `source`.
-   Run it on an OLED first and compare to the `native_gate` table: that proves the method before it is trusted on an
-   Erista. The normal script and gate stay untouched.
-2. A separate loader build with a dump only entry. Larger, and it reuses code that sits on the boot path.
-3. A hekate payload. Different codebase, nothing shared with ours.
+Plan
+1. `boot/u-boot-diag-script.txt`: keep the normal script's console check (`stdout vidconsole`, so values appear on the
+   LCD without a serial cable). Take the board from U-Boot's own `t210b01` and `sku` and refuse anything but a table
+   row, as now. Then one `md.l <addr> 1` per register, in `native_gate`'s order, and stop in a loop. No `mw`, `cp`,
+   `load`, `fatwrite`, `source`, `bootm`, `booti`, `go`.
+2. `boot_script.py` gets a `diag` mode that fills this template, with no `@LOADER@`, `@EXPORTER@` or kernel slots.
+3. A test that parses the produced script and fails if any command is not on a whitelist (`md.l`, `echo`, `echoe`,
+   `setenv`, `test`, `if`, `else`, `fi`, `while`, `sleep`, `base`, `true`), and that its address list equals
+   `native_gate`'s table (read from `loader.c`).
+4. Run it on the OLED first. It must print `native_gate`'s expected values. Only then run it on an Erista.
+5. Reaching it: a separate hekate entry that boots the diagnostic bl33, so the normal entry and `boot 0` do not change.
 
-Unknown: whether U-Boot's `md.l` at those addresses is allowed on a console with the MC locked down. Option 1 answers
-that on the first run, and the dump must stop on the first refusal as `dump.sh` does.
+Unknown
+- Whether U-Boot's `md.l` survives a locked register. Step 4 shows it on the OLED, and the script stops at
+  the first refusal as `dump.sh` does.
+- Whether the Erista has the same register layout as `native_gate`'s table. The values are what we want to learn.
+- Whether hekate hands U-Boot a lit screen on the Erista with the LCD console. The script's own `CONSOLE FAILED`
+  loop covers the failure.
 
 ## 5. Unconditional hardware writes in the minimal mode
 
-The board thread (`diagnostics/switch/SwitchRootBoot.c`) starts only the features the board table allows, plus four
-that always run: mc_errors, watchdog, gpio, buttons. Writers I read:
+After this change the board thread starts only what the board's features allow, except mc_errors and the watchdog.
+Line by line:
 
-| Writer | Registers | Gated? | Erista risk |
+| Writer | What it writes | State now | Erista risk |
 | --- | --- | --- | --- |
-| `SwitchPMIC.cpp` start | PMIC reads, `moduleClockOn` (WIRELESS gated) | partly | none known |
-| `switch_pmic_thermal_take` (`SwitchPowerMark.cpp:282`, called at `SwitchPMIC.cpp:781`) | MAX77620 RTC_UPDATE0, and ALARM2 if a record is found | no, runs on every board that answers on I2C5 | low: same PMIC family, but it is a PMIC write the table does not control |
-| `switch_pmic_mark_start` | RTC alarm | yes: DEVELOPMENT/DEBUG and RTC_MARK | off on Erista |
-| `tegra_i2c_init` bringUp (`TegraI2C.cpp:538`) | CAR clock enable, pad config, pinmux for I2C3/4, bus config. I2C5 already clocked by U-Boot is adopted without a reset | no | I2C5 path is read only on adoption except CNFG bits; other buses are only touched when something opens them |
-| mc_errors, watchdog, gpio, buttons | MC error registers (reads and interrupt enables), watchdog, GPIO config | no | not audited line by line; GPIO/button pin maps are Switch wide in what I read |
+| mc_errors (`TegraMCErrors.cpp:158`, `TegraMCErrors.h:32-38`) | MC INT_STATUS write one to clear of its error bits, then INT_MASK for 8 error bits | always on | low: MC is the same block, error bits only. Kept: it is the way to see SMMU faults on a first boot |
+| watchdog (`NativeSwitchWatchdog.cpp:16`) | no hardware: enable, disable and pet touch nothing; WDT4 only in debug kernels | always on | none. Kept: launchd's exec waits for `switch_watchdog_ready` |
+| GPIO eager start (`TegraGPIO.cpp:244-248`) | INT_ENB 0 and INT_CLR 0xff on every port | now BUTTONS | removed from minimal. GPIO still starts when a driver asks for a pin interrupt or output (`:595`, `:659`) |
+| SwitchButtons (`SwitchButtons.cpp:198-232`) | PMC_CNTRL INTR_POLARITY (bit 17), MAX77620 ONOFF_IRQ_MASK, IRQ_TOP_MASK, INT_EN_LBT, GPIO debounce on the volume pins | now BUTTONS | removed from minimal. It also panics if bit 17 does not stick, which is unverified on a T210 |
+| `switch_pmic_thermal_take` | MAX77620 RTC_UPDATE0, ALARM2 | now THERMAL | removed from minimal |
+| `switch_pmic_mark_start` | RTC alarm | DEVELOPMENT and RTC_MARK | off |
+| `moduleClockOn` | MAX77620 CNFG1_32K, AME_GPIO | WIRELESS | off |
+| RTC publish (`SwitchPMIC.cpp:773`, mode 1) | none: mode 1 never writes the time back | always on | none |
+| PMIC halt and restart hooks | PMIC and PMC writes only when the user powers off or restarts | always on | needed for a clean power off |
+| I2C5 adopt (`TegraI2C.cpp:543-555`) | CNFG bits only if they differ from what U-Boot left | always on | low |
+| SD attach | CAR clock and reset, SDMMC1 registers, pad PMC, pinmux Schmitt (below) | always on | see SD below |
+| display | CAR, DSI, DC, MIPI_CAL, PMC pads, LCD GPIOs (section 1) | always on | needed to see anything |
 
-Findings
-- Confirmed: `switch_pmic_thermal_take` is not behind `SWITCH_FEATURE_THERMAL`. It is a small RTC write on every board.
-- Inferred: harmless on an Erista, because the Erista also uses a MAX77620 at the same address. Not verified.
-- Not done: gating it. That is a behaviour change on the OLED path, so it needs your decision.
-- Not audited: the SD attach cold path writes, and the always on drivers line by line.
+SD cold path (`NativeSwitchBlock.cpp`)
+- Confirmed: setup talks to the MAX77620 LDO2 (`kPmicLdo2` 0x27): `switchTo1V8` writes 1.8 V after CMD11 (`:3541`),
+  and the SC7 paths write off and 3.3 V (`:3896-3937`). It also toggles card power GPIO PE4, PMC IO power and the
+  SDMMC1 pad detect bits, and sets Schmitt triggers in APB_MISC pinmux.
+- Confirmed: `switch-no-sd-uhs` keeps the card at the 3.3 V mode U-Boot left (header comment, line 9). That leaves no
+  voltage write on the first boot, only the controller setup.
+- Inferred: LDO2 at 0x27 on the Erista is the same SD rail as on the OLED, since the Erista also uses a MAX77620.
+  Not verified, and it is a voltage, so nothing is changed here.
+- Recommendation, for you to decide: pass `switch-no-sd-uhs` on the first Erista boot. It needs no code change.
 
-## 6. Bazel on an M1 Mac
+Not done
+- Display, SD controller and panic save were read for their writes, not audited line by line for ordering.
 
-See `BUILD_CHECKLIST.md`, "Before you start".
+## 6. Changes made for this section, and their effect on the OLED
+
+- `switch_pmic_thermal_take` runs only with THERMAL. The OLED has THERMAL, so its behaviour is unchanged.
+- New feature bit BUTTONS (bit 16) gates TegraGPIO's eager start and SwitchButtons. `SWITCH_FEATURES_ALL` is now
+  0x1ffff and the OLED has it, so the OLED starts both as before.
+- The Erista's features stay 0. Neither change lifts `boot 0` or touches a voltage or memory setting.
+
+## 7. First boot and later
+
+Needed for a first boot (a console that reaches launchd and shows a screen)
+- Board gate and MC carveout check with Erista values (needs the loader's own reading), `boot 1` set by a person.
+- ADT with the Erista identity (done), DTB pinned (done).
+- SD root volume read through SDMMC1 (with `switch-no-sd-uhs` suggested), raw APFS.
+- A visible display: either adopt the lit panel or the INL init (exists, untested). Panic screens depend on it.
+- PMC reset and the panic record, MC error reporting, the watchdog service (launchd waits for it).
+- PMIC on I2C5 for RTC reads and power off.
+
+Can wait until after a first boot
+- Backlight control (PWM0 back end), touch, sensors, ALS, motion, wireless, audio, GPU, video, USB, charger.
+- Buttons, which are the only way to wake the screen, so they are the first thing to add after boot.
+- THERMAL and EMC (fan and DRAM clock). Safety note: without THERMAL nothing controls the fan or CPU rate beyond what
+  U-Boot left, so keep the first boots short and watch the temperature.
+- SLEEP, CACHE_IDLE and RTC_MARK. SE2 stays off for good, the Erista has no second security engine.

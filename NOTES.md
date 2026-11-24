@@ -91,3 +91,5 @@ No boot test until code review and a Bazel build are done.
 - Do not run the OLED loader on Erista before the boot gate is table-driven. It refuses on `WRONG_BOARD`, which is the expected result.
 
 Research findings that need no console: `ERISTA_RESEARCH.md`.
+
+Changes that touch OLED code paths (neither changes what the OLED does): thermal record read gated by THERMAL; BUTTONS feature bit (16) for the GPIO eager start and SwitchButtons. See `ERISTA_RESEARCH.md`, section 6.
