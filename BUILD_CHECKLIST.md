@@ -25,6 +25,17 @@ Linux has no Bazel execution platform, no GoogleTest and no `lz4`. The results b
 The stand-in is a small header that mimics `TEST`, `EXPECT_*` and `ASSERT_*`. A pass with it says the logic is right. It
 does not say the test builds with the real GoogleTest, so the Mac run below is still needed.
 
+## Before you start
+
+- Bazelisk, not a plain Bazel: `.bazelversion` pins 9.3.1.
+- Xcode 27.2 build 27B52 exactly (`bazel/host/xcode.bzl`). Any other build is refused. `bazel run @xcode//:print_pins`
+  shows what the repo expects, and `xcode-select -p` what you have.
+- The Metal toolchain installed for that Xcode, about 35 GB of free disk, and the IPSW download on the first build.
+- Run from a clean checkout of `erista-port`. `.bazelrc` has the `ios17`, `ios27`, `debug` and `release` configs.
+
+Report back: the first failing command with its full output, `bazel version`, `xcodebuild -version`, and for any
+failed test its `test.log` under `bazel-testlogs`. A pass needs no log.
+
 ## On the Mac
 
 1. Dependencies and style (as CI does):

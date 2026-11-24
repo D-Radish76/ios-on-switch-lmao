@@ -89,3 +89,5 @@ No boot test until code review and a Bazel build are done.
 - Keep the SD card as the only write target and boot from hekate, so Linux and hekate stay the fallback.
 - Charge the battery first. hekate shows no screen at low battery unless VOL+ and VOL- are held.
 - Do not run the OLED loader on Erista before the boot gate is table-driven. It refuses on `WRONG_BOARD`, which is the expected result.
+
+Research findings that need no console: `ERISTA_RESEARCH.md`.
