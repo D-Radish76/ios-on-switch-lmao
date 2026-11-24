@@ -72,6 +72,7 @@
 #include "../SwitchBrightness/TegraPanel.h"
 #include "../TegraBPMP/TegraBPMP.h"
 #include "../TegraI2C/TegraI2C.h"
+#include "../../kits/SwitchBoard/SwitchBoardKernel.h"
 #include "SwitchClocks.h"
 #include "SwitchEMC.h"
 #include "SwitchMAX77620.h"
@@ -770,8 +771,10 @@ extern "C" int switch_pmic_start(void)
     if (err) {
         IOLog("SwitchPMIC: MAX77620 not answering on I2C5 (%d): no RTC, no power-off\n", err);
     } else {
-        if (const int clockErr = moduleClockOn()) {
-            IOLog("SwitchPMIC: Wi-Fi/Bluetooth 32 kHz clock not set (%d): Bluetooth will not come up\n", clockErr);
+        if (switch_board_has(SWITCH_FEATURE_WIRELESS)) {
+            if (const int clockErr = moduleClockOn()) {
+                IOLog("SwitchPMIC: Wi-Fi/Bluetooth 32 kHz clock not set (%d): Bluetooth will not come up\n", clockErr);
+            }
         }
         gRTC = publishRTC(rtcMode, &rtcSecs, &rtcStamp);
         int recordMillic = 0;
@@ -785,7 +788,7 @@ extern "C" int switch_pmic_start(void)
     }
     (void)switch_monotonic_clock_start(rtcSecs, rtcStamp);
 
-    {
+    if (switch_board_has(SWITCH_FEATURE_EMC)) {
         char line[256];
         const int emcErr = tegra_bpmp_emc_boot(emcKHz, line, sizeof(line));
         IOLog("SwitchEMC: %s\n", line);
@@ -794,7 +797,7 @@ extern "C" int switch_pmic_start(void)
             switch_emc_start();
         }
     }
-    if (switch_thermal_start())
+    if (switch_board_has(SWITCH_FEATURE_THERMAL) && switch_thermal_start())
         IOLog("SwitchPMIC: SwitchThermal did not start, the board thread retries\n");
     return err ? -1 : 0;
 }

@@ -4,6 +4,7 @@
 #include <kern/debug.h>
 #include <kern/kern_types.h>
 #include <kern/misc_protos.h>
+#include "../../kits/SwitchBoard/SwitchBoardKernel.h"
 #include "SwitchDiag.h"
 
 extern int switch_block_publish(void);
@@ -35,61 +36,55 @@ extern int switch_usb_start(void); /* no-op without the ADT's /arm-io/usb-device
 extern int switch_watchdog_publish(void); /* the IOWatchdog launchd starts watchdogd for (NativeSwitchWatchdog) */
 extern int tegra_se_start(void);          /* SE2: known answers, kernel PRNG reseed, a timing run later; own thread */
 
+/* A driver outside the board's feature mask is never started: its init is what touches the chip, so the check has to come
+ * before it. GPIO, buttons, the watchdog and the MC error interrupt read or watch only and run on every board. */
+static void switch_board_driver(unsigned feature, int (*start)(void), const char *name)
+{
+    if (feature && !switch_board_has((enum switch_feature)feature))
+        return;
+    if (start())
+        printf("Switch: %s did not start\n", name);
+}
+
 /* Board drivers (GPIO, fan/thermal, battery) sleep on I2C transfers and wait for the GIC, so they
  * start on their own thread: the root mount never waits behind them. A driver whose interrupt is missing panics with
- * its own reason. */
+ * its own reason. The order is the dependency order: Bluetooth first (it publishes the per-unit BD address before anything
+ * can sleep), the MC error interrupt ahead of every DMA client, the watchdog before launchd reads its LaunchEvents, SE2
+ * early (its thread reseeds the kernel PRNG), Joy-Con after Bluetooth (rail pairing hands them the BD address), sensors
+ * right after their sources (thermalmonitord rebuilds a partial list only every 20 s). */
 static void switch_board_thread(void *parameter __unused, wait_result_t result __unused)
 {
-    /* First: returns at once and publishes the per-unit BD address before anything here can sleep. */
-    if (switch_bluetooth_start())
-        printf("Switch: SwitchBluetooth did not start\n");
-    /* Returns at once (its own thread waits for the GIC, then takes what latched): ahead of every DMA client below. */
-    if (tegra_mc_errors_start())
-        printf("Switch: the MC error interrupt did not start\n");
-    /* Before anything that can sleep long: launchd must find the IOWatchdog when it reads its LaunchEvents. */
-    if (switch_watchdog_publish())
-        printf("Switch: NativeSwitchWatchdog did not start\n");
-    /* Early: returns at once; its thread reseeds the kernel PRNG before most of userspace has asked it for anything. */
-    if (tegra_se_start())
-        printf("Switch: TegraSE did not start\n");
-    /* After Bluetooth: rail pairing hands Joy-Cons the console's (fuse-derived) BD address. */
-    if (switch_joycon_start())
-        printf("Switch: SwitchJoyCon did not start\n");
-    if (switch_usb_start())
-        printf("Switch: SwitchUSB did not start\n");
-    if (tegra_gpio_start())
-        printf("Switch: TegraGPIO did not start\n");
-    if (switch_thermal_start())
-        printf("Switch: SwitchThermal did not start\n");
-    if (switch_battery_start())
-        printf("Switch: SwitchBattery did not start\n");
-    /* Right after its sources: the 38 services should exist before thermalmonitord first looks (it rebuilds a partial
-     * list only every 20 s) and before watchdogd's open asks for them (it waits for them, at most 20 s). */
-    if (switch_sensors_start())
-        printf("Switch: SwitchSensors did not start\n");
-    if (switch_touch_start())
-        printf("Switch: SwitchTouch did not start\n");
-    if (switch_buttons_start())
-        printf("Switch: SwitchButtons did not start\n");
-    if (switch_als_start())
-        printf("Switch: SwitchALS did not start\n");
-    if (switch_motion_start())
-        printf("Switch: SwitchMotion did not start\n");
-    if (switch_wlan_publish())
-        printf("Switch: Wi-Fi driver not started\n");
-    if (tegra_gm20b_probe())
-        printf("Switch: TegraGM20B did not start\n");
-    if (tegra_nvdec_probe())
-        printf("Switch: TegraNVDEC did not start\n");
-    if (tegra_nvenc_probe())
-        printf("Switch: TegraNVENC did not start\n");
-    if (tegra_vic_probe())
-        printf("Switch: TegraVIC did not start\n");
-    if (tegra_nvjpg_probe())
-        printf("Switch: TegraNVJPG did not start\n");
-    if (switch_audio_publish())
-        printf("Switch: SwitchAudio did not start\n");
-    (void)switch_suspend_start();
+    static const struct {
+        unsigned feature; /* 0: runs on every board */
+        int (*start)(void);
+        const char *name;
+    } drivers[] = {
+        {SWITCH_FEATURE_WIRELESS, switch_bluetooth_start, "SwitchBluetooth"},
+        {0, tegra_mc_errors_start, "the MC error interrupt"},
+        {0, switch_watchdog_publish, "NativeSwitchWatchdog"},
+        {SWITCH_FEATURE_SE2, tegra_se_start, "TegraSE"},
+        {SWITCH_FEATURE_WIRELESS, switch_joycon_start, "SwitchJoyCon"},
+        {SWITCH_FEATURE_USB, switch_usb_start, "SwitchUSB"},
+        {0, tegra_gpio_start, "TegraGPIO"},
+        {SWITCH_FEATURE_THERMAL, switch_thermal_start, "SwitchThermal"},
+        {SWITCH_FEATURE_CHARGER, switch_battery_start, "SwitchBattery"},
+        {SWITCH_FEATURE_SENSORS, switch_sensors_start, "SwitchSensors"},
+        {SWITCH_FEATURE_TOUCH, switch_touch_start, "SwitchTouch"},
+        {0, switch_buttons_start, "SwitchButtons"},
+        {SWITCH_FEATURE_ALS, switch_als_start, "SwitchALS"},
+        {SWITCH_FEATURE_MOTION, switch_motion_start, "SwitchMotion"},
+        {SWITCH_FEATURE_WIRELESS, switch_wlan_publish, "Wi-Fi driver"},
+        {SWITCH_FEATURE_GPU, tegra_gm20b_probe, "TegraGM20B"},
+        {SWITCH_FEATURE_VIDEO, tegra_nvdec_probe, "TegraNVDEC"},
+        {SWITCH_FEATURE_VIDEO, tegra_nvenc_probe, "TegraNVENC"},
+        {SWITCH_FEATURE_VIDEO, tegra_vic_probe, "TegraVIC"},
+        {SWITCH_FEATURE_VIDEO, tegra_nvjpg_probe, "TegraNVJPG"},
+        {SWITCH_FEATURE_AUDIO, switch_audio_publish, "SwitchAudio"},
+    };
+    for (size_t i = 0; i < sizeof(drivers) / sizeof(drivers[0]); i++)
+        switch_board_driver(drivers[i].feature, drivers[i].start, drivers[i].name);
+    if (switch_board_has(SWITCH_FEATURE_SLEEP))
+        (void)switch_suspend_start();
     thread_terminate_self();
 }
 

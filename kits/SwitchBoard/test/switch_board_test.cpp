@@ -129,6 +129,11 @@ TEST(SwitchBoard, NoWordIsAKernelNotStartedByTheLoader)
     EXPECT_STREQ(switch_board_current()->name, "oled");
 }
 
+TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)
+{
+    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_SE2 << 1) - 1);
+}
+
 TEST(SwitchBoard, AFeatureNeedsEveryBitAsked)
 {
     const switch_board partial = {"partial", 9, 9, 0, SWITCH_FEATURE_GPU};

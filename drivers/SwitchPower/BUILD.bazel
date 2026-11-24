@@ -60,6 +60,7 @@ kernel_driver(
         "drivers/TegraGM20B",
         "drivers/TegraGPIO",
         "drivers/TegraI2C",
+        "kits/SwitchBoard",
         "kits/SwitchCAR",
         "kits/SwitchIdle",
         "kits/SwitchMMIO",
