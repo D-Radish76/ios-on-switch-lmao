@@ -93,3 +93,5 @@ No boot test until code review and a Bazel build are done.
 Research findings that need no console: `ERISTA_RESEARCH.md`.
 
 Changes that touch OLED code paths (neither changes what the OLED does): thermal record read gated by THERMAL; BUTTONS feature bit (16) for the GPIO eager start and SwitchButtons. See `ERISTA_RESEARCH.md`, section 6.
+
+Read only diagnostic (own hekate entry, no iPadOS): `boot/diag/README.md`.

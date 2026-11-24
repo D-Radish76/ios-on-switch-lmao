@@ -154,6 +154,7 @@ class DiagPackage(unittest.TestCase):
             self.assertNotIn('/switchroot/ios/', ini)
             self.assertIn('scan_dev_for_extlinux=true', ini)
             self.assertIn('bootcmd_mmc0=true', ini)
+            self.assertNotIn('ram_oc', ini)
             self.assertEqual(Path(out, 'switchroot/ios-diag/bl31.bin').read_bytes(), BL31.read_bytes())
 
 

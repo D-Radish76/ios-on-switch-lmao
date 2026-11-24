@@ -54,7 +54,7 @@ failed test its `test.log` under `bazel-testlogs`. A pass needs no log.
    bazel test //kits/SwitchBoard/test:all //boot/loader/test:all //tools/package/test:all //tools/mc_carveout:all
    ```
 
-   Expect `switch_board_test` (21), `board_args_test` (3), `boot_script_board_test` (11), `native_oled_adt_board_test` (4) and `test_dump` (7) to pass, and
+   Expect `switch_board_test` (21), `board_args_test` (3), `boot_script_board_test` (11), `native_oled_adt_board_test` (4), `diag_boot_test` (12) and `test_dump` (7) to pass, and
    `bl33_stage_test` to run for the first time (needs `lz4` on the Mac). If `boot_script_board_test` cannot find
    `native_oled_adt`, the new dependency in `tools/package/test/BUILD.bazel` is wrong.
 

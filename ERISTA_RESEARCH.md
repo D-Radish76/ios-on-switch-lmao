@@ -66,44 +66,32 @@ Confirmed
 Unknown, needs a console
 - hekate's `bdk/storage/sdmmc_driver.c` has T210 specific tuning and clock choices. I have not shown that ours
   matches them on a T210, and the answer cannot be had without running the controller on one.
-- The 1.8 V rail switch and the SD power GPIO path on the Erista PMIC are shared with the OLED in the code I read, but
-  never run on an Erista.
+- The SD power GPIO path (PE4) and the LDO2 recovery writes are shared with the OLED in the code I read, but never
+  run on an Erista. The 1.8 V switch is skipped on a T210 (section 9).
 
 Held: ODM and SD tuning on device.
 
-## 4. Read only diagnostic mode (design, not built)
+## 4. Read only diagnostic mode (built)
 
-Goal: read the 25 MC registers `boot/loader/loader.c` `native_gate` compares (0x70019050 to 0x70019d54) as the loader
-would see them, without touching the normal gate or the normal boot path.
+`boot/diag/` and `tools/package/diag_boot.py`; its README has the build, run and stop steps. Facts it rests on:
 
 Confirmed
-- The pinned `bazel/pinned/firmware/bl33.bin` (U-Boot) contains the `md` help text ("memory display") and "reset", so
-  `md.l` exists. The normal script uses `itest.l`, `setexpr.l`, `mw.b`, `cp.b`, `fatsize`, `load`, `fdt`, `echoe`,
-  `sleep` and `setenv stdout vidconsole` (`boot/u-boot-script.txt`), so those also exist.
-- The script is a template (`boot/u-boot-script.txt`) filled by `tools/package/boot_script.py` and sourced from a slot
-  in bl33.bin. A second template makes a second bl33.bin without changing the first.
-- The loader itself reads these 25 registers from the same non-secure world before it decides (`native_gate`), so a
-  non-secure read is permitted on an OLED at that point. `dump.sh` reads them the same way under Linux.
-- The normal script refuses a board whose row has `boot 0` (`board_gate`), which is why the Erista cannot run it.
-
-Plan
-1. `boot/u-boot-diag-script.txt`: keep the normal script's console check (`stdout vidconsole`, so values appear on the
-   LCD without a serial cable). Take the board from U-Boot's own `t210b01` and `sku` and refuse anything but a table
-   row, as now. Then one `md.l <addr> 1` per register, in `native_gate`'s order, and stop in a loop. No `mw`, `cp`,
-   `load`, `fatwrite`, `source`, `bootm`, `booti`, `go`.
-2. `boot_script.py` gets a `diag` mode that fills this template, with no `@LOADER@`, `@EXPORTER@` or kernel slots.
-3. A test that parses the produced script and fails if any command is not on a whitelist (`md.l`, `echo`, `echoe`,
-   `setenv`, `test`, `if`, `else`, `fi`, `while`, `sleep`, `base`, `true`), and that its address list equals
-   `native_gate`'s table (read from `loader.c`).
-4. Run it on the OLED first. It must print `native_gate`'s expected values. Only then run it on an Erista.
-5. Reaching it: a separate hekate entry that boots the diagnostic bl33, so the normal entry and `boot 0` do not change.
+- The pinned `bl33.bin` has the `md` command ("memory display" help text), and the normal script already uses
+  `setenv stdout vidconsole`, `itest.l`, `setexpr.l`, `echoe`, `sleep` and `fdt`.
+- The loader reads the same 25 registers from the same non-secure world before it decides (`native_gate`).
+- hekate finds U-Boot's DTB through the word at bl33+0x10 (`bootloader/l4t/l4t.c:161-162`), so the diagnostic keeps
+  U-Boot whole and adds only the script slot.
+- The diagnostic image is U-Boot plus the script slot: no loader, exporter, DTB or window, so it cannot reach iPadOS.
+  The script ends in a loop and the ini sets `scan_dev_for_extlinux=true`, so a failed script does not fall into an
+  extlinux boot either. The normal entry, its ini and its `boot` flag are untouched.
+- Tests (`diag_boot_test.py`, 12, run here with `unittest`): command whitelist, forbidden commands, one literal aligned
+  `md.l` per address, the address list equal to `native_gate`'s table plus HIDREV and ODM4, the final loop, the image
+  layout, the ini, and `compare`. A mutation (`mw.l` added to the script) fails the command test.
 
 Unknown
-- Whether U-Boot's `md.l` survives a locked register. Step 4 shows it on the OLED, and the script stops at
-  the first refusal as `dump.sh` does.
-- Whether the Erista has the same register layout as `native_gate`'s table. The values are what we want to learn.
-- Whether hekate hands U-Boot a lit screen on the Erista with the LCD console. The script's own `CONSOLE FAILED`
-  loop covers the failure.
+- Whether `md.l` survives a register the MC refuses. The script prints a line per read, so a stop shows which one.
+- Whether hekate lists `iOS Diag` under `More configs` as I expect from its ini handling. Not run.
+- The tests ran with Python's `unittest`, not Bazel. The Bazel entries are written, not built.
 
 ## 5. Unconditional hardware writes in the minimal mode
 
@@ -129,11 +117,10 @@ SD cold path (`NativeSwitchBlock.cpp`)
 - Confirmed: setup talks to the MAX77620 LDO2 (`kPmicLdo2` 0x27): `switchTo1V8` writes 1.8 V after CMD11 (`:3541`),
   and the SC7 paths write off and 3.3 V (`:3896-3937`). It also toggles card power GPIO PE4, PMC IO power and the
   SDMMC1 pad detect bits, and sets Schmitt triggers in APB_MISC pinmux.
-- Confirmed: `switch-no-sd-uhs` keeps the card at the 3.3 V mode U-Boot left (header comment, line 9). That leaves no
-  voltage write on the first boot, only the controller setup.
+- Confirmed: on a T210 the 1.8 V switch is skipped by the HIDREV check, so there is no LDO2 write at boot even
+  without `switch-no-sd-uhs`; section 9 has the lines.
 - Inferred: LDO2 at 0x27 on the Erista is the same SD rail as on the OLED, since the Erista also uses a MAX77620.
-  Not verified, and it is a voltage, so nothing is changed here.
-- Recommendation, for you to decide: pass `switch-no-sd-uhs` on the first Erista boot. It needs no code change.
+  Nothing is changed here.
 
 Not done
 - Display, SD controller and panic save were read for their writes, not audited line by line for ordering.
@@ -161,3 +148,72 @@ Can wait until after a first boot
 - THERMAL and EMC (fan and DRAM clock). Safety note: without THERMAL nothing controls the fan or CPU rate beyond what
   U-Boot left, so keep the first boots short and watch the temperature.
 - SLEEP, CACHE_IDLE and RTC_MARK. SE2 stays off for good, the Erista has no second security engine.
+
+## 8. Hardware writes on the whole U-Boot path (the diagnostic and the normal boot)
+
+Read from the sources I have: hekate's `l4t.c`, `hw_init.c`, `di.c`, our script and our tools. U-Boot's own source is
+not in the workspace, only its binary, so its init is described by what we observe and not by line.
+
+| Stage | Writes | Evidence | For the Erista |
+| --- | --- | --- | --- |
+| hekate, before launch | display and panel init, SD at SDR104 (it reads bl33 that way), minerva trains the DRAM table and sets 800 MHz, PMC scratch (panel id, BL31 params), BL31 and BPMP firmware setup | `l4t.c:735-805`, `:1105-1146`, `boot/README.md` | the same as every Switchroot Linux boot of that console. Inferred: that boot works on yours |
+| hekate DRAM voltage | `max7762x_regulator_set_voltage` only if `ram_oc_vdd2` or `ram_oc_vddq` is set | `l4t.c:182-187`, `:782-785` | neither ini sets them, and a test checks the diagnostic's ini has no `ram_oc` key |
+| ATF (bl31.bin) | secure monitor setup | pinned file, same hash as the Erista's own (earlier BL31 comparison) | unchanged |
+| U-Boot init | its own SD, clock and console setup | binary only | not audited: no source. It is the Switchroot U-Boot every Switchroot boot uses |
+| diagnostic script | none: `setenv`, `echo`, `test`, `sleep` touch RAM or the screen, `md.l` reads | the test | none |
+| normal script | RAM only (`mw.b` of the args page, `cp.b` of the DTB, `fdt` edits), then the exporter and loader | `boot/u-boot-script.txt` | not run: `board_gate` refuses `boot 0` rows |
+
+So the diagnostic adds no hardware write of its own. Everything before it is the stock Switchroot path.
+
+## 9. SD voltage
+
+Confirmed
+- hekate's SDR104 read of bl33 and U-Boot's own SD setup happen before our code. Our `switch-no-sd-uhs` cannot change
+  them. The kernel's SD driver says the card arrives at 3.3 V high speed (`NativeSwitchBlock.cpp:5-8`).
+- The kernel skips the 1.8 V switch on a T210 without the boot arg: `setup()` checks `HIDREV >> 4 & 0xf < 2` and skips
+  with "not T210B01" (`NativeSwitchBlock.cpp:3715`), before any PMIC read. So on an Erista there is no LDO2 write at
+  boot, with or without `switch-no-sd-uhs`. The arg is a second guard, not the only one.
+- Voltage writes that remain in the driver, none at boot on an Erista: `resetCard` (a card power cycle after a stuck
+  command queue, `:2448-2456`) and suspend and resume (`powerOffCard`, `powerOnController`, `:3896-3937`). They switch
+  LDO2 off and to 3.3 V, GPIO PE4 and the PMC pad bits. Suspend needs SLEEP, which the Erista does not have.
+
+Unknown
+- The error recovery path has never run on an Erista. Nothing here changes a voltage value: both writes are 3.3 V or
+  off, the state the card already has.
+
+## 10. Taking over hekate's framebuffer and backlight
+
+Confirmed
+- hekate's framebuffer is 720 by 1280 at 0xF5A00000 (`bdk/memory_map.h:98-99`), the one the normal script checks
+  (`handoff_fb_*`), and the script says it never dereferences it: U-Boot's console draws into it as a simple
+  framebuffer from the control FDT.
+- The backlight is not touched by U-Boot's path in anything we read: no `display_backlight*` call exists between
+  hekate's `launch_l4t` and the handoff in `l4t.c`, and the script has none.
+- `hw_deinit(keep_display)` skips `display_end` when the display is kept (`bdk/soc/hw_init.c:473-478`). Whether hekate
+  keeps it for an L4T launch is `launch_l4t`'s `hw_deinit(ctxt->sld_type)` argument, with `sld_type` set true by
+  default (`l4t.c:865`, passed at `:1168`): inferred to mean seamless display, so the screen stays lit.
+
+Unknown, and the first thing the diagnostic shows
+- Whether the Erista's LCD is lit and showing the U-Boot console. If it is, the first iPadOS boot can adopt it and the
+  PWM back end in section 1 is not needed for a first boot.
+- Our display driver's power up (`TegraDisplayPower.cpp`) re-initializes the display. Whether it should skip that on
+  the Erista when the panel is already lit is not decided: it would be a driver change and needs the panel.
+
+## 11. A safe first boot with THERMAL off
+
+Confirmed
+- Without THERMAL nothing of ours reads a temperature or sets the fan or the CPU rate: "XNU does no DVFS, so the A57
+  cluster otherwise stays where hekate left it" (`SwitchThermal.cpp:~40`), and the fan driver is that file's.
+- hekate's own `hw_deinit` stops the fan (`fan_set_duty(0)`), puts the TMP451 in shutdown and powers the 5 V rails
+  down, but only under `BDK_HW_EXTRA_DEINIT`, which is Nyx's build (`bdk/soc/hw_init.c:481-490`). Which hekate binary
+  launches the entry decides which of these happened.
+- The OLED figures in that file (998.4 MHz PLLX, 800 mV) are the T210B01 path. The T210's CPU rate and voltage at
+  handoff are not in anything I read.
+
+Conditions I suggest for the first boots (a recommendation, not a measurement)
+1. Run the diagnostic first. It uses the CPU only for U-Boot's `sleep 1` loop.
+2. Short boots, a person present, the console on a hard surface, battery charged, no charger or dock changes.
+3. Power off at the first sign of a hot back or a fan that is not turning. Do not leave a boot running to see how far
+   it gets.
+4. After a first boot works, the first thing to add is a read only temperature display (TMP451 on I2C1, reads only,
+   no fan write), before THERMAL itself.
