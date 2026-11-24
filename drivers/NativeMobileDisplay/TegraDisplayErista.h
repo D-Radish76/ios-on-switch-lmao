@@ -13,6 +13,7 @@ struct Reg {
 };
 
 constexpr uint32_t kHidrevMajorT210 = 1;
+constexpr uint32_t kHidrevMajorT210B01 = 2;
 constexpr uint32_t kHidrevOffset = 0x804;
 
 constexpr uint32_t kDsiInitSeqData15 = 0x5F;

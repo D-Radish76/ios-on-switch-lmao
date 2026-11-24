@@ -382,7 +382,14 @@ void map()
 bool erista()
 {
     const uint32_t hidrev = static_cast<uint32_t>(gApbMisc[tegra_display_erista::kHidrevOffset / 4]);
-    return ((hidrev >> 4) & 0xF) == tegra_display_erista::kHidrevMajorT210;
+    switch ((hidrev >> 4) & 0xF) {
+    case tegra_display_erista::kHidrevMajorT210:
+        return true;
+    case tegra_display_erista::kHidrevMajorT210B01:
+        return false;
+    default:
+        panic("TegraDisplay: unknown HIDREV %#x, neither T210 nor T210B01", hidrev);
+    }
 }
 
 // hekate clock_enable_plld: DISP1 from PLLD_OUT0, then wait up to 1 ms for lock. T210B01: no PLLD_MISC1 setup, SDM_DIN -1024.
