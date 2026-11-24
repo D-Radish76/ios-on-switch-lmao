@@ -15,6 +15,9 @@ Nothing here has been built with Bazel or run on hardware. "Confirmed" means rea
 
 ## Unverified
 
+- Power-down order against hekate `_display_panel_and_hw_end`: panel reset low, 10 ms, LCD AVDD off, BL_PWM pad to PWM0 with pull-down, 10 ms, then clocks off. This matches. hekate never clears WLED enable (V1) there; the backlight is turned off before by driving V0 low (`display_backlight(false)`). Ours leaves V1 alone as well. hekate also hands V0 back to the PWM controller (`gpio_config` SPIO), which `TegraGPIO` has no call for, so V0 stays a GPIO output. Backlight ownership belongs to the future LCD `SwitchBacklight`.
+- This project's BL31 (switchroot `bl31.bin`) on Erista. hekate starting `bpmpfw.bin` on both chips does not show that BL31 and U-Boot's PSCI/SMC use are compatible. Needs a check of the BL31 build target and its T210 support.
+- Boot gate design: accept a board only when `t210b01`, `sku` and the DTB model agree with a table row (OLED 1/3, Erista expected 0/0 from the Console info photo). A row without a verified DTB stays refused.
 - hekate leaves its framebuffer lit at handoff, so the first screen needs no new display code. This comes from hekate's L4T launcher and ios-switch's notes (framebuffer 0xF5A00000, 720x1280). The U-Boot script checks the same address and format on the OLED.
 - Erista values of `t210b01` and `sku` in U-Boot (expected 0 and 0). Needs a hekate "Console info" photo.
 - The Erista sku-0 DTB. Source: `nx-plat.dtimg` entry 0, or `/sys/firmware/fdt` under Switchroot Linux.
