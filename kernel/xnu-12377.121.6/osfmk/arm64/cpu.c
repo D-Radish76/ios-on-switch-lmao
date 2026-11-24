@@ -48,6 +48,7 @@
 #include <arm/misc_protos.h>
 #include <arm/machine_cpu.h>
 #include <arm/rtclock.h>
+#include <switch/board.h>
 #include <switch/idle.h>
 #include <arm64/proc_reg.h>
 #include <mach/processor_info.h>
@@ -132,36 +133,12 @@ switch_idle_board(void)
 	DTEntry entry;
 	const void *property = NULL;
 	unsigned int size = 0;
-	static const char model[] = "NintendoSwitchOLED";
-	static const char compatible[] = "nintendo,aula";
-	if (SecureDTLookupEntry(NULL, "/", &entry) != kSuccess) {
-		return false;
-	}
-	if (SecureDTGetProperty(entry, "model", &property, &size) == kSuccess &&
-	    property != NULL && size == sizeof(model) && !bcmp(property, model, size)) {
-		return true;
-	}
-	if (SecureDTGetProperty(entry, "compatible", &property, &size) != kSuccess ||
+	if (SecureDTLookupEntry(NULL, "/", &entry) != kSuccess ||
+	    SecureDTGetProperty(entry, "compatible", &property, &size) != kSuccess ||
 	    property == NULL || size == 0 || size > 1024) {
 		return false;
 	}
-	const char *bytes = property;
-	bool matched = false;
-	for (unsigned int at = 0; at < size;) {
-		unsigned int end = at;
-		while (end < size && bytes[end] != '\0') {
-			end++;
-		}
-		if (end == size) {
-			return false;
-		}
-		if (end - at == sizeof(compatible) - 1 &&
-		    !bcmp(bytes + at, compatible, sizeof(compatible) - 1)) {
-			matched = true;
-		}
-		at = end + 1;
-	}
-	return matched;
+	return switch_board_has_feature(switch_board_by_compatible(property, size), SWITCH_FEATURE_CACHE_IDLE);
 }
 
 static void

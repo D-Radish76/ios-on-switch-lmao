@@ -33,9 +33,10 @@ enum switch_feature {
     SWITCH_FEATURE_SLEEP = 1u << 12,
     SWITCH_FEATURE_SE2 = 1u << 13,  // the second security engine, which only the T210B01 has
     SWITCH_FEATURE_RTC_MARK = 1u << 14,  // DEVELOPMENT only: the boot mark in the MAX77620 RTC alarm (a write to the RTC)
+    SWITCH_FEATURE_CACHE_IDLE = 1u << 15,  // osfmk/arm64/cpu.c: idle with the L1 and L2 retained (Cortex-A57 only)
 };
 
-#define SWITCH_FEATURES_ALL 0x7fffu
+#define SWITCH_FEATURES_ALL 0xffffu
 
 // X(id, "name", t210b01, sku, boot, features, model, compatible). boot_script.py parses the first five fields.
 // model and compatible are what the board's device tree says about itself; NULL is not known yet. Nothing fills in a
@@ -129,6 +130,16 @@ static inline int switch_board_lists(const char *list, size_t bytes, const char 
         at++;
     }
     return 0;
+}
+
+// The row whose device tree compatible string the list holds, for code that runs before the registers can be read
+// (osfmk/arm64/cpu.c). It is only as strong as the device tree: the unknown board when no row is named.
+static inline const struct switch_board *switch_board_by_compatible(const char *list, size_t bytes)
+{
+    for (size_t i = 0; i < sizeof(switch_boards) / sizeof(switch_boards[0]); i++)
+        if (switch_boards[i].compatible && switch_board_lists(list, bytes, switch_boards[i].compatible))
+            return &switch_boards[i];
+    return &switch_board_unknown;
 }
 
 // What the kernel believes about the console, from three witnesses that must agree: the registers (HIDREV, ODM4), the

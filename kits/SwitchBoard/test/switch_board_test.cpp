@@ -24,7 +24,7 @@ void oledConsole(const char *commandLine = "")
 
 void expectNoFeatures(const char *why)
 {
-    for (uint32_t bit = 1; bit <= SWITCH_FEATURE_RTC_MARK; bit <<= 1)
+    for (uint32_t bit = 1; bit <= SWITCH_FEATURE_CACHE_IDLE; bit <<= 1)
         EXPECT_FALSE(switch_board_has(static_cast<switch_feature>(bit))) << why << " " << bit;
 }
 
@@ -240,9 +240,21 @@ TEST(SwitchBoard, TheOledNamesItselfAndNoOtherBoardGuesses)
     EXPECT_EQ(switch_board_by_name("nope")->model, nullptr);
 }
 
+TEST(SwitchBoard, TheDeviceTreeAloneNamesTheRowForTheCpuIdleCheck)
+{
+    oledConsole();
+    EXPECT_TRUE(switch_board_has_feature(switch_board_by_compatible(gCompatible.data(), gCompatible.size()), SWITCH_FEATURE_CACHE_IDLE));
+    for (const char *other : {"nvidia,tegra210", "nintendo,aulax", ""}) {
+        const std::string list(other, strlen(other) + 1);
+        EXPECT_FALSE(switch_board_has_feature(switch_board_by_compatible(list.data(), list.size()), SWITCH_FEATURE_CACHE_IDLE));
+    }
+    EXPECT_FALSE(switch_board_has_feature(switch_board_by_compatible("nintendo,aula", 13), SWITCH_FEATURE_CACHE_IDLE));
+    EXPECT_FALSE(switch_board_has_feature(switch_board_by_compatible(nullptr, 0), SWITCH_FEATURE_CACHE_IDLE));
+}
+
 TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)
 {
-    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_RTC_MARK << 1) - 1);
+    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_CACHE_IDLE << 1) - 1);
 }
 
 TEST(SwitchBoard, AFeatureNeedsEveryBitAsked)
