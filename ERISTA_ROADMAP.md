@@ -111,22 +111,55 @@ Committed on `erista-port`, not built with Bazel, not run on hardware.
    `SwitchRootBoot.c` and the clock, EMC and thermal calls in `switch_pmic_start`.
 3. Model strings: the OLED row holds `Nintendo Switch (OLED model)` and `nintendo,aula`. The Erista row holds `NULL`.
 
-Choices to confirm:
+How the kernel decides (`switch_board_resolve`): the registers (HIDREV, ODM4), the loader's `switch-board` word and the
+device tree's `compatible` list must name the same row, or the board is unknown and has no features. Without a word only
+the OLED is believed, and only where the registers say OLED. A missing, empty, cut off or duplicated word that disagrees,
+registers that do not answer and a device tree that does not list the row all give no features. The Erista row has no
+device tree strings, so it cannot be confirmed until they are read off its DTB.
 
-- A kernel with no `switch-board` word is treated as the OLED, so the emulator checks and every kernel not started by this
-  loader behave as before. An unknown name gets no features. The alternative, no word meaning no features, would change the
-  OLED path.
-- `cpu.c` in both XNU trees still compares against `nintendo,aula`. It is an allowlist, so an Erista device tree fails it and
-  the OLED-only cache-retaining idle stays off.
+The device tree check exists in the kernel only. The boot script and the loader decide from the registers; the loader
+does not look at the DTB it copies. The OLED's strings are tied to `native_oled_adt.py` by a test.
+
+`cpu.c` in both XNU trees now asks the table (`CACHE_IDLE`, by the device tree's compatible list alone, since it runs
+before the registers can be read). The OLED row has the bit, the Erista does not.
 
 Side effects checked for the mode: power-off is a MAX77620 soft reset and the RTC is read only. Panic records and logs go to
 the SD card, not the eMMC. `switch_pmic_mark_start` writes the MAX77620 RTC alarm in DEVELOPMENT builds only.
 
-Still open before the Erista row may be enabled:
+Side effect of the stricter rule: a kernel run without the loader (the emulator) starts board drivers only if its
+registers answer HIDREV and ODM4 as an OLED. The emulator's fuse page does (ODM4 type 4); its HIDREV is unconfirmed. Run
+`bazel run //tools/emu:check` on the Mac for both kinds before relying on it.
 
-- SE2 (`tegra_se_start`) is T210B01 only. It is off by the empty feature mask, but the Erista needs a review of what it does
-  when the engine is absent.
-- Each feature bit needs its own review for the HAC-001 before it is set.
+### SE2 without SE2
+
+`TegraSE` drives SE1 and SE2 as the kernel's AES and SHA engines. With the driver not started, `tegra_se_aes`, `tegra_se_cmac`
+and `tegra_se_digest` return -1 (every algorithm is off until the driver turns it on), `NativeAES` then runs on the CPU, and corecrypto's
+compress hook stays unset, so XNU hashes on the CPU. Both are the paths already taken when an engine declines. Nothing in
+the SD root, the block driver or the root boot calls the engine. What changes is speed, and the kernel PRNG no longer gets
+the engine's reseed on top of the loader's seed. The loader keeps the pinned seed when SE2 is off.
+
+Other SE2 users, now gated by the SE2 bit: the loader's seed mix, `native_aks_se_probe` (DEVELOPMENT and DEBUG only) and the
+board thread's `tegra_se_start`. Not found in the sources: whether the T210 has an SE2 at all. This stays open, and SE1 is
+turned off with it, which is the safe direction.
+
+Not run: any of this on a kernel. The reading is from the sources.
+
+### Hardware touched on every board
+
+These run for the Erista too, once its row is enabled. None of them is gated, and none is verified on a HAC-001:
+
+- SD root: `NativeSwitchBlock` writes MAX77620 LDO2_CFG (0x27) on I2C5 0x3c to set the SDMMC1 supply (3.3 V, 1.8 V for UHS),
+  and drives SDMMC1 and PLLP. The same PMIC family and the card wiring are assumed.
+- `SwitchPMIC`: reads ONOFFCNFG1, publishes the RTC (read only), installs the MAX77620 soft reset as the power-off, reads
+  the thermal record, maps PMC.
+- `NativeSwitchWatchdog` and `SwitchButtons`: write MAX77620 interrupt masks (ONOFF_IRQ_MASK, IRQTOP mask, low battery
+  threshold interrupt enable) and read the power and volume inputs.
+- `TegraGPIO`: CAR clock and reset for the GPIO block, pinmux reads.
+- MC error interrupt: SoC internal. The NVRAM controller was not read for this list.
+
+The next gating candidate is the low battery threshold write, which also arms a PMIC interrupt.
+
+Each feature bit needs its own review for the HAC-001 before it is set.
 
 ## Order of work
 
