@@ -256,6 +256,14 @@ const struct awdl_peer *awdl_core_find(const struct awdl_core *c, const uint8_t 
     return NULL;
 }
 
+static void peer_clear_data(struct awdl_core *c, const struct awdl_peer *p)
+{
+    const unsigned idx = (unsigned)(p - c->peers);
+    c->switch_data_burst[idx] = 0;
+    c->switch_data_window[idx] = 0;
+    c->switch_data_until[idx] = 0;
+}
+
 static struct awdl_peer *peer_get(struct awdl_core *c, const uint8_t addr[6], uint64_t now)
 {
     struct awdl_peer *free_slot = NULL;
@@ -273,6 +281,7 @@ static struct awdl_peer *peer_get(struct awdl_core *c, const uint8_t addr[6], ui
     if (!p)
         return NULL;
     memset(p, 0, sizeof *p);
+    peer_clear_data(c, p);
     p->used = 1;
     memcpy(p->addr, addr, 6);
     p->first_seen = now;
@@ -296,16 +305,20 @@ static void peer_lost(struct awdl_core *c, struct awdl_peer *p, const char *why)
         c->host.peer(c->host.ctx, addr, 0, rssi);
     awdl_log(c, "AWDL: peer %02x:%02x:%02x:%02x:%02x:%02x lost (%s)", addr[0], addr[1], addr[2], addr[3], addr[4],
              addr[5], why);
+    peer_clear_data(c, p);
     memset(p, 0, sizeof *p);
 }
 
 void awdl_expire_peers(struct awdl_core *c, uint64_t now)
 {
+    int lost = 0;
     for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
-        if (c->peers[i].used && now >= c->peers[i].last_seen && now - c->peers[i].last_seen > AWDL_PEER_TIMEOUT_US)
+        if (c->peers[i].used && now >= c->peers[i].last_seen && now - c->peers[i].last_seen > AWDL_PEER_TIMEOUT_US) {
             peer_lost(c, &c->peers[i], "timeout");
+            lost = 1;
+        }
     }
-    if (c->switch_timed_peer)
+    if (lost || c->switch_timed_peer)
         switch_awdl_sched_peer_timing(c, NULL, now);
 }
 
@@ -330,8 +343,8 @@ static int sender_next_eaw(const struct awdl_af *a, uint64_t rx_tsf, uint64_t *t
     return 1;
 }
 
-// Our clock follows every measurement of the parent's; the radio's installed sequence follows it only when the
-// parent changes or the two have drifted apart by more than AWDL_RESYNC_US (AWDL_SEQ_US is a power of two).
+// Our clock follows every measurement of the parent's; the radio's installed sequence follows it on the first
+// synchronisation or when the two have drifted apart by more than AWDL_RESYNC_US (AWDL_SEQ_US is a power of two).
 static void sync_to(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
 {
     c->base_tsf = p->next_aw_tsf;
@@ -346,8 +359,10 @@ static void sync_to(struct awdl_core *c, const struct awdl_peer *p, uint64_t now
     if (err > (int64_t)(AWDL_SEQ_US / 2))
         err -= (int64_t)AWDL_SEQ_US;
     c->stats.last_sync_error_us = (int32_t)err;
-    if (!awdl_addr_eq(c->synced_to, p->addr) || err > AWDL_RESYNC_US || err < -AWDL_RESYNC_US) {
-        memcpy(c->synced_to, p->addr, 6);
+    static const uint8_t unsynced[6] = {0};
+    const int first = awdl_addr_eq(c->synced_to, unsynced);
+    memcpy(c->synced_to, p->addr, 6);
+    if (first || err > AWDL_RESYNC_US || err < -AWDL_RESYNC_US) {
         c->stats.resyncs++;
         awdl_soft_install(c, now);
     }
@@ -530,9 +545,9 @@ void awdl_core_stop(struct awdl_core *c)
     c->switch_generation++;
     c->running = 0;
     c->switch_data_active = 0;
-    c->switch_data_burst = 0;
-    c->switch_data_window = 0;
-    c->switch_data_until = 0;
+    memset(c->switch_data_burst, 0, sizeof c->switch_data_burst);
+    memset(c->switch_data_window, 0, sizeof c->switch_data_window);
+    memset(c->switch_data_until, 0, sizeof c->switch_data_until);
     c->switch_discovery_active = 0;
     c->switch_discovery_until = 0;
 #if DEVELOPMENT || DEBUG

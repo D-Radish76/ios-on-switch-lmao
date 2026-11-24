@@ -228,18 +228,29 @@ static int peer_has_active_slots(const struct awdl_peer *p)
     return 0;
 }
 
+static int peer_is_active(const struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
+{
+    if (!p->used || !(p->has_v2 || p->reachable) || !p->has_seq ||
+        (now > p->last_seen && now - p->last_seen > AWDL_PEER_TIMEOUT_US))
+        return 0;
+    if (c->switch_channels_limited && !usable_timing(c, p, now))
+        return 0;
+    return peer_has_active_slots(p);
+}
+
 static int any_active_peer(const struct awdl_core *c, uint64_t now)
 {
-    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
-        const struct awdl_peer *p = &c->peers[i];
-        if (!p->used || !(p->has_v2 || p->reachable) || !p->has_seq ||
-            (now > p->last_seen && now - p->last_seen > AWDL_PEER_TIMEOUT_US))
-            continue;
-        if (c->switch_channels_limited && !usable_timing(c, p, now))
-            continue;
-        if (peer_has_active_slots(p))
+    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i)
+        if (peer_is_active(c, &c->peers[i], now))
             return 1;
-    }
+    return 0;
+}
+
+static int any_active_data_peer(const struct awdl_core *c, uint64_t now)
+{
+    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i)
+        if (c->switch_data_until[i] && now < c->switch_data_until[i] && peer_is_active(c, &c->peers[i], now))
+            return 1;
     return 0;
 }
 
@@ -333,6 +344,7 @@ void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t 
     c->switch_timed_peer = (uint8_t)any_timed_peer(c, now);
     c->switch_discovery_active =
         (uint8_t)(c->switch_discovery_until && now < c->switch_discovery_until && any_active_peer(c, now));
+    c->switch_data_active = (uint8_t)any_active_data_peer(c, now);
     reset_search(c, now);
     build(c);
     if (c->running && memcmp(was, c->cfg.seq, sizeof was))
@@ -374,9 +386,9 @@ void awdl_sched_start(struct awdl_core *c)
 {
     c->switch_timed_peer = 0;
     c->switch_data_active = 0;
-    c->switch_data_burst = 0;
-    c->switch_data_window = 0;
-    c->switch_data_until = 0;
+    memset(c->switch_data_burst, 0, sizeof c->switch_data_burst);
+    memset(c->switch_data_window, 0, sizeof c->switch_data_window);
+    memset(c->switch_data_until, 0, sizeof c->switch_data_until);
     c->switch_discovery_active = 0;
 #if defined(SWITCH_IPSW_KIND_24B119)
     c->switch_discovery_until = c->switch_service_bytes ? c->last_observation + SWITCH_AWDL_DISCOVERY_HOLD_US : 0;
@@ -406,32 +418,41 @@ void switch_awdl_sched_discovery(struct awdl_core *c, uint64_t now)
     }
 }
 
-void switch_awdl_sched_data_activity(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
+void switch_awdl_sched_data_activity(struct awdl_core *c, const struct awdl_peer *p, uint64_t now, int immediate)
 {
-    if (!c || !c->running || awdl_native(c) || !peer_has_active_slots(p))
+    if (!c || !c->running || awdl_native(c) || !p || p < c->peers || p >= c->peers + AWDL_MAX_PEERS)
         return;
     if (!now)
         now = c->last_observation;
-    if (c->switch_data_active) {
-        c->switch_data_until = now + SWITCH_AWDL_DATA_HOLD_US;
+    const unsigned idx = (unsigned)(p - c->peers);
+    if (immediate || (c->switch_data_until[idx] && now < c->switch_data_until[idx])) {
+        const uint64_t until = now + SWITCH_AWDL_DATA_HOLD_US;
+        if (until > c->switch_data_until[idx])
+            c->switch_data_until[idx] = until;
+        c->switch_data_burst[idx] = 0;
+        c->switch_data_window[idx] = 0;
+    } else if (!c->switch_data_burst[idx] || now < c->switch_data_window[idx] ||
+               now - c->switch_data_window[idx] > SWITCH_AWDL_DATA_WINDOW_US) {
+        c->switch_data_window[idx] = now;
+        c->switch_data_burst[idx] = 1;
         return;
-    }
-    if (!c->switch_data_burst || now < c->switch_data_window ||
-        now - c->switch_data_window > SWITCH_AWDL_DATA_WINDOW_US) {
-        c->switch_data_window = now;
-        c->switch_data_burst = 1;
+    } else if (++c->switch_data_burst[idx] < SWITCH_AWDL_DATA_BURST) {
         return;
+    } else {
+        c->switch_data_until[idx] = now + SWITCH_AWDL_DATA_HOLD_US;
+        c->switch_data_burst[idx] = 0;
+        c->switch_data_window[idx] = 0;
     }
-    if (++c->switch_data_burst < SWITCH_AWDL_DATA_BURST)
+    const uint8_t want = (uint8_t)any_active_data_peer(c, now);
+    if (want == c->switch_data_active)
         return;
     struct awdl_chan was[AWDL_SEQ_SLOTS];
     memcpy(was, c->cfg.seq, sizeof was);
-    c->switch_data_active = 1;
-    c->switch_data_until = now + SWITCH_AWDL_DATA_HOLD_US;
+    c->switch_data_active = want;
     build(c);
     if (memcmp(was, c->cfg.seq, sizeof was)) {
         awdl_soft_install(c, now);
-        awdl_sched_log(c, "data active");
+        awdl_sched_log(c, want ? "data active" : "data idle");
     }
 }
 
@@ -445,19 +466,24 @@ void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *
     const uint8_t want_discovery =
         (uint8_t)(c->switch_discovery_until && now < c->switch_discovery_until && any_active_peer(c, now));
     const int discovery_changed = want_discovery != c->switch_discovery_active;
-    if (!timed_changed && !discovery_changed)
+    const uint8_t want_data = (uint8_t)any_active_data_peer(c, now);
+    const int data_changed = want_data != c->switch_data_active;
+    if (!timed_changed && !discovery_changed && !data_changed)
         return;
     if (timed_changed) {
         c->switch_timed_peer = (uint8_t)timed;
         reset_search(c, now);
     }
     c->switch_discovery_active = want_discovery;
+    c->switch_data_active = want_data;
     struct awdl_chan previous[AWDL_SEQ_SLOTS];
     memcpy(previous, c->cfg.seq, sizeof previous);
     build(c);
     if (memcmp(previous, c->cfg.seq, sizeof previous)) {
         awdl_soft_install(c, now);
-        if (discovery_changed)
+        if (data_changed)
+            awdl_sched_log(c, want_data ? "data active" : "data idle");
+        else if (discovery_changed)
             awdl_sched_log(c, want_discovery ? "discovery active" : "discovery idle");
     }
 }
@@ -468,11 +494,15 @@ void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
     memcpy(previous, c->cfg.seq, sizeof previous);
     int changed = 0;
     const char *reason = NULL;
-    if (c->switch_data_active && now >= c->switch_data_until) {
+    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
+        if (c->switch_data_until[i] && now >= c->switch_data_until[i]) {
+            c->switch_data_until[i] = 0;
+            c->switch_data_burst[i] = 0;
+            c->switch_data_window[i] = 0;
+        }
+    }
+    if (c->switch_data_active && !any_active_data_peer(c, now)) {
         c->switch_data_active = 0;
-        c->switch_data_burst = 0;
-        c->switch_data_window = 0;
-        c->switch_data_until = 0;
         changed = 1;
         reason = "data idle";
     }
@@ -505,8 +535,15 @@ void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
 uint64_t awdl_sched_next(const struct awdl_core *c)
 {
     uint64_t next = search_moves(c) ? c->switch_next_search : UINT64_MAX;
-    if (c->switch_data_active && c->switch_data_until < next)
-        next = c->switch_data_until;
+    if (c->switch_data_active) {
+        uint64_t data_end = 0;
+        for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
+            if (c->peers[i].used && c->switch_data_until[i] > data_end && peer_has_active_slots(&c->peers[i]))
+                data_end = c->switch_data_until[i];
+        }
+        if (data_end < next)
+            next = data_end;
+    }
     if (c->switch_discovery_active && c->switch_discovery_until < next)
         next = c->switch_discovery_until;
     return next;

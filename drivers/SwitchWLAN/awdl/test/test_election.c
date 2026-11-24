@@ -338,6 +338,12 @@ static void test_resync(void)
     ECHECK(worst < (int64_t)AWDL_TU_US);
     const int32_t last = awdl_core_stats(us)->last_sync_error_us;
     ECHECK(last > -(int32_t)AWDL_TU_US && last < (int32_t)AWDL_TU_US);
+    struct awdl_core *same = master_core(0x22, 514, 0);
+    master_psf(us, same, g, 0);
+    ECHECK(root_of(us) == 0x22);
+    ECHECK(awdl_core_stats(us)->resyncs == 1 && e_installs == adopted);
+    awdl_core_stop(same);
+    free(same);
     // a better master on its own clock: followed, and the schedule moves to it at once
     const int64_t other = 777777;
     struct awdl_core *a3 = master_core(A3, 518, 0);

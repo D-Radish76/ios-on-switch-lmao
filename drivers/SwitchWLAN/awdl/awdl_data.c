@@ -3,9 +3,22 @@
 // (now, or queued for its next slot), and AWDL data frames in, A-MSDUs included, as Ethernet frames.
 #include "awdl_internal.h"
 
-enum { SWITCH_AWDL_UNICAST_GUARD_US = 3u * AWDL_TU_US, SWITCH_AWDL_MULTICAST_GUARD_US = 16u * AWDL_TU_US };
+enum {
+    SWITCH_AWDL_UNICAST_GUARD_US = 3u * AWDL_TU_US,
+    SWITCH_AWDL_MULTICAST_GUARD_US = 16u * AWDL_TU_US,
+    SWITCH_AWDL_MIN_TX_US = 2u * AWDL_TU_US,
+    SWITCH_AWDL_LARGE_FRAME_BYTES = 1024u
+};
 // The radio reports a handed frame at the latest 1.1 s after taking it (SwitchWLANA3Radio.cpp's transport deadline).
 #define SWITCH_AWDL_REPORT_US 1200000u
+
+static int switch_awdl_data_immediate_payload(uint16_t ethertype, const uint8_t *payload, size_t len)
+{
+    if (len >= SWITCH_AWDL_LARGE_FRAME_BYTES)
+        return 1;
+    return ethertype == 0x86dd && len >= 60 && (payload[0] >> 4) == 6 && payload[6] == 6 &&
+           (payload[40 + 13] & 0x02) != 0;
+}
 
 struct channel_window {
     uint64_t open, close, boundary;
@@ -55,7 +68,7 @@ static uint64_t transmit_window(struct awdl_core *c, const uint8_t *dst, const s
             if (other.boundary < w.boundary)
                 w.boundary = other.boundary;
         }
-        if (w.channel && w.open < w.close) {
+        if (w.channel && w.open < w.close && w.close - w.open >= SWITCH_AWDL_MIN_TX_US) {
             if (w.open == now)
                 return w.close;
             if (w.open < c->next_data)
@@ -362,8 +375,11 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
     if (probe)
         ++probe->tx_queued;
 #endif
-    if (!group && p)
-        switch_awdl_sched_data_activity(c, p, now);
+    if (!group && p) {
+        const uint16_t ethertype = (uint16_t)((uint16_t)eth[12] << 8 | eth[13]);
+        const int immediate = switch_awdl_data_immediate_payload(ethertype, eth + 14, len - 14);
+        switch_awdl_sched_data_activity(c, p, now, immediate);
+    }
     const uint64_t stay = switch_awdl_core_ready(c) ? transmit_window(c, eth, p, now, 0) : 0;
     if (stay && all_in_flight(c, eth, now)) {
         const int result = send(c, e->frame, e->len, group, now, stay);
@@ -458,8 +474,12 @@ void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struc
         }
         p->last_data_seq = seq;
         p->has_data_seq = 1;
-        if (!awdl_is_group(f + 4))
-            switch_awdl_sched_data_activity(c, p, m->tsf);
+        if (!awdl_is_group(f + 4)) {
+            int immediate = 0;
+            for (size_t i = 0; i < n && !immediate; ++i)
+                immediate = switch_awdl_data_immediate_payload(msdus[i].ethertype, msdus[i].payload, msdus[i].len);
+            switch_awdl_sched_data_activity(c, p, m->tsf, immediate);
+        }
     }
     for (size_t i = 0; i < n; ++i) {
         const size_t l = awdl_msdu_ether(&msdus[i], c->scratch, sizeof c->scratch);

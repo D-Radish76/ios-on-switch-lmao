@@ -943,6 +943,102 @@ static void switch_test_discovery_boost(void)
 }
 #endif
 
+static void switch_test_syn_and_deferred_data_schedule(void)
+{
+    struct awdl_core *core = make(0x0e, 60, m_tx, switch_schedule);
+    awdl_core_set_infra(core, 2437, 0);
+    switch_awdl_core_set_channels(core, 7, 0);
+    awdl_core_start(core, 0);
+    struct awdl_core *peer = make(0x0f, 520, m_tx, NULL);
+    struct awdl_chan idle_seq[AWDL_SEQ_SLOTS], active_seq[AWDL_SEQ_SLOTS];
+    static const uint8_t mac_active[AWDL_SEQ_SLOTS] = {44, 44, 149, 0, 0, 0, 0, 0, 6, 149, 44, 0, 0, 0, 0, 0};
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
+        idle_seq[i] = (struct awdl_chan){switch_mac[0][i], awdl_opclass_20mhz(switch_mac[0][i])};
+        active_seq[i] = (struct awdl_chan){mac_active[i], awdl_opclass_20mhz(mac_active[i])};
+    }
+    awdl_core_set_sequence(peer, idle_seq, 0);
+    awdl_core_start(peer, 0);
+
+    uint8_t frame[AWDL_MAX_FRAME];
+    size_t length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    struct awdl_rx_meta af_meta = {1000, 5745, -55};
+    awdl_core_rx(core, frame, length, &af_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    const uint8_t us[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x0e};
+    const uint8_t them[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x0f};
+    uint8_t rx_syn[74] = {0}, tx_syn[74] = {0};
+    memcpy(rx_syn, us, 6);
+    memcpy(rx_syn + 6, them, 6);
+    rx_syn[12] = 0x86;
+    rx_syn[13] = 0xdd;
+    rx_syn[14] = 0x60;
+    rx_syn[20] = 6;
+    rx_syn[14 + 40 + 13] = 0x02;
+    memcpy(tx_syn, them, 6);
+    memcpy(tx_syn + 6, us, 6);
+    memcpy(tx_syn + 12, rx_syn + 12, sizeof tx_syn - 12);
+
+    size_t dlen = awdl_data_encap(rx_syn, sizeof rx_syn, them, 1, frame, sizeof frame);
+    struct awdl_rx_meta data_meta = {100000, 2437, -50};
+    awdl_core_rx(core, frame, dlen, &data_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    awdl_core_set_sequence(peer, active_seq, 600000);
+    length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 600000, frame, sizeof frame);
+    af_meta.tsf = 600000;
+    awdl_core_rx(core, frame, length, &af_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+
+    awdl_core_timer(core, 2099999);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+    awdl_core_timer(core, 2100000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    SCHECK(awdl_core_output(core, tx_syn, sizeof tx_syn, 2500000) == 0);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+    awdl_core_timer(core, 4500000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    uint8_t large_rx[1260] = {0};
+    memcpy(large_rx, us, 6);
+    memcpy(large_rx + 6, them, 6);
+    large_rx[12] = 0x86;
+    large_rx[13] = 0xdd;
+    large_rx[14] = 0x60;
+    large_rx[20] = 17;
+    dlen = awdl_data_encap(large_rx, sizeof large_rx, them, 2, frame, sizeof frame);
+    data_meta.tsf = 5000000;
+    awdl_core_rx(core, frame, dlen, &data_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+
+    awdl_core_set_sequence(peer, idle_seq, 5500000);
+    length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 5500000, frame, sizeof frame);
+    af_meta.tsf = 5500000;
+    awdl_core_rx(core, frame, length, &af_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    awdl_core_set_sequence(peer, active_seq, 6000000);
+    length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 6000000, frame, sizeof frame);
+    af_meta.tsf = 6000000;
+    awdl_core_rx(core, frame, length, &af_meta);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+    awdl_core_timer(core, 7000000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    for (uint64_t t = 7500000; t <= 15000000; t += 1500000) {
+        SCHECK(awdl_core_output(core, tx_syn, sizeof tx_syn, t) == 0);
+        SCHECK(awdl_slots_away(switch_installed, 2437) == 7);
+    }
+    awdl_core_timer(core, 16500000);
+    SCHECK(awdl_slots_away(switch_installed, 2437) == 2);
+
+    awdl_core_stop(peer);
+    awdl_core_stop(core);
+    free(peer);
+    free(core);
+}
+
 void test_sched_main(void)
 {
     const int before = test_failures;
@@ -955,6 +1051,7 @@ void test_sched_main(void)
     switch_test_traffic_schedule();
     switch_test_rx_data_schedule();
     switch_test_tx_data_and_keepalive();
+    switch_test_syn_and_deferred_data_schedule();
 #if defined(SWITCH_IPSW_KIND_24B119)
     switch_test_discovery_boost();
 #endif

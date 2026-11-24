@@ -126,9 +126,11 @@ struct awdl_core {
     struct awdl_chan switch_requested_seq[AWDL_SEQ_SLOTS];
     uint8_t switch_channels_limited;
     uint16_t switch_legal_channels;
-    uint8_t switch_timed_peer, switch_search_pass, switch_traffic_active, switch_data_active, switch_data_burst;
+    uint8_t switch_timed_peer, switch_search_pass, switch_traffic_active, switch_data_active;
     uint8_t switch_discovery_active;
-    uint64_t switch_next_search, switch_data_window, switch_data_until, switch_discovery_until;
+    uint8_t switch_data_burst[AWDL_MAX_PEERS];
+    uint64_t switch_next_search, switch_discovery_until;
+    uint64_t switch_data_window[AWDL_MAX_PEERS], switch_data_until[AWDL_MAX_PEERS];
     struct awdl_stats stats;
     // native backend: the firmware's AWDL interface and its bring-up
     uint8_t nstate;        // AWDL_N_*
@@ -197,7 +199,7 @@ void switch_awdl_core_service_changed(struct awdl_core *c, uint64_t now);
 // awdl_schedule.c: the sequence for the infra channel and the radio's legal channels, shared by both backends.
 void awdl_sched_start(struct awdl_core *c);
 void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *p, uint64_t now);
-void switch_awdl_sched_data_activity(struct awdl_core *c, const struct awdl_peer *p, uint64_t now);
+void switch_awdl_sched_data_activity(struct awdl_core *c, const struct awdl_peer *p, uint64_t now, int immediate);
 void switch_awdl_sched_discovery(struct awdl_core *c, uint64_t now);
 void awdl_schedule_from(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t mask, struct awdl_chan free_chan, uint8_t first,
                         uint8_t second);

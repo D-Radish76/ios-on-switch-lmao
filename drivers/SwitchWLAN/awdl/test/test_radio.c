@@ -681,6 +681,66 @@ static void switch_test_recovery(void)
     free(core);
 }
 
+static void switch_test_skip_micro_window(void)
+{
+    memset(&switch_radio_test, 0, sizeof switch_radio_test);
+    struct awdl_core *core = switch_radio_core();
+    struct awdl_chan seq[AWDL_SEQ_SLOTS] = {0};
+    seq[0] = (struct awdl_chan){44, 115};
+    seq[1] = (struct awdl_chan){44, 115};
+    seq[2] = (struct awdl_chan){149, 124};
+    const uint64_t slot = AWDL_EAW_TU * AWDL_TU_US;
+    const uint64_t base = AWDL_SEQ_SLOTS * slot;
+    awdl_core_set_sequence(core, seq, base);
+    awdl_core_start(core, base);
+
+    uint8_t eth[64] = {2, 1, 2, 3, 4, 11, 2, 1, 2, 3, 4, 5, 0x86, 0xdd, 0x60};
+    struct awdl_config cfg;
+    awdl_config_default(&cfg, eth);
+    cfg.self_metric = 10;
+    const struct awdl_host host = {.tx = switch_radio_tx};
+    struct awdl_core *peer = calloc(1, awdl_core_size());
+    RCHECK(peer && awdl_core_init(peer, &host, &cfg) == 0);
+    awdl_core_set_sequence(peer, seq, 0);
+    awdl_core_start(peer, 0);
+
+    uint8_t mif[AWDL_MAX_FRAME];
+    const size_t mif_len = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 10000, mif, sizeof mif);
+    RCHECK(mif_len > 0);
+    const struct awdl_rx_meta meta = {base + 10000 - 1000, 5220, -39};
+    awdl_core_rx(core, mif, mif_len, &meta);
+
+    const uint64_t peer_slot1 = base + slot - 1000;
+    const uint64_t core_slot1 = base + slot;
+    RCHECK(!awdl_core_output(core, eth, sizeof eth, peer_slot1));
+    RCHECK(switch_radio_test.accepted == 0);
+    uint64_t t = awdl_core_timer(core, peer_slot1);
+    for (unsigned i = 0; i < 8 && t < core_slot1; ++i)
+        t = awdl_core_timer(core, t);
+    RCHECK(t == core_slot1 && switch_radio_test.accepted == 0);
+    awdl_core_timer(core, core_slot1);
+    const uint64_t slot1_close = peer_slot1 + slot - 3 * AWDL_TU_US;
+    RCHECK(switch_radio_test.accepted == 1 && switch_radio_test.data_deadline == slot1_close);
+
+    const uint64_t sliver = slot1_close - 1000;
+    switch_awdl_core_tx_done(core, 0, SWITCH_AWDL_TX_ACKED, 0, sliver);
+    RCHECK(!awdl_core_output(core, eth, sizeof eth, sliver));
+    RCHECK(switch_radio_test.accepted == 1);
+    const uint64_t slot2_open = base + 2 * slot + 3 * AWDL_TU_US;
+    t = awdl_core_timer(core, sliver);
+    for (unsigned i = 0; i < 8 && t < slot2_open; ++i)
+        t = awdl_core_timer(core, t);
+    RCHECK(t == slot2_open && switch_radio_test.accepted == 1);
+    awdl_core_timer(core, slot2_open);
+    RCHECK(switch_radio_test.accepted == 2 &&
+           switch_radio_test.data_deadline == peer_slot1 + 2 * slot - 3 * AWDL_TU_US);
+
+    awdl_core_stop(peer);
+    awdl_core_stop(core);
+    free(peer);
+    free(core);
+}
+
 void test_radio_main(void)
 {
     switch_test_legacy_channels();
@@ -688,6 +748,7 @@ void test_radio_main(void)
     switch_test_bonjour_windows();
     switch_test_peer_window(0, 0);
     switch_test_peer_window(0xffff0000u, 1);
+    switch_test_skip_micro_window();
     switch_test_queued_expiry();
     switch_test_delayed_action();
     switch_test_backpressure();
