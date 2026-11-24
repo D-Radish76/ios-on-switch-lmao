@@ -32,9 +32,10 @@ enum switch_feature {
     SWITCH_FEATURE_EMC = 1u << 11,      // DRAM clock requests to the BPMP
     SWITCH_FEATURE_SLEEP = 1u << 12,
     SWITCH_FEATURE_SE2 = 1u << 13,  // the second security engine, which only the T210B01 has
+    SWITCH_FEATURE_RTC_MARK = 1u << 14,  // DEVELOPMENT only: the boot mark in the MAX77620 RTC alarm (a write to the RTC)
 };
 
-#define SWITCH_FEATURES_ALL 0x3fffu
+#define SWITCH_FEATURES_ALL 0x7fffu
 
 // X(id, "name", t210b01, sku, boot, features, model, compatible). boot_script.py parses the first five fields.
 // model and compatible are what the board's device tree says about itself; NULL is not known yet. Nothing fills in a
@@ -109,6 +110,42 @@ static inline const struct switch_board *switch_board_by_name(const char *name)
         if (switch_board_streq(switch_boards[i].name, name))
             return &switch_boards[i];
     return &switch_board_unknown;
+}
+
+// The row a kernel without the loader's word may still be: the one this tree ran on before the word existed.
+#define SWITCH_BOARD_LEGACY "oled"
+
+// Whether the NUL separated list a device tree property holds (compatible) names `wanted`. A list that does not end in a
+// zero is cut off or not a string list, and names nothing.
+static inline int switch_board_lists(const char *list, size_t bytes, const char *wanted)
+{
+    if (!list || !bytes || !wanted || list[bytes - 1] != 0)
+        return 0;
+    for (size_t at = 0; at < bytes;) {
+        if (switch_board_streq(list + at, wanted))
+            return 1;
+        while (list[at])
+            at++;
+        at++;
+    }
+    return 0;
+}
+
+// What the kernel believes about the console, from three witnesses that must agree: the registers (HIDREV, ODM4), the
+// loader's word (NULL when the command line has none) and the device tree's compatible list. Anything missing, malformed
+// or in disagreement is the unknown board. Without a word only the legacy row is believed, and only because the registers
+// say so; a row whose device tree strings are not known (NULL) cannot be confirmed and is unknown too.
+static inline const struct switch_board *switch_board_resolve(const char *word, uint32_t hidrev, uint32_t odm4,
+                                                              const char *compatible, size_t compatible_bytes)
+{
+    const struct switch_board *board = switch_board_detect(hidrev, odm4);
+    if (board == &switch_board_unknown)
+        return board;
+    if (word ? switch_board_by_name(word) != board : !switch_board_streq(board->name, SWITCH_BOARD_LEGACY))
+        return &switch_board_unknown;
+    if (!board->compatible || !switch_board_lists(compatible, compatible_bytes, board->compatible))
+        return &switch_board_unknown;
+    return board;
 }
 
 #define SWITCH_BOARD_ARG        "switch-board"

@@ -8,6 +8,25 @@
 
 namespace {
 std::string gCommandLine;
+uint32_t gHidrev, gOdm4;
+std::string gCompatible;  // the device tree property, with its zeros
+bool gNoRegisters, gNoDeviceTree;
+
+void oledConsole(const char *commandLine = "")
+{
+    gCommandLine = commandLine;
+    gHidrev = 0x21u << 8 | 2u << 4 | 1;
+    gOdm4 = 4u << 16;
+    static const char list[] = "nvidia,fric\0nintendo,aula\0nintendo,nx\0nvidia,tegra210b01";
+    gCompatible.assign(list, sizeof(list));
+    gNoRegisters = gNoDeviceTree = false;
+}
+
+void expectNoFeatures(const char *why)
+{
+    for (uint32_t bit = 1; bit <= SWITCH_FEATURE_RTC_MARK; bit <<= 1)
+        EXPECT_FALSE(switch_board_has(static_cast<switch_feature>(bit))) << why << " " << bit;
+}
 
 uint32_t hidrev(unsigned major)
 {
@@ -96,37 +115,119 @@ TEST(SwitchBoard, NoTwoBoardsShareAnIdentity)
 
 TEST(SwitchBoard, TheKernelReadsTheLoadersWord)
 {
-    gCommandLine = "-v switch-board=oled";
+    oledConsole("-v switch-board=oled");
     EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_CHARGER));
     EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_SLEEP));
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_RTC_MARK));
+}
 
-    gCommandLine = "-v switch-board=erista";
-    for (uint32_t bit = 1; bit <= SWITCH_FEATURE_SE2; bit <<= 1)
-        EXPECT_FALSE(switch_board_has(static_cast<switch_feature>(bit))) << bit;
+TEST(SwitchBoard, AnEristaHasNoFeaturesWhateverTheWord)
+{
+    for (const char *line : {"switch-board=erista", "", "switch-board=oled"}) {
+        oledConsole(line);
+        gHidrev = 0x21u << 8 | 1u << 4 | 1;
+        gOdm4 = 0;
+        gCompatible.assign("nvidia,tegra210", 16);
+        expectNoFeatures(line);
+    }
 }
 
 TEST(SwitchBoard, AWordThatIsNotInTheTableEnablesNothing)
 {
-    for (const char *line : {"switch-board=", "switch-board=oledx", "switch-board=OLED", "switch-board=ole", "switch-board=zzz"}) {
-        gCommandLine = line;
-        for (uint32_t bit = 1; bit <= SWITCH_FEATURE_SE2; bit <<= 1)
-            EXPECT_FALSE(switch_board_has(static_cast<switch_feature>(bit))) << line << " " << bit;
+    for (const char *line : {"switch-board=", "switch-board=oledx", "switch-board=OLED", "switch-board=ole", "switch-board=zzz",
+                             "switch-board=unknown"}) {
+        oledConsole(line);
+        expectNoFeatures(line);
     }
 }
 
 TEST(SwitchBoard, TheLastWordWinsSoBootargsTxtCannotOverrideTheLoader)
 {
-    gCommandLine = "switch-board=oled switch-board=erista";
+    oledConsole("switch-board=oled switch-board=erista");
     EXPECT_FALSE(switch_board_has(SWITCH_FEATURE_CHARGER));
-    gCommandLine = "switch-board=erista bootargs switch-board=oled";
+    oledConsole("switch-board=erista bootargs switch-board=oled");
     EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_CHARGER));
 }
 
-TEST(SwitchBoard, NoWordIsAKernelNotStartedByTheLoader)
+TEST(SwitchBoard, ADuplicateThatDisagreesOrIsEmptyEnablesNothing)
 {
-    gCommandLine = "-v switch-no-bt";
+    for (const char *line : {"switch-board=oled switch-board=", "switch-board=oled switch-board=bogus",
+                             "switch-board=erista switch-board=erista", "switch-board=oled switch-board=oled switch-board="}) {
+        oledConsole(line);
+        expectNoFeatures(line);
+    }
+    oledConsole("switch-board=oled switch-board=oled");
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_GPU));
+}
+
+TEST(SwitchBoard, AWordNeverMatchesOnlyBecauseItWasCut)
+{
+    const std::string valid = "switch-board=oled";
+    for (const char *tail : {"AAAAAAAAAAA", "AAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}) {
+        oledConsole((valid + tail).c_str());
+        expectNoFeatures(tail);
+    }
+    oledConsole("xswitch-board=oled");  // another key that ends the same way
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_GPU));  // no word: the registers speak
+    oledConsole("switch-board=oled");
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_GPU));
+}
+
+TEST(SwitchBoard, NoWordIsTheOledOnlyWhereTheRegistersSayOled)
+{
+    oledConsole("-v switch-no-bt");
     EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_GPU));
     EXPECT_STREQ(switch_board_current()->name, "oled");
+    for (uint32_t odm4Value : {odm4(2), odm4(0), odm4(15)}) {  // a T210B01 that is not the OLED sku
+        oledConsole();
+        gOdm4 = odm4Value;
+        expectNoFeatures("other sku");
+    }
+    oledConsole();
+    gHidrev = hidrev(2) & ~(0xffu << 8);  // not a T210 family chip
+    expectNoFeatures("other chip");
+}
+
+TEST(SwitchBoard, MissingRegistersOrDeviceTreeEnableNothing)
+{
+    oledConsole("switch-board=oled");
+    gNoRegisters = true;
+    expectNoFeatures("no registers");
+    oledConsole();
+    gNoDeviceTree = true;
+    expectNoFeatures("no device tree");
+}
+
+TEST(SwitchBoard, TheWordAndTheRegistersMustAgree)
+{
+    oledConsole("switch-board=erista");  // the registers say OLED
+    expectNoFeatures("word erista, registers oled");
+    oledConsole("switch-board=oled");
+    gOdm4 = odm4(2);  // the registers say another T210B01 sku
+    expectNoFeatures("word oled, registers other sku");
+}
+
+TEST(SwitchBoard, TheDeviceTreeMustNameTheRow)
+{
+    for (const char *compatible : {"nintendo,aulax", "nintendo,aul", "nvidia,tegra210b01", ""}) {
+        oledConsole("switch-board=oled");
+        gCompatible = std::string(compatible, strlen(compatible) + 1);
+        expectNoFeatures(compatible);
+    }
+    oledConsole("switch-board=oled");
+    gCompatible = "nintendo,aula";  // no terminating zero in the property: cut off
+    gCompatible.pop_back();
+    expectNoFeatures("not terminated");
+    oledConsole("switch-board=oled");
+    gCompatible.assign("a\0nintendo,aula", 16);  // the first entry is not the only one
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_GPU));
+}
+
+TEST(SwitchBoard, ARowWithoutDeviceTreeStringsCannotBeConfirmed)
+{
+    const switch_board *erista = switch_board_by_name("erista");
+    EXPECT_EQ(switch_board_resolve("erista", 0x21u << 8 | 1u << 4, 0, "anything\0", 9), &switch_board_unknown);
+    EXPECT_EQ(erista->compatible, nullptr);
 }
 
 TEST(SwitchBoard, TheOledNamesItselfAndNoOtherBoardGuesses)
@@ -141,7 +242,7 @@ TEST(SwitchBoard, TheOledNamesItselfAndNoOtherBoardGuesses)
 
 TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)
 {
-    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_SE2 << 1) - 1);
+    EXPECT_EQ(SWITCH_FEATURES_ALL, (SWITCH_FEATURE_RTC_MARK << 1) - 1);
 }
 
 TEST(SwitchBoard, AFeatureNeedsEveryBitAsked)
@@ -151,6 +252,24 @@ TEST(SwitchBoard, AFeatureNeedsEveryBitAsked)
     EXPECT_FALSE(switch_board_has_feature(&partial, static_cast<switch_feature>(SWITCH_FEATURE_GPU | SWITCH_FEATURE_VIDEO)));
 }
 }  // namespace
+
+extern "C" int switch_board_read_hardware(uint32_t *hidrevValue, uint32_t *odm4Value)
+{
+    if (gNoRegisters)
+        return -1;
+    *hidrevValue = gHidrev;
+    *odm4Value = gOdm4;
+    return 0;
+}
+
+extern "C" int switch_board_read_compatible(const char **list, size_t *bytes)
+{
+    if (gNoDeviceTree)
+        return -1;
+    *list = gCompatible.data();
+    *bytes = gCompatible.size();
+    return 0;
+}
 
 // The last occurrence wins and a name longer than the buffer is cut, as XNU's PE_parse_boot_argn_internal does.
 extern "C" int PE_parse_boot_arg_str(const char *name, char *value, int size)
