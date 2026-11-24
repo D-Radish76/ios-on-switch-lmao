@@ -309,6 +309,9 @@ static int switch_awdl_service_request(struct a80211_awdl *f, const void *data, 
     if (start)
         return start;
     switch_awdl_service_keep(c);
+    switch_awdl_sched_discovery(c, now);
+    if (c->switch_staged[0] == AWDL_TLV_SERVICE_RESPONSE)
+        switch_awdl_core_service_changed(c, now);
     return 0;
 }
 #endif

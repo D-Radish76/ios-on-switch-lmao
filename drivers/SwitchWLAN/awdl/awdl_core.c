@@ -503,10 +503,25 @@ void awdl_core_start(struct awdl_core *c, uint64_t now)
     c->role = AWDL_ROLE_ROOT;
     awdl_run_election(c, now);
     awdl_sched_start(c);
-    c->next_psf = now + awdl_psf_period_tu(c->role) * AWDL_TU_US;
+    c->next_psf = now;
     awdl_soft_install(c, now);
     awdl_sched_log(c, "%s", "start");
 }
+
+#if defined(SWITCH_IPSW_KIND_24B119)
+void switch_awdl_core_service_changed(struct awdl_core *c, uint64_t now)
+{
+    if (!c || !c->running || awdl_native(c))
+        return;
+    if (!now)
+        now = c->last_observation;
+    if (!c->next_mif && discovery_slot(c, slot_of(awdl_core_aw_seq(c, now)))) {
+        const uint64_t due = now + 4u * AWDL_TU_US;
+        if (due + AWDL_SLOT_GUARD_US < slot_end(c, now))
+            c->next_mif = due;
+    }
+}
+#endif
 
 void awdl_core_stop(struct awdl_core *c)
 {
@@ -518,6 +533,8 @@ void awdl_core_stop(struct awdl_core *c)
     c->switch_data_burst = 0;
     c->switch_data_window = 0;
     c->switch_data_until = 0;
+    c->switch_discovery_active = 0;
+    c->switch_discovery_until = 0;
 #if DEVELOPMENT || DEBUG
     c->switch_home_trial_channel = 0;
 #endif

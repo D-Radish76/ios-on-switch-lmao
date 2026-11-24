@@ -455,7 +455,7 @@ static void test_channel_map(void)
     hear_master(c, MAC, 510, mac_idle, 1000000);
     ECHECK(awdl_core_role(c) == AWDL_ROLE_FOLLOWER && advertised(c, on6, 1000000));
     ECHECK(awdl_social_map(awdl_core_sequence(c)) == 7 && awdl_slots_away(awdl_core_sequence(c), 2437) == 2);
-    // Inbound TCP from a peer advertising active 5 GHz slots escalates once on the 4th RX segment and returns to idle 2 s after the last.
+    // Unicast TCP with a peer advertising active 5 GHz slots escalates once on the 4th segment and returns to idle 2 s after the last.
     const unsigned installed = e_installs;
     for (uint64_t t = 1000000; t < 6000000; t += 50000) {
         if (!(t % 1000000))
@@ -463,7 +463,7 @@ static void test_channel_map(void)
         if (t < 2000000)
             tcp(c, (t / 50000) % 2, t);
         awdl_core_timer(c, t);
-        ECHECK(advertised(c, t >= 1300000 && t < 3900000 ? on6_active : on6, t));
+        ECHECK(advertised(c, t >= 1150000 && t < 3950000 ? on6_active : on6, t));
     }
     ECHECK(e_installs == installed + 2);
     // a better master whose sequence is mostly 149: the same map

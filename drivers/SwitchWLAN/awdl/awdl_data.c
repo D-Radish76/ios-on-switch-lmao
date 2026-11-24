@@ -362,6 +362,8 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
     if (probe)
         ++probe->tx_queued;
 #endif
+    if (!group && p)
+        switch_awdl_sched_data_activity(c, p, now);
     const uint64_t stay = switch_awdl_core_ready(c) ? transmit_window(c, eth, p, now, 0) : 0;
     if (stay && all_in_flight(c, eth, now)) {
         const int result = send(c, e->frame, e->len, group, now, stay);

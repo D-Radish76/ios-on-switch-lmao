@@ -20,8 +20,8 @@ extern int test_failures;
 static struct {
     int result, calls, accepted, starts, start_error;
     int async_schedule, schedules, pending, cancelled;
-    uint16_t sequence[128];
-    uint8_t marker[128], attempted[AWDL_MAX_FRAME], late[6];
+    uint16_t sequence[AWDL_TXQ_FRAMES + 16];
+    uint8_t marker[AWDL_TXQ_FRAMES + 16], attempted[AWDL_MAX_FRAME], late[6];
     size_t attempted_bytes;
     uint64_t data_deadline;
     struct awdl_core *core;
@@ -49,7 +49,7 @@ static int switch_radio_tx(void *ctx, const uint8_t *frame, size_t len, uint16_t
         const size_t bytes = awdl_data_decap(frame, len, ether, sizeof ether, &seq, NULL);
         RCHECK(bytes >= 15);
         const unsigned i = (unsigned)switch_radio_test.accepted++;
-        if (i < 128) {
+        if (i < sizeof switch_radio_test.sequence / sizeof switch_radio_test.sequence[0]) {
             switch_radio_test.sequence[i] = seq;
             switch_radio_test.marker[i] = ether[14];
         }
@@ -181,6 +181,7 @@ static void switch_test_home_discovery(void)
     awdl_core_start(core, 0);
     const uint64_t mid = AWDL_EAW_TU * AWDL_TU_US / 2;
     RCHECK(awdl_core_timer(core, 0) == mid);
+    RCHECK(awdl_core_stats(core)->psf_tx == 1);
     awdl_core_timer(core, mid);
     RCHECK(awdl_core_stats(core)->mif_tx == 1);
 
