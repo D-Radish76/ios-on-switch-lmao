@@ -1,0 +1,50 @@
+# a64_scan.py, bl33.bin linked at 0xaa000000
+sha256 b492a4017580ca11c9cd49075a899a65f62069d3750615217fc10308954c9faa
+aa0025c4 ldr    PMC 7000e400 w3
+aa0025cc str    PMC 7000e400 w3
+aa002608 str    PMC 7000e450 w1
+aa00260c call aa002128 x0=0x7000e400
+aa002a18 ldr    CAR 600061d4 w2
+aa002a24 str    CAR 600061d4 w19
+aa002a80 ldr    CAR 600061d4 w1
+aa002b10 ldr    CAR 600061d4 w0
+aa002bc4 ldr    CAR 600061d4 w3
+aa002bd0 str    CAR 600061d4 w3
+aa002ca0 ldr    CAR 6000655c w1
+aa002eec ldr    CAR 600060a0 w1
+aa002fa0 call aa002cb8 x0=0xc
+aa0034a0 ldr    CAR 60006050 w0
+aa003790 str    CAR 600060a4 wzr
+aa00379c str    CAR 600060a4 w1
+aa0037a4 str    CAR 600060a8 wzr
+aa0037b4 str    CAR 600060a8 w1
+aa003804 call aa002da0 x2=0xc
+aa00381c call aa002da0 x2=0xc
+aa003824 ldr    CAR 6000608c w0
+aa00382c str    CAR 6000608c w0
+aa003838 ldr    CAR 60006088 w0
+aa003840 str    CAR 60006088 w0
+aa003868 str    CAR 600060dc w0
+aa00392c call aa002cb8 x0=0xc
+aa0043ec ldr    PMC 7000e450 w19
+aa0043f4 call aa00263c x0=0x7000e450
+aa00447c str    PMC 7000e450 w19
+aa004778 ldr    PMC 7000e444 w20
+aa004788 str    PMC 7000e444 w0
+aa00478c ldr    PMC 7000e444 w0
+aa0047a4 str    PMC 7000e444 w20
+aa0047a8 ldr    PMC 7000e444 w0
+aa0047b8 ldr    PMC 7000e4e4 w1
+aa0047c8 str    PMC 7000e4e4 w1
+aa0047cc ldr    PMC 7000e4e4 w0
+aa006b88 call aa02c6b0 x2=0xc
+aa00a258 call aa03bfb0 x2=0xc
+aa015274 call aa00d0e0 x0=0xc
+aa018dcc call aa012ff0 x0=0x43
+aa01d7d4 call aa03be00 x1=0x2f
+aa01d884 call aa03be00 x1=0x2f
+aa01d8bc call aa03be30 x1=0x2f
+aa01e94c call aa03be30 x1=0x2f
+aa023734 call aa01c9b8 x0=0x36
+aa028e38 call aa03bdd0 x1=0x2f
+aa02da90 call aa03c230 x1=0x2f

@@ -170,6 +170,13 @@ py_binary(
     srcs = ["bpmpfw_scan.py"],
 )
 
+# Offline reader for the pinned BL31 and U-Boot, which looks for device accesses and call arguments (ERISTA_BOOTCHAIN_CAR.md).
+py_binary(
+    name = "a64_scan",
+    srcs = ["a64_scan.py"],
+    deps = [":bpmpfw_scan"],
+)
+
 # The read only memory diagnostic (boot/diag/memory): two hekate entries that print what U-Boot says about memory.
 py_binary(
     name = "diag_memory",

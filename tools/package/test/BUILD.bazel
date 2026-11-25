@@ -391,6 +391,19 @@ py_test(
     deps = ["//tools/package:bpmpfw_scan"],
 )
 
+# a64_scan.py on synthetic AArch64 code, and the recorded scans of the pinned BL31 and U-Boot.
+py_test(
+    name = "a64_scan_test",
+    size = "small",
+    srcs = ["a64_scan_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//bazel/pinned:firmware/bl31.bin",
+        "//bazel/pinned:firmware/bl33.bin",
+    ],
+    deps = ["//tools/package:a64_scan"],
+)
+
 # The first T1-R run on the Erista (boot/diag/erista-t1r-run.log), decoded.
 py_test(
     name = "t1r_run_test",
