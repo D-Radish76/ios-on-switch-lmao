@@ -61,7 +61,7 @@ def _verdict(present: object, ok: object) -> str:
 
 
 def mask(info: str) -> str:
-    """Replace the lines that name a card's maker, OEM and product with `masked`; keep what the exporter's conditions need."""
+    """Replace the maker, OEM and name lines with `masked`; keep what the exporter conditions need."""
     out = []
     for line in info.splitlines():
         label = line.split(':', 1)[0]
