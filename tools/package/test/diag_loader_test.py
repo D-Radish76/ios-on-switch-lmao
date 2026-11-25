@@ -17,7 +17,7 @@ from typing import ClassVar
 from bl33 import bl33_patch
 from boot_script import boards
 from diag_boot import DWELL, carveout_table, diag_env_edits
-from diag_loader import INI, board_gate, build, check_destination, diag_loader_bl33, diag_script
+from diag_loader import INI, board_gate, build, check_destination, diag_loader_bl33, diag_script, entry_ini
 from diag_loader_inspect import FORBIDDEN_SYMBOLS, SPECIAL, WRITES, inspect_disassembly, inspect_map
 from fdt_tree import tree
 from loader_abi import (
@@ -175,6 +175,16 @@ class Image(unittest.TestCase):
         with self.assertRaises(SystemExit):
             diag_loader_bl33(bl33_patch(BL33, diag_env_edits(DWELL)), script(), self.loader, bytes(DTB_SLOT[1] + 1))
 
+    def test_the_reservation_variant_is_its_own_entry_and_the_d0_ini_is_unchanged(self) -> None:
+        d0 = (
+            '[iOS Diag Loader]\nl4t=1\nboot_prefixes=/switchroot/ios-diag-loader/\nid=iDiagL\n'
+            'icon=bootloader/res/icon_ios_hue.bmp\nbootwait=0\nbootcmd_mmc0=true\nscan_dev_for_extlinux=true\n'
+        )
+        self.assertEqual(INI, d0)
+        variant = entry_ini('iOS Diag Loader R', 'ios-diag-loader-r', 'iDiagLR')
+        renamed = d0.replace('iOS Diag Loader', 'iOS Diag Loader R').replace('ios-diag-loader', 'ios-diag-loader-r')
+        self.assertEqual(variant, renamed.replace('iDiagL', 'iDiagLR'))
+
     def test_the_entry_files_are_the_diagnostics_own(self) -> None:
         with tempfile.TemporaryDirectory() as out:
             build(
@@ -188,6 +198,9 @@ class Image(unittest.TestCase):
                     bl33=ROOT / 'bazel/pinned/firmware/bl33.bin',
                     out=Path(out),
                     dwell=DWELL,
+                    entry='ios-diag-loader',
+                    title='iOS Diag Loader',
+                    ident='iDiagL',
                 )
             )
             files = sorted(str(p.relative_to(out)) for p in Path(out).rglob('*') if p.is_file())

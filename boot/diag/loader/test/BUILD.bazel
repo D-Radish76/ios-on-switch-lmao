@@ -23,3 +23,21 @@ host_test(
     srcs = ["diag_checks_test.cpp"],
     deps = [":checks"],
 )
+
+host_library(
+    name = "reservations",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/loader/reservations.c",
+        "//boot:diag/loader/reservations.h",
+        "//boot:loader/ram.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "reservations_test",
+    srcs = ["reservations_test.cpp"],
+    deps = [":reservations"],
+)

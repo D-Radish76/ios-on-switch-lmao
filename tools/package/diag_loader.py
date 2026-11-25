@@ -23,24 +23,39 @@ from boot_script import boards, script_image
 from diag_boot import DWELL, STEP, diag_env_edits, dwell_steps
 from diag_loader_inspect import inspect_disassembly, inspect_map, report
 from fdt_ranges import reserved_ranges
-from loader_abi import BL33_BASE, BOOT_ARGS_PAGE, DTB_SLOT, LOADER_SLOT, SCRIPT_SLOT, SD_REFERENCE, STAGE_HEADER
+from loader_abi import (
+    BL33_BASE,
+    BOOT_ARGS_PAGE,
+    DTB_SLOT,
+    EXPORTER_RUN,
+    LOADER_SLOT,
+    SCRIPT_SLOT,
+    SD_REFERENCE,
+    STAGE_HEADER,
+)
 from loader_link import validate_elf
 from uimage import LOAD, Header, legacy_image
 
 ENTRY = 'ios-diag-loader'
-INI = '\n'.join(
-    [
-        '[iOS Diag Loader]',
-        'l4t=1',
-        f'boot_prefixes=/switchroot/{ENTRY}/',
-        'id=iDiagL',
-        'icon=bootloader/res/icon_ios_hue.bmp',
-        'bootwait=0',
-        'bootcmd_mmc0=true',
-        'scan_dev_for_extlinux=true',
-        '',
-    ]
-)
+
+
+def entry_ini(title: str, entry: str, ident: str) -> str:
+    return '\n'.join(
+        [
+            f'[{title}]',
+            'l4t=1',
+            f'boot_prefixes=/switchroot/{entry}/',
+            f'id={ident}',
+            'icon=bootloader/res/icon_ios_hue.bmp',
+            'bootwait=0',
+            'bootcmd_mmc0=true',
+            'scan_dev_for_extlinux=true',
+            '',
+        ]
+    )
+
+
+INI = entry_ini('iOS Diag Loader', ENTRY, 'iDiagL')
 MAX_IMAGE_END = 0xA001EF00
 DRAM = (0x80000000, 0xFFD00000)
 FDT_COPY = (0x8D000000, 0x8D000000 + 0x30000)
@@ -119,6 +134,7 @@ def check_destination(loader_bytes: int, bl33_bytes: int, dtb: bytes | None = No
         'the framebuffer': FRAMEBUFFER,
         'the boot arguments page': (BOOT_ARGS_PAGE, BOOT_ARGS_PAGE + 0x1000),
         'the SD reference page': (SD_REFERENCE, SD_REFERENCE + 0x1000),
+        'the exporter run area': (EXPORTER_RUN[0], EXPORTER_RUN[0] + EXPORTER_RUN[1]),
     }
     for name, (start, end) in claimed.items():
         if load[0] < end and start < load[1]:
@@ -169,7 +185,7 @@ def build(args: argparse.Namespace) -> None:
     dtb = args.dtb.read_bytes()
     script = diag_script(args.template.read_text(), args.boards.read_text(), args.board, len(dtb), args.dwell)
     u_boot = bl33_patch(args.bl33.read_bytes(), diag_env_edits(args.dwell))
-    switchroot = args.out / 'switchroot' / ENTRY
+    switchroot = args.out / 'switchroot' / args.entry
     switchroot.mkdir(parents=True, exist_ok=True)
     (args.out / 'bootloader' / 'ini').mkdir(parents=True, exist_ok=True)
     (switchroot / 'bl31.bin').write_bytes(args.bl31.read_bytes())
@@ -178,7 +194,7 @@ def build(args: argparse.Namespace) -> None:
     check_destination(len(loader), len(image), dtb)
     (switchroot / 'bl33.bin').write_bytes(image)
     (switchroot / 'script.txt').write_text(script)
-    (args.out / 'bootloader' / 'ini' / f'{ENTRY}.ini').write_text(INI)
+    (args.out / 'bootloader' / 'ini' / f'{args.entry}.ini').write_text(entry_ini(args.title, args.entry, args.ident))
 
 
 def main() -> None:
@@ -192,6 +208,9 @@ def main() -> None:
     for name in ('template', 'boards', 'loader', 'dtb', 'bl31', 'bl33', 'out'):
         p.add_argument('--' + name, required=True, type=Path)
     p.add_argument('--board', default='erista')
+    p.add_argument('--entry', default=ENTRY)
+    p.add_argument('--title', default='iOS Diag Loader')
+    p.add_argument('--ident', default='iDiagL')
     p.add_argument('--dwell', type=int, default=DWELL)
     args = parser.parse_args()
     link(args) if args.step == 'link' else build(args)

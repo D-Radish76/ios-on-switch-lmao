@@ -20,7 +20,7 @@ def _impl(ctx):
         obj = ctx.actions.declare_file("%s/part-%d.o" % (ctx.label.name, i))
         ctx.actions.run_shell(
             command = _XCODE_SHELL,
-            arguments = [ctx.file.xcode_env.path, "/usr/bin/clang"] + LOADER_COPTS + includes + ["-c", src.path, "-o", obj.path],
+            arguments = [ctx.file.xcode_env.path, "/usr/bin/clang"] + LOADER_COPTS + ctx.attr.defines + includes + ["-c", src.path, "-o", obj.path],
             inputs = depset([src, ctx.file.xcode_env, ctx.file.xcode_identity] + ctx.files.hdrs),
             outputs = [obj],
             env = {"LC_ALL": "C", "PATH": "/usr/bin:/bin", "TZ": "UTC"},
@@ -67,6 +67,9 @@ def _impl(ctx):
     build.add("--bl31", ctx.file.bl31)
     build.add("--bl33", ctx.file.bl33)
     build.add("--dwell", str(ctx.attr.dwell))
+    build.add("--entry", ctx.attr.entry)
+    build.add("--title", ctx.attr.title)
+    build.add("--ident", ctx.attr.ident)
     build.add("--out", package.path)
     ctx.actions.run(
         executable = ctx.executable._diag_loader,
@@ -93,6 +96,10 @@ diag_loader_package = rule(
         "bl31": attr.label(mandatory = True, allow_single_file = True),
         "bl33": attr.label(mandatory = True, allow_single_file = True),
         "dwell": attr.int(default = 15),
+        "defines": attr.string_list(doc = "extra compile flags for every source (D0-R's -DSWITCH_DIAG_RESERVATIONS=1)"),
+        "entry": attr.string(default = "ios-diag-loader", doc = "the directory under switchroot/ and the ini's file name"),
+        "title": attr.string(default = "iOS Diag Loader", doc = "the hekate menu entry"),
+        "ident": attr.string(default = "iDiagL", doc = "the entry's id in the ini"),
         "xcode_env": attr.label(mandatory = True, allow_single_file = True),
         "xcode_identity": attr.label(mandatory = True, allow_single_file = True),
         "_diag_loader": attr.label(default = "//tools/package:diag_loader", executable = True, cfg = "exec"),

@@ -8,6 +8,9 @@
 #include "ranges.h"
 #include "record.h"
 #include "report.h"
+#ifdef SWITCH_DIAG_RESERVATIONS
+#include "reservations.h"
+#endif
 
 _Static_assert(SWITCH_DIAG_FB_PA == DISPLAY_BASE && SWITCH_DIAG_FB_BYTES == DISPLAY_BYTES,
                "the checked framebuffer is the one display.h draws on");
@@ -237,6 +240,68 @@ static void report_memory_controller(void)
     put(LEFT, 8, &line, different ? DISPLAY_RED : DISPLAY_GREEN);
 }
 
+#ifdef SWITCH_DIAG_RESERVATIONS
+/* Rows 16 to 30 of the left column: the banks and every reserved range as the walk saved them (reserve map entries
+ * first, then /reserved-memory ranges), then the two areas D1 would use, each against the ranges and the banks. */
+static void report_range(unsigned row, const char *label, uint64_t start, uint64_t end, uint32_t color)
+{
+    struct switch_diag_line line;
+    switch_diag_range_line(&line, label, start, end);
+    put(LEFT, row, &line, color);
+}
+
+static void report_area(unsigned row, const char *label, uint64_t start, uint64_t end,
+                        const struct loader_memory_report *memory)
+{
+    struct switch_diag_line line;
+    switch_diag_line_start(&line, label);
+    switch_diag_line_add(&line, " ");
+    switch_diag_line_hex(&line, start, SWITCH_DIAG_ADDRESS_DIGITS);
+    switch_diag_line_add(&line, " ");
+    switch_diag_line_hex(&line, end, SWITCH_DIAG_ADDRESS_DIGITS);
+    const int over = switch_diag_first_overlap(&memory->ledger, start, end);
+    const int bank = switch_diag_bank_holding(&memory->ledger, start, end);
+    if (over >= 0) {
+        switch_diag_line_add(&line, over < (int)memory->reservations ? " OVERLAPS MAP " : " OVERLAPS NODE RANGE ");
+        switch_diag_line_decimal(&line, (uint64_t)(over < (int)memory->reservations ? over : over - (int)memory->reservations));
+    } else if (bank < 0) {
+        switch_diag_line_add(&line, " OUTSIDE THE BANKS");
+    } else {
+        switch_diag_line_add(&line, " CLEAR, BANK ");
+        switch_diag_line_decimal(&line, (uint64_t)bank);
+    }
+    put(LEFT, row, &line, over >= 0 || bank < 0 ? DISPLAY_RED : DISPLAY_GREEN);
+}
+
+static void report_reservations(const struct loader_memory_report *memory)
+{
+    enum { FIRST_ROW = 16, MAX_SHOWN = 8 };
+    unsigned row = FIRST_ROW;
+    put_text(row++, "BANK AND RESERVED RANGES: START SIZE END", DISPLAY_WHITE);
+    for (unsigned i = 0; i < 2; ++i)
+        report_range(row++, i ? "BANK 1" : "BANK 0", memory->ledger.banks[i].start, memory->ledger.banks[i].end,
+                     DISPLAY_WHITE);
+    const unsigned count = memory->ledger.count < SWITCH_RAM_RANGES ? memory->ledger.count : SWITCH_RAM_RANGES;
+    for (unsigned i = 0; i < count && i < MAX_SHOWN; ++i) {
+        struct switch_diag_line label;
+        const int map = i < memory->reservations;
+        switch_diag_line_start(&label, map ? "MAP " : "NODE ");
+        switch_diag_line_decimal(&label, map ? i : i - memory->reservations);
+        report_range(row++, label.text, memory->ledger.reserved[i].start, memory->ledger.reserved[i].end,
+                     DISPLAY_WHITE);
+    }
+    if (count > MAX_SHOWN) {
+        struct switch_diag_line line;
+        switch_diag_line_start(&line, "AND ");
+        switch_diag_line_decimal(&line, count - MAX_SHOWN);
+        switch_diag_line_add(&line, " MORE NOT SHOWN");
+        put(LEFT, row++, &line, DISPLAY_RED);
+    }
+    report_area(28, "EXPORTER", SWITCH_DIAG_EXPORTER_START, SWITCH_DIAG_EXPORTER_END, memory);
+    report_area(29, "SD REFERENCE", SWITCH_DIAG_SD_REFERENCE, SWITCH_DIAG_SD_REFERENCE + 0x1000, memory);
+}
+#endif
+
 static void report_fdt(void)
 {
     struct switch_diag_line line;
@@ -252,17 +317,30 @@ static void report_fdt(void)
         return;
     }
     static const char *const names[] = {"LOADER IMAGE", "SD REFERENCE PAGE", "STAGED WINDOW CAPACITY",
-                                        "KERNEL DESTINATION", "BOOT ARGS PAGE"};
-    struct loader_memory_range ranges[5];
+                                        "KERNEL DESTINATION", "BOOT ARGS PAGE"
+#ifdef SWITCH_DIAG_RESERVATIONS
+                                        ,
+                                        "EXPORTER RUN AREA"
+#endif
+    };
+#ifdef SWITCH_DIAG_RESERVATIONS
+    enum { RANGE_COUNT = 6 };
+#else
+    enum { RANGE_COUNT = 5 };
+#endif
+    struct loader_memory_range ranges[RANGE_COUNT];
     ranges[0] = (struct loader_memory_range){UINT64_C(0xa0000000), (uint64_t)(uintptr_t)__image_end};
     ranges[1] = (struct loader_memory_range){SWITCH_DIAG_SD_REFERENCE, SWITCH_DIAG_SD_REFERENCE + 0x1000};
     ranges[2] = (struct loader_memory_range){SWITCH_DIAG_STAGE_START, SWITCH_DIAG_STAGE_END};
     ranges[3] = (struct loader_memory_range){SWITCH_DIAG_KERNEL_START, SWITCH_DIAG_KERNEL_END};
     ranges[4] = (struct loader_memory_range){SWITCH_DIAG_BOOT_ARGS, SWITCH_DIAG_BOOT_ARGS + 0x1000};
+#ifdef SWITCH_DIAG_RESERVATIONS
+    ranges[5] = (struct loader_memory_range){SWITCH_DIAG_EXPORTER_START, SWITCH_DIAG_EXPORTER_END};
+#endif
     struct loader_memory_report memory;
     unsigned index = 0;
     const int walk = loader_check_fdt_memory_ranges((const uint8_t *)(uintptr_t)probe_record[R_FDT],
-                                                    (uint32_t)SWITCH_DIAG_FDT_BYTES, ranges, 5, &memory, &index);
+                                                    (uint32_t)SWITCH_DIAG_FDT_BYTES, ranges, RANGE_COUNT, &memory, &index);
     probe_record[D_WALK_CODE] = (uint64_t)walk;
     probe_record[D_WALK_RANGE] = index;
     switch_diag_line_start(&line, "FDT WALK CODE ");
@@ -281,6 +359,9 @@ static void report_fdt(void)
     switch_diag_line_add(&line, " BANKS ");
     switch_diag_line_decimal(&line, memory.bank_count);
     put(LEFT, 13, &line, DISPLAY_WHITE);
+#ifdef SWITCH_DIAG_RESERVATIONS
+    report_reservations(&memory);
+#endif
 }
 
 void switch_diag_after_transition(void)
@@ -290,7 +371,11 @@ void switch_diag_after_transition(void)
                                         r[R_HCR_AFTER], r[R_CNTHCTL_AFTER], r[R_CNTVOFF_AFTER]};
     const int el_ok = !switch_diag_el1_state(&el1);
     begin_screen();
+#ifdef SWITCH_DIAG_RESERVATIONS
+    put_text(0, "LOAD DIAG D0-R. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#else
     put_text(0, "LOAD DIAG D0. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#endif
     report_el1(&el1, el_ok);
     report_cpu();
     if (el_ok) {

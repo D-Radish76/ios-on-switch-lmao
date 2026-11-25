@@ -138,3 +138,18 @@ It reuses `boot/loader/memory.c` and `boot/handoff/{entry.S,display.h,record.h}`
 the normal loader would see. Everything else is its own, so it cannot start a kernel by a mistake in the normal loader's
 conditionals. D1 (exporter and SD reference, read only) and D2 (staged window header and CRC, no copy) come after D0 is
 reviewed on hardware.
+
+## D0-R: the reservation screen
+
+`bazel build //boot:diag_loader_r --config=ios17` builds the same loader with `-DSWITCH_DIAG_RESERVATIONS=1` and one more
+source (`reservations.c`), as the hekate entry `iOS Diag Loader R` (`switchroot/ios-diag-loader-r/`). `:diag_loader` is
+unchanged: with the flag off `diag.c` compiles to the same object bytes as before (compared on Linux with clang).
+
+What the screen adds, left column rows 16 to 29: both DRAM banks and every reserved range the FDT walk saved (reserve map
+entries as `MAP n`, `/reserved-memory` ranges as `NODE n`), each as start, size and end in ten hex digits, then two lines
+for the exporter's run area (`0xA7000000`, 64 KiB) and the SD reference page (`0xA001F000`, 4 KiB): `CLEAR, BANK n`,
+`OVERLAPS MAP n` / `OVERLAPS NODE RANGE n`, or `OUTSIDE THE BANKS`. The exporter area also joins the walk's own range list,
+so the existing `FDT WALK CODE` covers it.
+
+It reads no register the D0 loader does not, and the link inspection (CPU register writes, `eret`, `smc`, `tlbi`, `wfe`
+counts, the one-load `switch_diag_read32`) is the same. Run steps and stop rules: `RUN_CHECKLIST.md`.
