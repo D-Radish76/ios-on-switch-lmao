@@ -82,6 +82,7 @@ kernel_driver(
         "drivers/SwitchBrightness",
         "drivers/TegraBPMP",
         "drivers/TegraI2C",
+        "kits/SwitchBoard",
         "kits/SwitchCAR",
         "kits/SwitchMMIO",
         "kits/SwitchSysctl",
