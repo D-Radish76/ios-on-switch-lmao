@@ -1,5 +1,9 @@
 # T1-H: read-only CAR payload from Nyx "Payloads" (design only)
 
+Status after review (2026-11-26): on hold. The path reads only the state before hekate's second `hw_init`, and the
+payload and return code carry more risk than that information is worth. No display entry, no DRAM address and no payload
+will be built. The text below stays as the record of the design and its findings.
+
 Nothing here is implemented. T1-R re-run, T1 v3, T2 to T4 and D1 hardware boot are on hold. `boot` stays 0. No firmware
 is replaced and no measured register is written.
 
@@ -143,12 +147,14 @@ requires each CAR read to be a single load with one caller, and a test over the 
 
 ## Fan, temperature, time
 
-Nyx's `hw_deinit` already stops the fan (`fan_set_duty(0)`) and puts the TMP451 in shutdown before the payload runs, and
-the l4t runs launched from Nyx start from the same state, so T1-H adds no thermal change. The payload itself is a
-few dozen loads and stores (microseconds); the visible time is the black screen until Nyx is back, which is hekate's
-`hw_init` plus a Nyx load from the SD card (the 24 s of the T1-R video include U-Boot and the loader stages; this path
-has none of them). The 30 s human deadline is provisional, not a thermal value: past it, hold the power button. No
-watchdog is armed; that would be a T4 item. There is no software guard against a hung load, and none is expected for CAR.
+Nyx's `hw_deinit` stops the fan (`fan_set_duty(0)`) and puts the TMP451 in shutdown before the payload runs. The thermal
+conditions of this path and of the l4t launch are not shown to be the same. After Nyx's `hw_deinit` the l4t path runs
+hekate's `hw_init` again (oscillators, BPMP and system clock policy, regulators), then hekate's configuration and file
+work, `hw_deinit`, BPMP-FW, BL31 and U-Boot, with the fan off and the TMP451 in shutdown for all of it (hekate's bootloader
+has no fan or TMP451 call; only Nyx's GUI starts them). The payload path ends a few microseconds after the jump. A
+corrected statement: the payload would add a very short interval at the same fan and sensor state, and says nothing
+about the heat of the l4t run, which lasts for seconds. The 30 s human deadline is provisional, not a thermal value. No
+watchdog is armed (that would be T4), and there is no software guard against a hung load.
 
 ## Reset values and clock domains
 

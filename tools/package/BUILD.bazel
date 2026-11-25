@@ -170,6 +170,12 @@ py_binary(
     srcs = ["bpmpfw_scan.py"],
 )
 
+# Checks a hekate release binary against the source (ERISTA_HEKATE_BINARY.md); the binaries are never stored here.
+py_binary(
+    name = "hekate_bin_check",
+    srcs = ["hekate_bin_check.py"],
+)
+
 # Offline reader for the pinned BL31 and U-Boot, which looks for device accesses and call arguments (ERISTA_BOOTCHAIN_CAR.md).
 py_binary(
     name = "a64_scan",

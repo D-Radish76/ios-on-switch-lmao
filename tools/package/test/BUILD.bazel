@@ -404,6 +404,14 @@ py_test(
     deps = ["//tools/package:a64_scan"],
 )
 
+# hekate_bin_check.py on synthetic binaries.
+py_test(
+    name = "hekate_bin_check_test",
+    size = "small",
+    srcs = ["hekate_bin_check_test.py"],
+    deps = ["//tools/package:hekate_bin_check"],
+)
+
 # The first T1-R run on the Erista (boot/diag/erista-t1r-run.log), decoded.
 py_test(
     name = "t1r_run_test",
