@@ -28,8 +28,8 @@ class Check(unittest.TestCase):
         data = row(0x300, 0x320, 0x124, 12, 3) + b'\0' * 8
         out = '\n'.join(check('nyx', data))
         self.assertIn('NOT FOUND', out)
-        self.assertIn('row I2C1: at 0x0', out)
-        self.assertIn('row I2C5: not found', out)
+        self.assertIn('row I2C1: 8 byte match 0x0', out)
+        self.assertIn('row I2C5: 8 byte match no; first 7 bytes no', out)
 
     def test_a_literal_at_an_unaligned_offset_is_not_counted(self) -> None:
         value = LITERALS['nyx']['EXT_PAYLOAD_ADDR']
@@ -44,6 +44,11 @@ class Check(unittest.TestCase):
         out = '\n'.join(check('hekate', b'\0\0\0\0hekate v6.5.5'))
         self.assertIn("identity b'hekate v6.5.5': at 0x4", out)
         self.assertIn('not found', '\n'.join(check('hekate', b'')))
+
+    def test_a_row_whose_last_byte_differs_is_reported_by_its_first_seven(self) -> None:
+        data = b'\0' * 4 + row(0x300, 0x320, 0x124, 12, 3)[:7] + b'\xcf'
+        out = '\n'.join(check('hekate', data))
+        self.assertIn('row I2C1: 8 byte match no; first 7 bytes 0x4 (next byte cf)', out)
 
 
 if __name__ == '__main__':

@@ -82,8 +82,11 @@ def check(name: str, data: bytes) -> list[str]:
     )
     if not whole:
         for label, *fields in I2C_TABLE:
-            hits = find(data, row(*fields))
-            lines.append(f'  row {label}: {"at " + ", ".join(f"{a:#x}" for a in hits) if hits else "not found"}')
+            full = find(data, row(*fields))
+            prefix = find(data, row(*fields)[:7])
+            shown = ', '.join(f'{a:#x}' for a in full) or 'no'
+            tails = ', '.join(f'{a:#x} (next byte {data[a + 7 : a + 8].hex() or "-"})' for a in prefix) or 'no'
+            lines.append(f'  row {label}: 8 byte match {shown}; first 7 bytes {tails}')
     for label, value in LITERALS[name].items():
         hits = find(data, struct.pack('<I', value), 4)
         lines.append(

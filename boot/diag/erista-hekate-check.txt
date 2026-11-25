@@ -1,0 +1,34 @@
+hekate sha256 09752abd207803708add6e22151e94b71ffbaaff769d1bad759584b76ef6f05e size 110208
+I2C clock table (6 rows, 48 bytes): NOT FOUND
+  row I2C1: 8 byte match no; first 7 bytes 0x17bf6 (next byte cf)
+  row I2C2: 8 byte match no; first 7 bytes no
+  row I2C3: 8 byte match no; first 7 bytes no
+  row I2C4: 8 byte match no; first 7 bytes 0x17c0c (next byte cf)
+  row I2C5: 8 byte match no; first 7 bytes no
+  row I2C6: 8 byte match no; first 7 bytes no
+literal 0x00030003 PLLP_OUTB value written by hw_init: 0 at none
+literal 0x600060a8 PLLP_OUTB register address: 0 at none
+literal 0x60006124 CLK_SOURCE_I2C1 address: 0 at none
+literal 0x60006128 CLK_SOURCE_I2C5 address: 0 at none
+literal 0x60006110 CLK_SOURCE_PWM address: 0 at none
+literal 0x40008000 IPL_LOAD_ADDR: 2 at 0x558, 0xd944
+literal 0xed000000 NYX_STORAGE_ADDR: 1 at 0x15844
+literal 0xc0000000 EXT_PAYLOAD_ADDR: 1 at 0x1825c
+literal 0x40010000 PATCHED_RELOC_ENTRY: 0 at none
+literal 0x40007000 PATCHED_RELOC_STACK: 2 at 0x7c, 0x8c
+identity b'hekate v6.5.5': not found
+identity b'ICTC': at 0x118
+ARM mov rd, #0x30000 (0x30003 in two instructions): none
+nyx sha256 309f58f934b50c4ae990f8dbb02b7106c16b9391bb1e516d66f1aa48871d1e6d size 477565
+I2C clock table (6 rows, 48 bytes): at 0x71b74
+literal 0x00030003 PLLP_OUTB value written by hw_init: 0 at none
+literal 0x600060a8 PLLP_OUTB register address: 0 at none
+literal 0x60006124 CLK_SOURCE_I2C1 address: 0 at none
+literal 0x60006128 CLK_SOURCE_I2C5 address: 0 at none
+literal 0x60006110 CLK_SOURCE_PWM address: 0 at none
+literal 0xed000000 NYX_STORAGE_ADDR: 1 at 0x638a8
+literal 0xc0000000 EXT_PAYLOAD_ADDR: 0 at none
+literal 0x40010000 PATCHED_RELOC_ENTRY: 1 at 0x2933c
+literal 0x40007000 PATCHED_RELOC_STACK: 1 at 0x6bc
+identity b'ICTC': not found
+ARM mov rd, #0x30000 (0x30003 in two instructions): 0x291ac, 0x292dc

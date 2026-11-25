@@ -94,3 +94,49 @@ of the code around any hit. In ARM mode the same words can be searched in Nyx be
 Attach `hekate_ctcaer_6.5.5.bin` (110208 bytes) and `nyx.bin` (477565 bytes) as the Mac hashed them, or run the updated
 `hekate_bin_check.py` and send its output. The disassembly (items 3 and 4 of the request) cannot be done from hashes.
 Also useful: the zip's SHA-256 and the hashes of the card's `bootloader/update.bin` and the file that started hekate.
+
+## Binaries received and read (2026-11-26)
+
+The user sent both files in a zip and reports that their SHA-256 equal the card's `bootloader/update.bin` and
+`bootloader/sys/nyx.bin`, taken from the official release. Re-hashed here: they equal the values above. The zip's own
+SHA-256 was not part of the report, so "from the official release" rests on the user's statement. Output of the checker on
+the files: `boot/diag/erista-hekate-check.txt`.
+
+### Findings (read from the bytes; nothing was run)
+
+Confirmed:
+
+- The hekate file is hekate: it holds the `ICTC` magic at `0x118` and `0x82b`, followed by the version bytes `'6' '5' '5'`
+  and a fourth byte `0x31`. In the source the fourth byte is `BL_VER_RL`, and `Versions.inc` of the tag has
+  `BLVERSION_REL := 0`. So the version word of this binary is not what the tag's `Versions.inc` produces. The release may
+  be built with another `REL` (a file difference between the tag and what was built), or the tag differs; not decided.
+- `i2c_init` is in the hekate file: two adjacent literals `0x00050001` and `0x00090003` at `0x5188`, `str rX, [r5, #0x6c]`
+  (`I2C_CLK_DIVISOR`) and `movs r3, #0x84` with a store at `[r5, r3]` (`I2C_BUS_CLEAR_CONFIG`) in the code just before them
+  (`0x514c` to `0x515e`). Nyx has the same two literals at `0x274b0`. This is the driver's `(5 << 16) | 1` and
+  `(9 << 16) | BC_TERMINATE | BC_ENABLE`.
+- The `_i2c_base_offsets` table `{0, 0x400, 0x500, 0x700, 0x1000, 0x1100}` is in Nyx (`0x72018`) and not in the hekate file.
+  The literal `0x7000C000` (I2C base) is in neither.
+- The I2C clock table of `clock.c` is in Nyx exactly (`0x71b74`). In the hekate file the first seven bytes of the I2C1
+  and I2C4 rows are present (`0x17bf6`, `0x17c0c`), followed by `cf` where the source has the divider `03`; the I2C2, I2C3,
+  I2C5 and I2C6 rows are not. Other row fragments sit near them in a layout that is not the source's 8 byte array
+  (one tail matches the I2C2 or I2C3 row, the leading bytes do not). Whether this is a differently laid out table, code and
+  data that only look alike, or a build from other source, was not decided.
+- No literal for `PLLP_OUTB`'s value or any I2C source address is in the hekate file, and the only CAR literals are a
+  few dozen (`0x60006000`, `0x60006300`, `0x60006308`, `0x6000632c`, ...). A constant tracker over the Thumb disassembly
+  finds device accesses to PMC, CAR, `0x7000e4xx` and others, none to the I2C source offsets.
+
+Inferred: the instruction set does not explain the absence of literals. In ARM mode (Nyx) a constant such as `0x30003`
+is built with `mov` and `orr`; two such `mov rd, #0x30000` are in Nyx (`0x291ac`, `0x292dc`). In Thumb mode GCC may use
+shifts and adds as well, which a literal search cannot see. The I2C base `0x7000C000` can also be built in registers.
+
+Not shown: that `hw_init` in this hekate file writes the I2C1 and I2C5 sources, or does not. The disassembly has not been
+followed to that code: the places where `i2c_init` is called, and the `clock_enable` code with its constants, were not
+found by this pass. So item 3 of the request (I2C1 and I2C5 clock setup from the instructions) is open.
+
+### The next step that can settle it
+
+Build the tag and compare. If the Mac has devkitARM (`arm-none-eabi-gcc`), `git checkout v6.5.5 && make -j` makes
+`output/hekate_ctcaer_6.5.5.bin` and `output/nyx.bin`. A byte for byte match with the release proves the source (and
+the exact compiler) are what the release was built from; a difference in a few bytes (the version byte) shows what the
+release changed; a large difference shows the compiler or flags differ. Then `hekate_bin_check.py` on both outputs
+gives the same table layout questions with the source in hand. No compiler is installed here.
