@@ -1,5 +1,7 @@
 # T1: I2C1 and TMP451 communication check
 
+> Second review (`ERISTA_T1_REVIEW.md`): T1 reads TMP451 configuration and rate at their write addresses (0x09, 0x0A); the read addresses are 0x03 and 0x04. Those two bytes are not to be interpreted until the fix is reviewed.
+
 Entry `iOS Diag T1` (`//boot:diag_t1`, ident `iDiagT1`). Implemented 2026-11-25, built and inspected on Linux only, not built
 on the Mac, not run on the console. Its first run needs the review that follows this file. `boot` stays 0. Design context:
 `ERISTA_THERMAL_DESIGN.md`.

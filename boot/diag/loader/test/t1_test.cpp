@@ -234,6 +234,25 @@ TEST(T1Run, EveryWriteIsAPointerWriteOrATransferSetup)
     EXPECT_EQ(fake.config, 0xc0);  // the model's sensor configuration is as it was
 }
 
+TEST(T1Run, TransferOrderIsHekatesFromTheFirstWriteToTheLastRead)
+{
+    Fake fake;
+    run(fake);
+    using Step = std::pair<unsigned, uint32_t>;
+    const std::vector<Step> write = {{T1_I2C1_CMD_ADDR0, 0x98}, {T1_I2C1_CMD_DATA1, 0}, {T1_I2C1_CNFG, 0x2800},
+                                     {T1_I2C1_CONFIG_LOAD, 0x25}, {T1_I2C1_CNFG, 0x2a00}};
+    const std::vector<Step> read = {{T1_I2C1_CMD_ADDR0, 0x99}, {T1_I2C1_CNFG, 0x2840}, {T1_I2C1_CONFIG_LOAD, 0x25},
+                                    {T1_I2C1_CNFG, 0x2a40}};
+    std::vector<Step> expected;
+    for (uint8_t reg : switch_t1_tmp451_register) {
+        auto w = write;
+        w[1].second = reg;
+        expected.insert(expected.end(), w.begin(), w.end());
+        expected.insert(expected.end(), read.begin(), read.end());
+    }
+    EXPECT_EQ(fake.writes == expected, true);
+}
+
 TEST(T1Run, ClockOffTouchesNoI2cRegister)
 {
     Fake fake;
