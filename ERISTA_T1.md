@@ -8,6 +8,11 @@ It is the D0 loader with the memory controller and FDT reports replaced by one c
 TMP451 registers. It never sets the sensor, the fan, a clock, a voltage or the PWM block. The boot script is D0's, so the
 console shows D0's `D0 LOADER DIAGNOSTIC` lines before the loader's screen.
 
+**First run, 2026-11-25: stop 0507, NO ACK from 0x4C at the first transfer, 0 of 10.** The abnormal stop and the automatic
+return to hekate worked on hardware. No TMP451 communication was shown. `SRC_I2C1` read `00000003` where hekate writes
+`C0000003`. Values, the hekate comparison and the open causes: `ERISTA_T1_0507.md`. Not to be re-run before the cause is
+reviewed.
+
 ## What it touches
 
 Every device access goes through `switch_t1_access` (`t1_gate.c`), which asks `t1_regs.c` first. A refused access is not made.

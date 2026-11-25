@@ -358,3 +358,11 @@ py_test(
     data = ["//bazel/pinned:firmware/bl33.bin"],
     deps = ["//tools/package:bl33_reserve_audit"],
 )
+
+# The first T1 v2 run on the Erista (boot/diag/erista-t1-run.log), decoded.
+py_test(
+    name = "t1_run_test",
+    size = "small",
+    srcs = ["t1_run_test.py"],
+    data = ["//boot:all_sources"],
+)

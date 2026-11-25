@@ -36,6 +36,8 @@ bool is_i2c(unsigned reg)
 struct Fake {
     bool clock_on = true, in_reset = false, ack = true, load_stuck = false, frozen = false;
     uint32_t divisor = SWITCH_T1_DIVISOR_HEKATE, status_busy = 0;
+    /* Words read back before any transfer: a minimal healthy state by default, overridden for the recorded run. */
+    uint32_t rst_word = 0, enb_word = 1u << 12, src_i2c1_word = 0x6, cnfg_word = 0, load_word = 0, int_word = 0;
     uint8_t id = 0x55, config = 0xc0, rate = 0x02, local = 0x12, remote = 0x34;
     /* A transfer lasts `duration` microseconds after go; BUSY is visible from `busy_delay` until then. Data read before the
      * end is still the pointer the write left in CMD_DATA1. A duration of ~0 models a transfer that never ends. */
@@ -68,12 +70,14 @@ struct Fake {
         if (is_i2c(reg))
             ++i2c_touches;
         switch (reg) {
-        case T1_CAR_RST_DEVICES_L: return in_reset ? (1u << 12) : 0;
-        case T1_CAR_CLK_OUT_ENB_L: return clock_on ? (1u << 12) : 0;
-        case T1_CAR_CLK_SOURCE_I2C1: return 0x6;
+        case T1_CAR_RST_DEVICES_L: return in_reset ? (1u << 12) : rst_word;
+        case T1_CAR_CLK_OUT_ENB_L: return clock_on ? enb_word : 0;
+        case T1_CAR_CLK_SOURCE_I2C1: return src_i2c1_word;
+        case T1_I2C1_CNFG: return cnfg_word;
+        case T1_I2C1_INT_STATUS: return int_word;
         case T1_I2C1_CLK_DIVISOR: return divisor;
         case T1_I2C1_STATUS: return (busy() ? 0x100 : 0) | noack_bits | status_busy;
-        case T1_I2C1_CONFIG_LOAD: return load_stuck ? 1 : 0;
+        case T1_I2C1_CONFIG_LOAD: return load_stuck ? 1 : load_word;
         case T1_I2C1_CMD_DATA1:
             if (done() && (addr0 & 1))
                 data1 = value();
@@ -406,6 +410,29 @@ TEST(T1Run, NoAckStopsAtTheFirstTransferWithoutRetry)
     EXPECT_EQ(r.transfers, 0u);
     EXPECT_EQ(fake.go_writes, 1u);
     EXPECT_EQ(r.have, 0u);
+}
+
+/* boot/diag/erista-t1-run.log: the values the first T1 v2 run on an Erista showed (2026-11-25). */
+TEST(T1Run, TheRecordedErista0507RunStopsAtTheFirstTransfer)
+{
+    Fake fake;
+    fake.ack = false;
+    fake.noack_bits = 1;
+    fake.rst_word = 0x049102CA;
+    fake.enb_word = 0x9802D131;
+    fake.src_i2c1_word = 0x00000003;
+    fake.cnfg_word = 0x00002842;
+    fake.load_word = 0x00000004;
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, SWITCH_T1_NOACK);
+    EXPECT_EQ(r.transfers, 0u);
+    EXPECT_EQ(r.have, 0u);
+    EXPECT_EQ(r.source_i2c1, 0x00000003u);
+    EXPECT_EQ(r.cnfg, 0x00002842u);
+    EXPECT_EQ(r.config_load, 0x00000004u);
+    EXPECT_EQ(r.status_after, 0x00000001u);
+    EXPECT_EQ(fake.go_writes, 1u);
+    EXPECT_EQ(fake.addr0, 0x98u);
 }
 
 TEST(T1Run, BusyThatNeverClearsStopsWithinTheBoundAndDoesNotRetry)

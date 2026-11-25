@@ -1,0 +1,38 @@
+# T1 v2 (iOS Diag T1, commit 86346c224, Mac hashes in ERISTA_T1.md) on a physical Erista (t210b01=0, sku=0), 2026-11-25, hekate 6.5.5, started from Nyx More configs.
+# Transcribed by the reviewer from the photograph and given to this repository as text; the photograph was not seen here.
+# The run stopped with code 0507 at the first transfer, drew its report, waited and reset; hekate came back by itself with no
+# button hold (confirmed by the operator, not in the photograph). Nothing was run to check Nyx's temperature control afterwards.
+HIDREV 00022117
+ODM4 00000204
+BOARD ERISTA T210B01=0 SKU=0 BOOT=0
+EL1 EL=4 SCTLR=30D00800 DAIF=3C0
+CNTFRQ=19200000 HCR=80000000 CNTHCTL=3 CNTVOFF=0
+EL1 STATE PASS
+ISAR0 0000000000011120 CRC32 1 OK
+ENTRY SP FF87DD10 IN NATIVE_GATE RANGE
+
+CAR RST_L 049102CA
+ENB_L 9802D131
+SRC_I2C1 00000003
+SRC_PWM C0000004
+
+I2C1 CLOCK ON OUT OF RESET
+PWM CLOCK ON OUT OF RESET
+
+I2C1 CNFG 00002842
+STATUS 00000000
+INT 00000000
+DIV 00050001
+LOAD 00000004
+
+PAD SCL 00000040 SDA 00000040
+
+T1 STOPPED CODE 0507. NO ACK FROM 0X4C
+TRANSFERS 0 OF 10
+NO RETRY. NO SENSOR WRITE.
+FAN AND PWM UNTOUCHED.
+STATUS AFTER 00000001
+
+BOOT STAYS 0.
+NO KERNEL WINDOW IN THIS BUILD.
+RESET IN 15 S.
