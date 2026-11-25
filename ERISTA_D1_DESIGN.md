@@ -125,6 +125,44 @@ transaction; stale value, never a temperature or a safety verdict), T2 (clear sh
 from hekate's Erista branch), T4 (a bound for longer runs: SOC_THERM trip or a watchdog). None is implemented. D0-R and
 D1-pre run without any of them and are bounded by what they execute (stage deadlines in their checklists).
 
+## State after D1-pre and D0-R (2026-11-25)
+
+All three ran and hekate came back by itself each time. The contents were not supplied, so what they were meant to show is
+still open:
+
+| Question | Answer that the screens hold | Known now |
+| --- | --- | --- |
+| Is the card in a mode the exporter accepts (SD, high capacity, 512 byte blocks, 4 bit single rate, size)? | page 2's `mmc info` | not read |
+| Is `devnum` 1 in this script context, and is `part list mmc 1` readable? | page 1 | not read |
+| Do the exporter area and the SD reference page clear every reservation, inside a bank? | D0-R's last two lines | not read |
+| What is the third reserve map entry? | D0-R's `MAP` lines | not read |
+
+## Final review before D1 is written
+
+Do not write D1 yet. Three things decide its shape and none is in hand:
+
+1. The `mmc info` and `part list` text. If the mode fails a condition, the exporter will refuse, and D1 becomes a different
+   problem (a card or a mode change) rather than a run.
+2. D0-R's lines. An overlap or the third entry's origin could move the exporter's or the record's address.
+3. A decision on the unverified exporter step, which cannot be tested short of running it.
+
+What the design holds regardless, and is ready to implement once 1 and 2 are read:
+
+- D1 is the D0-R image plus the normal script's exporter, `read mmc 1` and `go` steps, copied line for line, and the loader
+  reading the record and running `sd_reference.c`'s validation. No write to the card, no loader access to `0x700B0000`.
+- Build time: `check_destination` covers both areas against the DTB (it covers the exporter area now), the link inspection
+  is D0's plus a rule that no load or store reaches `0x700B0000`, a test that the D1 script's commands are the normal
+  script's exporter lines and nothing else.
+- Record handling: the loader prints field names and decoded values; the CID, CSD and the four U-Boot addresses are never
+  printed in full. A fixture keeps masked values.
+- Deadlines: the SD read and the exporter are the new stages, 15 s for the read and 10 s for `go`, hard cut by the power
+  button, and no retry on the spot.
+
+Still unverified, and not made less so by anything above: thermal protection (the fan is off, no sensor is read, the
+hardware trip is not known to be armed); memory no list names, around `0xA7000000` and `0xA001F000` above all; the exporter on
+this console. D1 is the first run that executes code from outside the diagnostic's own image on the Erista (`go` into a loaded
+payload), so the first failure there may be a hang, not a refusal.
+
 ## Questions for the reviewer
 
 1. Is D1-pre worth its own run, or should its commands be the first lines of D1's U-Boot half? Separate is cheaper to

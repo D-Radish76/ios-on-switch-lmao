@@ -255,3 +255,10 @@ cat bazel-bin/boot/diag_loader_r/inspection.txt                                 
 for `exporter_audit_test` and `diag_memory_test` (Xcode's, `xcrun --find llvm-objdump`), or they skip. Linux build hashes of
 D1-pre (first 16): `ios-diag-sd` bl33 `2a9e344fc6fd658a`, script `05ebf5c9f55826c8`; `ios-diag-sd-info` bl33
 `fc321009718a7c10`, script `b8e8e04ffde58167`. Not run on hardware.
+
+## D1-pre and D0-R on the Erista (2026-11-25)
+
+Run once each, attended: page 1, page 2, D0-R. Each completed and returned to hekate. PASS means that and nothing about
+content. Owed from the screens, as typed text (card maker, OEM, name and any serial masked, `sd_requirements.mask`):
+page 1 and page 2 output, and D0-R's lines (`BANK`, `MAP`, `NODE`, `EXPORTER`, `SD REFERENCE`). Then
+`boot/diag/erista-sd-info.log` and `boot/diag/erista-d0r-run.log` and tests like `d0_run_test`.
