@@ -1,7 +1,7 @@
 # T1: I2C1 and TMP451 communication check
 
-Entry `iOS Diag T1` (`//boot:diag_t1`, ident `iDiagT1`). Implemented 2026-11-25, built and inspected on Linux only, not built
-on the Mac, not run on the console. Its first run needs the review that follows this file. `boot` stays 0. Design context:
+Entry `iOS Diag T1` (`//boot:diag_t1`, ident `iDiagT1`). Implemented 2026-11-25. v2 (`86346c224`) is built, inspected and tested on the Mac
+(hashes below), and has not run on the console. Hardware boot is on hold until the reviewer approves. `boot` stays 0. Design context:
 `ERISTA_THERMAL_DESIGN.md`.
 
 It is the D0 loader with the memory controller and FDT reports replaced by one check: it reads CAR and I2C1, then reads five
@@ -123,8 +123,8 @@ U-Boot lines as D0 (`BOARD OK` through `HANDOFF TO THE LOADER`), then the loader
 Hold the power button until the console is off, then report the last line, in these cases:
 
 - the hashes did not match, the console is warm, or Nyx was not the start;
-- any stage passes its deadline (D0's table: 20 s to the first line, 10 s per step, 10 s to the loader, 20 s to the report,
-  25 s to hekate);
+- the total deadline below passes, or any stage passes its own deadline (D0's table: 20 s to the first line, 10 s per step,
+  10 s to the loader, 20 s to the report, 25 s to hekate);
 - `COUNTER FREQUENCY OR COUNT NOT AS EXPECTED. NO RESET`, `PSCI SYSTEM_RESET RETURNED`, `EXIT CALLED OUTSIDE EL1` or an
   exception screen;
 - the screen goes black or shows garbage, or the console feels hot.
@@ -133,14 +133,70 @@ After any stop code 0503, 0505, 0506, 0507 or 0509, or any other abnormal end, p
 button, wait ten seconds) before the next thing. The TMP451 is not powered down by the SoC reset, and hekate's next bus clear
 is the only recovery T1 relies on. No second T1 run until it is reviewed.
 
-## Longest T1-specific time
+## Time limits
 
-T1's own code: the counter check up to 1,000,000 counter reads (well under 0.1 s), ten transfers of about 0.5 ms each when
-healthy, and on a failure one wait of at most 100 ms for `BUSY` or 1 ms for `CONFIG_LOAD`, after which the stage ends. If the
-counter stops after the check, the count limits end each loop after 1,000,000 device reads, which is about a second per
-loop on the assumption of one microsecond per read (not measured); the stage ends at the first failure, so the worst case is
-a few seconds. Around it, the D0 stage deadlines apply: 20 + 4 x 10 + 10 + 20 + 25 = 115 s as an upper figure by deadline,
-a stall with a person reacting for about 5 s and holding the button for 12 s about 132 s. The 15 s wait is part of it.
+What is known. The first diagnostic run (before the loader existed) took about 21 s on video, 15 s of it the wait. No video
+time of D0, D0-R or the D1-pre pages was written down, so the loader's own time to the report is not measured. T1 adds ten
+transfers of about 0.5 ms each and some register reads: milliseconds on a healthy bus, at most 100 ms on the one failing wait
+(1 ms for `CONFIG_LOAD`), after which the stage ends. Against a run of tens of seconds that is not measurable.
+
+The 115 s sum of the stage deadlines (20 + 4 x 10 + 10 + 20 + 25) is the sum of limits chosen to avoid false alarms. It is
+not a time anyone should wait. With a 5 s reaction and a 12 s button hold (never tried here) it reaches about 132 s, and
+none of that is a safe duration: the fan is off, the TMP451 is in shutdown so no temperature is taken, and the heating at
+that point is unmeasured.
+
+Total deadline, proposed for the first T1 run: **45 s** from selecting the entry in "More configs" to hekate's menu. The
+expected figure is about 25 to 30 s (21 s measured for the older diagnostic, plus the loader copy and hand-off, plus
+T1's milliseconds); 45 s leaves room without letting a stall run on. At 45 s, or at any stage deadline if sooner, hold the
+power button. The stage deadlines stay as the finer tool for what to report. If the D0 or D0-R videos exist, timing them
+would replace the estimate with a measurement and the figure should then be reset from it.
+
+## Failure path and the 15 s wait
+
+On a T1 failure the loader still draws the report, then waits 15 s, then resets. The wait exists only so the screen can be
+read or filmed (`boot/diag/README.md`, "Is the wait needed"); the reset needs none. Cutting it short for failures would need a
+separate exit path in `exit.c`, which D0, D0-R and D1 share, and a changed `bl33.bin` hash. It is not recommended: the
+screen is the only record of the failure, the phone video records it either way, and the saving is 5 s at most (the build
+accepts 10 s as the least, `--dwell 10`). The 15 s is inside the 45 s total. If the reviewer wants a shorter wait for the T1
+entry only, that is a build option (`--dwell 10`), a new `bl33.bin` and a new Mac hash, and is a proposal, not made.
+
+## What no loop limit can stop
+
+The time and count limits end only loops that read a register and come back. Two things they cannot end:
+
+- **A device access that does not return.** A load from an unclocked or hung block holds the CPU in that instruction.
+  Nothing runs after it, so no counter, count or deadline in the loader is consulted. DAIF is masked, so no SError ends it
+  either. The CAR check (clock on, out of reset) before touching I2C1 is the only guard and it covers only that cause.
+  The pad, CAR and I2C1 registers read here have no known stall, but that is not shown on this console.
+- **A `wfe` that is never woken.** The 15 s wait sleeps in `wfe` and relies on the event stream (`CNTKCTL_EL1`, an event every
+  3.4 ms). `counter_advances` shows the counter runs, not that the event stream is enabled. D0 and D0-R woke correctly, so
+  it is observed to work, on those runs.
+
+Both end only by the person: the total deadline and the power button.
+
+## After any abnormal end: confirming Nyx's temperature control
+
+Applies after any stop that is not `T1 COMPLETE CODE 0000` followed by hekate on its own, and after any button hold.
+
+1. Hold the power button until the screen is dark and the console is off, then wait 10 s. Do not start a second diagnostic.
+2. Power on to hekate and open Nyx. Nyx's `tmp451_init` (called when Nyx starts) sets the sensor to running at 0x80 and every
+   5 s its status bar reads the SoC temperature and calls `fan_set_from_temp`.
+3. Watch the status bar for 30 s: the clock moves and the SoC temperature field shows a plausible value that changes by
+   itself over a minute or two. A value stuck at one number, or `00.0`, means the sensor read is not working (a reading of
+   zero from a failed I2C read is read from the code's return path, not seen).
+4. The fan runs only from 42 C. Not hearing it at idle is normal. If the status bar shows 42 C or more and no air moves, or the
+   console is hot while the fan is silent, power off and report.
+5. Report the status-bar value, how long Nyx had been up, and whether the screen was normal. No further diagnostic, T1 or
+   otherwise, until the reviewer has read it.
+
+On a clean T1 run (hekate returned on its own), steps 2 and 3 apply as a quick look only.
+
+## Code changes proposed, not made
+
+- Show the elapsed time from the loader's first line to the report, taken from the generic counter, so the next run measures
+  the loader's own time instead of estimating it. Small, T1 only, new hashes.
+- T1-only `--dwell 10`: a build option, 5 s less on a failure; not recommended above.
+- Nothing for the hung read or the missed event: no software guard exists short of a hardware watchdog, which is T4 and on hold.
 
 ## Temperature risk, again
 
@@ -157,6 +213,8 @@ temperature. That is why a failed run ends in a full power-off. Fan, PWM and rai
 - That the pad levels are right; the pad words are read, not judged.
 - Anything about the fan, the PWM block, SOC_THERM or the watchdogs.
 - That the 250 microsecond wait is long enough on this console, or that the 100 ms bound holds in silicon.
+- That a hung register read or a missed `wfe` event cannot happen: no loop limit covers either.
+- The loader's real time from entry to report: no D0 video time was recorded, so the 45 s total is an estimate.
 
 ## Revisions
 
