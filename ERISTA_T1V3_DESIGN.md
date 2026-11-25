@@ -21,7 +21,7 @@ speed hypothesis and says nothing about who changed the source. A NOACK says the
 | Divisor field (bits 31:16) | 255, word `00FF0001`. Written once, never restored. |
 | Apply | `CONFIG_LOAD` `0x01`. The two transfers keep hekate's `0x25`. |
 | Gate | read only, listed below. Any miss stops before the first write. |
-| Timing words | no value is known, so none is accepted yet. The loader holds two empty pins and stops with `061A` until a review fills them. |
+| Timing words | pinned to what T1-T read on both controllers: `TIMING_0` `00000204`, `TIMING_1` `04070404` (`SWITCH_T1V3_TIMING_0_PIN`, `_1_PIN` in `t1v3.h`). A word that differs in any bit stops with `0607` before the first write. T1 v3 writes neither register. |
 | ID read | once: one pointer write and one read. No retry. |
 | CAR | four reads, no write |
 
@@ -69,14 +69,14 @@ of `TIMING_1`, are only outside every field mask. FreeBSD defines no bits for ei
   not show what an untouched register holds.
 
 So neither expected value can be decided from what was read. The gate reads both words, stops on 0 (`0606`) and on all ones
-(`0608`), and then accepts a word only when it equals its pin. Both pins are 0 in `t1v3_access.c`, so the loader as committed
-reads, shows the words and stops with `061A` before the first write. Filling the pins is a reviewed change made after a read-only
-run has shown the words.
+(`0608`), and then accepts a word only when it equals its pin. A pin of 0 still stops with `061A`; the production pins are set
+(see below).
 
 #### Read-only diagnostic (implemented as T1-T, `ERISTA_T1T_DESIGN.md`; first run in `ERISTA_T1T_RESULT.md`)
 
-T1-T ran on 2026-11-26: both controllers read `TIMING_0` `00000204` and `TIMING_1` `04070404`. The pins stay empty until a review
-fills them; the candidates, the rate recomputed from the measured words and the open `CONFIG_LOAD` items are in the result file.
+T1-T ran on 2026-11-26: both controllers read `TIMING_0` `00000204` and `TIMING_1` `04070404`. The review approved them as the pins
+on 2026-11-26 (04:00 JST). The rate recomputed from the measured words and the open `CONFIG_LOAD` items are in the result file;
+the run sheet is `ERISTA_T1V3_RUN.md`.
 
 T1-T, an independent entry in the T1-R pattern: no store function linked, the inspection requires a single-load raw read with
 one caller, and the script adds nothing to D0's commands.
@@ -158,7 +158,7 @@ a source test holds it in place; removing it was not caught by any behavioral te
 
 | Level | Check | Where it runs |
 | --- | --- | --- |
-| Sources | register offsets, write list, one load and one store, loop caps, pins empty | `diag_t1v3_test.py` |
+| Sources | register offsets, write list, one load and one store, loop caps, pins equal the T1-T fixture | `diag_t1v3_test.py` |
 | Linked ELF | symbols in the map, raw accesses one instruction each and called only by the gate, device immediates | `diag_loader.py link`, which the Bazel rule runs on the final ELF; a failure fails the build |
 | Flat image | every word in the CAR or I2C1 page is one of the 13 listed addresses, once | `inspect_image`, called by the same link step and by `diag_images.py` |
 
@@ -223,7 +223,7 @@ measurement. The probe record holds the same values.
 | Each stop after write 1: stop code, exact writes, go count, transfers, no CAR write | `t1v3_test.cpp` |
 | Stopped timer at three points; start and busy waits end by count | `t1v3_test.cpp` |
 | Static, source and linked image | `diag_t1v3_test.py`, `--t1v3` inspection, `inspect_image` |
-| The other five images unchanged | `diag_t1v3_test.py` against `boot/diag/erista-diag-image-hashes.txt` |
+| The other six images unchanged | `diag_t1v3_test.py` against `boot/diag/erista-diag-image-hashes.txt` |
 
 ## Mac
 
@@ -259,5 +259,5 @@ shasum -a 256 ../before/bazel-bin/boot/diag_*/package/switchroot/*/* bazel-bin/b
 
 ## For the reviewer
 
-Decide whether T1-T gets built to read the timing words, or whether the unpinned T1 v3 run serves instead. Neither runs before
-approval. T1 v3 cannot write anything until both pins are filled from data.
+The pins are set. T1 v3 stays on hold until the run sheet is approved. The review of the open items is in `ERISTA_T1V3_RUN.md`
+section 9.

@@ -84,6 +84,15 @@ class Synthetic(unittest.TestCase):
         self.assertTrue([p for p in audit(READ32 + IDS + T1T + extra)[1] if 'rogue' in p])
         self.assertEqual([], audit(READ32 + IDS + T1T)[1])
 
+    def test_a_second_caller_of_the_t1v3_raw_access_is_refused(self) -> None:
+        base = function('switch_t1v3_read32', 'ldr w0, [x0]', 'ret') + function(
+            'switch_t1v3_access', 'bl 0x100 <switch_t1v3_read32>', 'bl 0x100 <switch_t1v3_write32>'
+        )
+        for raw in ('switch_t1v3_read32', 'switch_t1v3_write32'):
+            extra = function('rogue', f'bl 0x100 <{raw}>')
+            self.assertTrue([p for p in audit(READ32 + IDS + base + extra)[1] if 'rogue' in p])
+        self.assertEqual([], audit(READ32 + IDS + base)[1])
+
 
 @unittest.skipUnless(LLVM, 'no LLVM on PATH')
 class RealImage(unittest.TestCase):

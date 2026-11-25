@@ -667,3 +667,74 @@ TEST(T1v3Report, AnUnpinnedRunShowsTheTimingWordsAndAStopLine)
     EXPECT_NE(text(lines[10]).find("T1V3 STOPPED CODE 061A"), std::string::npos);
     EXPECT_EQ(lines[10].bad, 1);
 }
+
+namespace {
+Fake measured_fake()
+{
+    Fake fake;
+    fake.timing_0 = SWITCH_T1V3_TIMING_0_PIN;
+    fake.timing_1 = SWITCH_T1V3_TIMING_1_PIN;
+    return fake;
+}
+
+switch_t1v3_result run_production_pins(Fake &fake)
+{
+    return run(fake, SWITCH_T1V3_TIMING_0_PIN, SWITCH_T1V3_TIMING_1_PIN);
+}
+} // namespace
+
+TEST(T1v3Pins, TheProductionPinsAreTheWordsT1TMeasured)
+{
+    EXPECT_EQ(SWITCH_T1V3_TIMING_0_PIN, 0x00000204u);
+    EXPECT_EQ(SWITCH_T1V3_TIMING_1_PIN, 0x04070404u);
+    EXPECT_EQ(SWITCH_T1V3_DIVISOR_AFTER, 0x00ff0001u);
+}
+
+TEST(T1v3Pins, TheMeasuredWordsWithTheProductionPinsTakeTheNormalPath)
+{
+    Fake fake = measured_fake();
+    const auto r = run_production_pins(fake);
+    EXPECT_EQ(r.stop, 0);
+    EXPECT_EQ(fake.writes, full_sequence());
+    EXPECT_EQ(r.timing_0, SWITCH_T1V3_TIMING_0_PIN);
+    EXPECT_EQ(r.timing_1, SWITCH_T1V3_TIMING_1_PIN);
+    EXPECT_TRUE(no_car_write(fake));
+}
+
+TEST(T1v3Pins, EveryWriteOfTheNormalPathIsOneOfTheFiveI2c1Registers)
+{
+    Fake fake = measured_fake();
+    run_production_pins(fake);
+    for (const Write &w : fake.writes) {
+        const unsigned reg = w.first;
+        EXPECT_TRUE(reg == T1V3_I2C1_CMD_ADDR0 || reg == T1V3_I2C1_CMD_DATA1 || reg == T1V3_I2C1_CNFG ||
+                    reg == T1V3_I2C1_CLK_DIVISOR || reg == T1V3_I2C1_CONFIG_LOAD);
+    }
+}
+
+TEST(T1v3Pins, AOneBitDifferenceInEitherWordWritesNothing)
+{
+    for (unsigned bit = 0; bit < 32; ++bit) {
+        for (unsigned which = 0; which < 2; ++which) {
+            Fake fake = measured_fake();
+            if (which == 0)
+                fake.timing_0 ^= 1u << bit;
+            else
+                fake.timing_1 ^= 1u << bit;
+            const auto r = run_production_pins(fake);
+            EXPECT_EQ(r.stop, SWITCH_T1V3_TIMING_UNEXPECTED);
+            EXPECT_TRUE(fake.writes.empty());
+            EXPECT_EQ(r.writes, 0u);
+        }
+    }
+}
+
+TEST(T1v3Pins, ABitFlippedInThePinInsteadOfTheRegisterWritesNothingEither)
+{
+    for (unsigned bit = 0; bit < 32; ++bit) {
+        Fake fake = measured_fake();
+        EXPECT_EQ(run(fake, SWITCH_T1V3_TIMING_0_PIN ^ (1u << bit), SWITCH_T1V3_TIMING_1_PIN).stop,
+                  SWITCH_T1V3_TIMING_UNEXPECTED);
+        EXPECT_TRUE(fake.writes.empty());
+    }
+}

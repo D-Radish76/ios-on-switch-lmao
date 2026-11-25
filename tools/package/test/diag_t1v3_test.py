@@ -19,6 +19,7 @@ from diag_loader_inspect import T1V3_ADDRESSES, inspect_disassembly, inspect_ima
 
 LOADER = Path('boot/diag/loader')
 HASHES = Path('boot/diag/erista-diag-image-hashes.txt')
+FIXTURE = Path('boot/diag/erista-t1t-run1.txt')
 MAP = 'switch_diag_read32 switch_diag_exit switch_diag_after_transition probe_show_exception'
 T1V3_MAP = MAP + ' switch_t1v3_run switch_t1v3_access switch_t1v3_read32 switch_t1v3_write32 switch_t1v3_may_write'
 READ32 = ('switch_diag_read32', 'ldr w0, [x0]', 'ret')
@@ -181,10 +182,24 @@ class Sources(unittest.TestCase):
 
     def test_the_run_goes_on_only_from_a_pinned_timing_word(self) -> None:
         access = (LOADER / 't1v3_access.c').read_text()
-        self.assertIn('io = {0, 0, 0, io_read, io_write, io_now_us}', access)
+        self.assertIn(
+            'io = {0, SWITCH_T1V3_TIMING_0_PIN, SWITCH_T1V3_TIMING_1_PIN, io_read, io_write, io_now_us}', access
+        )
         text = (LOADER / 't1v3.c').read_text()
         self.assertIn('if (!pin)', text)
         self.assertLess(text.index('timing_stop(r->timing_0'), text.index('timing_stop(r->timing_1'))
+
+    def test_the_pins_are_the_words_t1t_measured_on_both_controllers(self) -> None:
+        header = (LOADER / 't1v3.h').read_text()
+        measured = {
+            m[1]: int(m[2], 16)
+            for m in re.finditer(r'^(I2C[15]_TIMING_[01])=([0-9A-F]{8})$', FIXTURE.read_text(), re.MULTILINE)
+        }
+        for name, key in (('SWITCH_T1V3_TIMING_0_PIN', 'TIMING_0'), ('SWITCH_T1V3_TIMING_1_PIN', 'TIMING_1')):
+            pin = int(re.search(rf'#define {name}\s+0x([0-9a-f]{{8}})u', header)[1], 16)
+            self.assertEqual(pin, measured[f'I2C1_{key}'])
+            self.assertEqual(pin, measured[f'I2C5_{key}'])
+        self.assertEqual(2, len(re.findall(r'SWITCH_T1V3_TIMING_[01]_PIN', (LOADER / 't1v3_access.c').read_text())))
 
     def test_a_transfer_is_known_to_have_started_before_its_data_is_used(self) -> None:
         text = (LOADER / 't1v3.c').read_text()

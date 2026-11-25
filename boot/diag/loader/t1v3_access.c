@@ -34,7 +34,6 @@ static uint64_t io_now_us(void *context)
 
 void switch_t1v3_run_on_hardware(struct switch_t1v3_result *result)
 {
-    /* Pins 0: no timing word has been reviewed yet, so the run stops before its first write. */
-    static const struct switch_t1v3_io io = {0, 0, 0, io_read, io_write, io_now_us};
+    static const struct switch_t1v3_io io = {0, SWITCH_T1V3_TIMING_0_PIN, SWITCH_T1V3_TIMING_1_PIN, io_read, io_write, io_now_us};
     switch_t1v3_run(&io, result);
 }

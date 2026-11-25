@@ -1,7 +1,7 @@
 # T1-T first hardware run. Erista (T210B01=0, SKU 0, BOOT=0), hekate 6.5.5, started from Nyx "More configs".
 # Reported by the user 2026-11-26 03:48 JST from a photograph of the loader screen; the screen text agrees with the
 # transcription line for line. The photograph is not stored here. Screen: T1T COMPLETE CODE 0000, REGISTER READS 25,
-# EL1 STATE PASS, BOOT STAYS 0, countdown RESET IN 15 S shown. Not reported: the return to hekate, the Nyx temperature.
+# EL1 STATE PASS, BOOT STAYS 0, countdown RESET IN 15 S shown. Reported 04:00 JST: hekate came back by itself, Nyx showed 34.6 C afterwards (one reading).
 # Words are hexadecimal, 8 digits. One observation each.
 RST_L=049102CA
 ENB_L=9802D131

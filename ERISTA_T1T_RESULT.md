@@ -6,7 +6,7 @@ loader's own output line for line (`t1t_measured_test.cpp`). The photograph is n
 `boot/diag/erista-t1t-run1.txt`.
 
 The screen showed `T1T COMPLETE CODE 0000`, `REGISTER READS 25`, `EL1 STATE PASS`, `BOOT STAYS 0` and the `RESET IN 15 S` line.
-Not reported yet: whether hekate came back by itself, and the Nyx temperature afterwards. One observation per word. Nothing
+hekate came back by itself, and Nyx then showed 34.6 C (reported by the user at 04:00 JST; one reading, no load comparison). One observation per word. Nothing
 here shows that a value is a reset value, is stable, or is safe.
 
 ## Measured words
@@ -147,7 +147,7 @@ Nothing below is done, and none of it starts a run. T1 v3 stays on hold.
 7. `ERISTA_T1V3_RUN.md` does not exist yet: Mac commands (`--config=ios17`), hashes, the expected screen with the pinned
    words, deadlines, stop codes, recovery. After the first run T1 v3 leaves `00FF0001` in I2C1 until a reset; hekate's
    `i2c_init` rewrites the divisor at its start (source, not observed).
-8. Return to hekate and the Nyx temperature after T1-T are not reported.
+8. Done: the loader returned to hekate by itself and Nyx showed 34.6 C afterwards. One reading, not a limit.
 9. The T1-T hardware result is not a safety result. Every value stays a candidate.
 
 Sources: hekate `bdk/soc/i2c.c` v6.5.5; Linux `drivers/i2c/busses/i2c-tegra.c` v6.12 (fetched 2026-11-26); `ERISTA_BPMPFW.md`,

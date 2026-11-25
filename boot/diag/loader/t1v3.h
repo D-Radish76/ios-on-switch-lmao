@@ -20,6 +20,9 @@ enum switch_t1v3_reg {
     T1V3_REG_COUNT
 };
 
+/* The words T1-T read on I2C1 and I2C5 (boot/diag/erista-t1t-run1.txt). The run goes on only when both match exactly. */
+#define SWITCH_T1V3_TIMING_0_PIN    0x00000204u
+#define SWITCH_T1V3_TIMING_1_PIN    0x04070404u
 #define SWITCH_T1V3_SOURCE_EXPECTED 0x00000003u
 #define SWITCH_T1V3_DIVISOR_BEFORE  0x00050001u
 #define SWITCH_T1V3_DIVISOR_AFTER   0x00ff0001u
