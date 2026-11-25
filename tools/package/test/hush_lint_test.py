@@ -17,6 +17,9 @@ SCRIPTS = (
     'boot/diag/memory/u-boot-script.txt',
     'boot/diag/memory/page-1-bdinfo.txt',
     'boot/diag/memory/page-2-fdt.txt',
+    'boot/diag/sd/u-boot-script.txt',
+    'boot/diag/sd/page-1-state.txt',
+    'boot/diag/sd/page-2-info.txt',
 )
 BROKEN_ON_THE_ERISTA = "echo U-Boot's own view: DRAM banks, relocaddr, reloc off, irq_sp, sp start, TLB addr, fdt_blob"
 
@@ -98,6 +101,12 @@ class Scripts(unittest.TestCase):
         for page, body in ((1, SCRIPTS[4]), (2, SCRIPTS[5])):
             text = memory_script(frame, (ROOT / body).read_text(), HEADER, page)
             self.assertEqual(lint(text), [], f'page {page}')
+
+    def test_the_rendered_sd_pages_are_clean(self) -> None:
+        frame = (ROOT / SCRIPTS[6]).read_text()
+        for page, body in ((1, SCRIPTS[7]), (2, SCRIPTS[8])):
+            text = memory_script(frame, (ROOT / body).read_text(), HEADER, page)
+            self.assertEqual(lint(text), [], f'sd page {page}')
 
     def test_page_one_has_no_quote_character_at_all(self) -> None:
         text = (ROOT / SCRIPTS[4]).read_text()

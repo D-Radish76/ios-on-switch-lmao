@@ -1,0 +1,7 @@
+    echo mmc dev 1 starts the card again, as the distro boot does. It is not the exporter path.
+    if mmc dev 1; then
+        mmc info
+    else
+        echo MMC DEV 1 FAILED
+    fi
+    echo END OF PAGE 2

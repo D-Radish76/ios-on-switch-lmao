@@ -4,7 +4,6 @@ The command lists are written here on their own, so a change to a script's comma
 The disassembly audit needs an AArch64 capable llvm-objdump on PATH and is skipped without one.
 """
 
-import re
 import shutil
 import tempfile
 import unittest
@@ -15,6 +14,7 @@ from bdinfo_audit import bdinfo_function, calls, disassemble, parse, violations,
 from bl33 import bl33_patch
 from diag_boot import DWELL, diag_bl33, diag_env_edits, diag_script, diag_u_boot
 from diag_memory import PAGES, build, ini, memory_script
+from script_commands import FORBIDDEN, commands
 
 ROOT = Path('.')
 HEADER = (ROOT / 'kits/SwitchBoard/SwitchBoard.h').read_text()
@@ -25,7 +25,6 @@ BODIES = {
     2: (ROOT / 'boot/diag/memory/page-2-fdt.txt').read_text(),
 }
 BL33 = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
-STRUCTURE = {'if', 'then', 'else', 'elif', 'fi', 'for', 'do', 'done', 'while', 'in'}
 COMMANDS = {'setenv', 'test', 'echo', 'bdinfo', 'fdt', 'sleep', 'reset', 'true'}
 FDT_FORMS = [
     ['fdt', 'addr', '${fdtcontroladdr}'],
@@ -33,28 +32,7 @@ FDT_FORMS = [
     ['fdt', 'print', '/reserved-memory'],
     ['fdt', 'rsvmem', 'print'],
 ]
-FORBIDDEN = (
-    *('bootm', 'bootz', 'booti', 'loados', 'saveenv', 'go', 'run', 'source', 'load', 'fatload', 'cp', 'cp.b'),
-    *('mw', 'md', 'md.l', 'mm', 'nm', 'cmp', 'crc32', 'env', 'imxtract', 'dtimg'),
-)
 TAIL_LINES = 9
-
-
-def commands(script: str) -> list[list[str]]:
-    found = []
-    for raw in script.splitlines():
-        line = raw.strip()
-        if not line or line.startswith('#'):
-            continue
-        if line.startswith('for '):
-            line = 'for'
-        for part in re.split(r';\s*|\s+then$|\s+do$', line):
-            tokens = part.split()
-            while tokens and tokens[0] in STRUCTURE:
-                tokens = tokens[1:]
-            if tokens:
-                found.append(tokens)
-    return found
 
 
 def script(page: int) -> str:

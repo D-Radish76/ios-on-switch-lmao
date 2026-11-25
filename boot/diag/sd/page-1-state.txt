@@ -1,0 +1,6 @@
+    echo devnum=${devnum} boot_targets=${boot_targets}
+    echo MMC DEVICES
+    mmc list
+    echo PARTITIONS OF MMC 1 READ THE WAY THE EXPORTER STEP READS SECTOR 0
+    part list mmc 1
+    echo END OF PAGE 1

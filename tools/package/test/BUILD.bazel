@@ -112,6 +112,13 @@ py_library(
 
 # The memory diagnostic (boot/diag/memory): its scripts' commands, its images, and bdinfo in the pinned bl33.bin read from
 # its machine code (skipped without an AArch64 llvm-objdump on PATH).
+py_library(
+    name = "script_commands",
+    testonly = True,
+    srcs = ["script_commands.py"],
+    imports = ["."],
+)
+
 py_test(
     name = "diag_memory_test",
     size = "small",
@@ -126,6 +133,28 @@ py_test(
         "//tools/package:bl33",
         "//tools/package:diag_boot",
         "//tools/package:diag_memory",
+        ":script_commands",
+    ],
+)
+
+# D1-pre, the SD diagnostic: the commands its scripts may run, its images, and what the exporter requires of the card as
+# judged against `mmc info` (and masked for a public fixture).
+py_test(
+    name = "diag_sd_test",
+    size = "small",
+    srcs = ["diag_sd_test.py"],
+    data = [
+        "//bazel/pinned:firmware/bl33.bin",
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        ":script_commands",
+        "//tools/package:bl33",
+        "//tools/package:diag_boot",
+        "//tools/package:diag_memory",
+        "//tools/package:diag_sd",
+        "//tools/package:sd_requirements",
     ],
 )
 
