@@ -83,3 +83,24 @@ host_test(
     srcs = ["t1r_test.cpp"],
     deps = [":t1r"],
 )
+
+host_library(
+    name = "t1v3",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/loader/t1v3.c",
+        "//boot:diag/loader/t1v3.h",
+        "//boot:diag/loader/t1v3_gate.c",
+        "//boot:diag/loader/t1v3_regs.c",
+        "//boot:diag/loader/t1v3_report.c",
+        "//boot:diag/loader/t1v3_report.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t1v3_test",
+    srcs = ["t1v3_test.cpp"],
+    deps = [":t1v3"],
+)

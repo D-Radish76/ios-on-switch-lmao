@@ -286,6 +286,24 @@ py_test(
     ],
 )
 
+# T1 v3's inspection (an allowlisted write gate), a real link through it, what its sources may name and the recorded
+# hashes of every other diagnostic image.
+py_test(
+    name = "diag_t1v3_test",
+    size = "medium",
+    srcs = ["diag_t1v3_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+    ],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",

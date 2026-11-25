@@ -611,3 +611,57 @@ diag_loader_package(
     xcode_env = "@xcode//:xcode.env",
     xcode_identity = "@xcode//:identity",
 )
+
+# T1 v3: D0's loader with the I2C1 divisor test of ERISTA_T1V3_DESIGN.md. It writes CLK_DIVISOR once (00FF0001) with a
+# CONFIG_LOAD, then does one TMP451 ID read; the CAR is read only. Own entry (iOS Diag T1V3); every other diagnostic's
+# output stays as it is.
+diag_loader_package(
+    name = "diag_t1v3",
+    srcs = [
+        ":diag/loader/entry.S",
+        ":diag/loader/diag.c",
+        ":diag/loader/checks.c",
+        ":diag/loader/report.c",
+        ":diag/loader/t1v3.c",
+        ":diag/loader/t1v3_regs.c",
+        ":diag/loader/t1v3_gate.c",
+        ":diag/loader/t1v3_report.c",
+        ":diag/loader/t1v3_access.c",
+        ":diag/loader/exit.c",
+        ":loader/memory.c",
+    ],
+    hdrs = [
+        ":diag/loader/checks.h",
+        ":diag/loader/diag.h",
+        ":diag/loader/mc_table.h",
+        ":diag/loader/ranges.h",
+        ":diag/loader/report.h",
+        ":diag/loader/t1v3.h",
+        ":diag/loader/t1v3_report.h",
+        ":handoff/display.h",
+        ":handoff/entry.S",
+        ":handoff/record.h",
+        ":loader/memory.h",
+        ":loader/ram.h",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    bl31 = "//bazel/pinned:firmware/bl31.bin",
+    bl33 = "//bazel/pinned:firmware/bl33.bin",
+    board = "erista",
+    defines = ["-DSWITCH_DIAG_T1V3=1"],
+    dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
+    entry = "ios-diag-t1v3",
+    ident = "iDiagT1V3",
+    include_markers = [
+        ":diag/loader/checks.h",
+        ":handoff/record.h",
+        ":loader/memory.h",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    linker_script = ":diag/loader/link.ld",
+    script_template = ":diag/loader/u-boot-script.txt",
+    t1v3 = True,
+    title = "iOS Diag T1V3",
+    xcode_env = "@xcode//:xcode.env",
+    xcode_identity = "@xcode//:identity",
+)

@@ -1,0 +1,54 @@
+#include "t1v3.h"
+
+#define CAR  0x60006000u
+#define I2C1 0x7000c000u
+
+enum { R = 1, W = 2 };
+
+static const struct {
+    uint32_t address;
+    uint8_t access;
+} table[T1V3_REG_COUNT] = {
+    [T1V3_CAR_RST_DEVICES_L] = {CAR + 0x004, R},
+    [T1V3_CAR_CLK_OUT_ENB_L] = {CAR + 0x010, R},
+    [T1V3_CAR_CLK_SOURCE_I2C1] = {CAR + 0x124, R},
+    [T1V3_I2C1_CNFG] = {I2C1 + 0x00, R | W},
+    [T1V3_I2C1_CMD_ADDR0] = {I2C1 + 0x04, W},
+    [T1V3_I2C1_CMD_DATA1] = {I2C1 + 0x0c, R | W},
+    [T1V3_I2C1_STATUS] = {I2C1 + 0x1c, R},
+    [T1V3_I2C1_INT_STATUS] = {I2C1 + 0x68, R},
+    [T1V3_I2C1_CLK_DIVISOR] = {I2C1 + 0x6c, R | W},
+    [T1V3_I2C1_CONFIG_LOAD] = {I2C1 + 0x8c, R | W},
+    [T1V3_I2C1_TIMING_0] = {I2C1 + 0x94, R},
+    [T1V3_I2C1_TIMING_1] = {I2C1 + 0x98, R},
+};
+
+uint32_t switch_t1v3_address(unsigned reg)
+{
+    return reg < T1V3_REG_COUNT ? table[reg].address : 0;
+}
+
+int switch_t1v3_may_read(unsigned reg)
+{
+    return reg < T1V3_REG_COUNT && (table[reg].access & R);
+}
+
+int switch_t1v3_may_write(unsigned reg, uint32_t value)
+{
+    if (reg >= T1V3_REG_COUNT || !(table[reg].access & W))
+        return 0;
+    switch (reg) {
+    case T1V3_I2C1_CMD_ADDR0: /* 0x4c << 1, then the write or the read bit */
+        return value == 0x98u || value == 0x99u;
+    case T1V3_I2C1_CMD_DATA1: /* the register pointer of the ID register, one byte */
+        return value == SWITCH_T1V3_ID_REGISTER;
+    case T1V3_I2C1_CNFG: /* one byte, 4 clock debounce, new master FSM; write or read; without and with the go bit */
+        return value == 0x2800u || value == 0x2840u || value == 0x2a00u || value == 0x2a40u;
+    case T1V3_I2C1_CLK_DIVISOR: /* the one change: standard and fast divisor 255, the high speed field as hekate set it */
+        return value == SWITCH_T1V3_DIVISOR_AFTER;
+    case T1V3_I2C1_CONFIG_LOAD: /* 1 applies the divisor; 0x25 is hekate's value, used by the two transfers as in T1 v2 */
+        return value == SWITCH_T1V3_LOAD_APPLY || value == SWITCH_T1V3_LOAD_TRANSFER;
+    default:
+        return 0;
+    }
+}

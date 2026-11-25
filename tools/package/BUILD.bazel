@@ -164,6 +164,14 @@ py_binary(
     srcs = ["diag_loader_inspect.py"],
 )
 
+# Builds each diagnostic loader image on the host and prints its SHA-256, to show that a shared source change leaves the
+# other images as they were (boot/diag/erista-diag-image-hashes.txt).
+py_binary(
+    name = "diag_images",
+    srcs = ["diag_images.py"],
+    deps = [":diag_loader_inspect"],
+)
+
 # Offline reader for the Erista BPMP firmware, which is never stored here (ERISTA_BPMPFW.md).
 py_binary(
     name = "bpmpfw_scan",

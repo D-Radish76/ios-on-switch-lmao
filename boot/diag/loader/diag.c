@@ -20,8 +20,11 @@
 #ifdef SWITCH_DIAG_T1R
 #include "t1r_report.h"
 #endif
+#ifdef SWITCH_DIAG_T1V3
+#include "t1v3_report.h"
+#endif
 
-#if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R)
+#if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3)
 #define SWITCH_DIAG_SINGLE_CHECK 1
 #endif
 
@@ -56,6 +59,14 @@ enum {
     D_T1R_SOURCE_I2C1_I2C5,
     D_T1R_PLLP_BASE_OUTA,
     D_T1R_PLLP_OUTB_I2C1,
+#endif
+#ifdef SWITCH_DIAG_T1V3
+    D_T1V3_STOP,
+    D_T1V3_WRITES_TRANSFERS,
+    D_T1V3_DIVISOR,
+    D_T1V3_TIMING,
+    D_T1V3_ELAPSED,
+    D_T1V3_ID_STATUS,
 #endif
 };
 
@@ -438,6 +449,25 @@ static void report_t1r(void)
 }
 #endif
 
+#ifdef SWITCH_DIAG_T1V3
+static void report_t1v3(void)
+{
+    struct switch_t1v3_result result;
+    switch_t1v3_run_on_hardware(&result);
+    struct switch_t1v3_line lines[SWITCH_T1V3_LINES];
+    switch_t1v3_lines(&result, lines);
+    for (unsigned i = 0; i < SWITCH_T1V3_LINES; ++i)
+        if (lines[i].text.length)
+            put(LEFT, 9 + i, &lines[i].text, lines[i].bad ? DISPLAY_RED : DISPLAY_WHITE);
+    probe_record[D_T1V3_STOP] = (uint64_t)result.stop;
+    probe_record[D_T1V3_WRITES_TRANSFERS] = (uint64_t)result.writes << 32 | result.transfers;
+    probe_record[D_T1V3_DIVISOR] = (uint64_t)result.divisor << 32 | result.divisor_after;
+    probe_record[D_T1V3_TIMING] = (uint64_t)result.timing_0 << 32 | result.timing_1;
+    probe_record[D_T1V3_ELAPSED] = (uint64_t)result.transaction[0].elapsed_us << 32 | result.transaction[1].elapsed_us;
+    probe_record[D_T1V3_ID_STATUS] = (uint64_t)result.have_id << 40 | (uint64_t)result.id << 32 | result.status_after;
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1
 /* Rows 9 to 16, full width: T1 draws no register column. */
 static void report_t1(void)
@@ -466,6 +496,8 @@ void switch_diag_after_transition(void)
     begin_screen();
 #ifdef SWITCH_DIAG_T1
     put_text(0, "LOAD DIAG T1. I2C1 AND CAR READS. TMP451 POINTER WRITES ONLY. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_T1V3)
+    put_text(0, "LOAD DIAG T1V3. I2C1 DIVISOR WRITE AND ONE TMP451 ID READ. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1R)
     put_text(0, "LOAD DIAG T1R. CAR AND I2C1 READS ONLY. NO I2C TRANSFER. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_SD)
@@ -488,6 +520,11 @@ void switch_diag_after_transition(void)
             report_t1();
         else
             put_text(9, "NOT AN ERISTA. NO T1 REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_T1V3)
+        if (known && board->t210b01 == 0)
+            report_t1v3();
+        else
+            put_text(9, "NOT AN ERISTA. NO T1V3 REGISTER TOUCHED", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_T1R)
         if (known && board->t210b01 == 0)
             report_t1r();
@@ -509,6 +546,8 @@ void switch_diag_after_transition(void)
     report_sd();
 #endif
 #ifdef SWITCH_DIAG_T1
+    put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_T1V3)
     put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1R)
     put_text(21, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
