@@ -145,6 +145,23 @@ py_test(
     ],
 )
 
+# The D0 loader's first run on the Erista (boot/diag/erista-d0-run.log) against the MC and GIC tables, the first diagnostic,
+# bdinfo and the packaged DTB's reservations.
+py_test(
+    name = "d0_run_test",
+    size = "small",
+    srcs = ["d0_run_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+    ],
+    deps = [
+        "//tools/package:d0_run",
+        "//tools/package:fdt_ranges",
+        "//tools/package:memory_layout",
+    ],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",

@@ -224,9 +224,14 @@ the emulator checks. Run steps for the hardware run: `boot/diag/loader/RUN_CHECK
 
 ## D0 on the Erista (2026-11-25)
 
-Run once, attended, from the reviewed card (hashes matched). Reported: `ERISTA`, `T210B01=0`, `SKU=0`, `BOOT=0`; EL1 state PASS;
-`CNTFRQ=19200000`; MC registers 25 read, 0 different from the OLED; GIC 6 words read; FDT total 172032, reservations 3,
-walk code 0, `ALL RANGES FREE`, nodes 3, banks 2; hekate came back by itself. Not yet recorded: the register values, the
-GIC words and the reservations, which need the photograph or a typed transcript (`boot/diag/erista-d0-run.log`, to be
-added). Not shown by this run: thermal protection, memory outside the FDT's listed ranges. Next: review of the D1 design
-only. D1, D2 and XNU are not started.
+Passed once, attended. The screen's text, transcribed by the reviewer from a photograph, is `boot/diag/erista-d0-run.log`.
+
+```sh
+bazel test //tools/package/test:d0_run_test
+```
+
+The test compares the 25 MC rows and six GIC addresses with `boot/diag/loader/mc_table.h` and `boot/loader/loader.c`, the
+rows with `erista-first-run.log`, the entry SP with `erista-memory-bdinfo.log`, and the reservation count with the packaged
+DTB. Linux: 11 passed; Bazel: not run yet. Still owed on the Mac: `diag_boot.py adopt` for the first diagnostic's own
+values, `bazel test //...`, ios27 and release builds, emulator checks. Next is a review of `ERISTA_D1_DESIGN.md` only.
+D1, D2 and XNU are not started.

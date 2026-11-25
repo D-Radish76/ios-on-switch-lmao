@@ -232,9 +232,50 @@ about the same as the two earlier diagnostic runs, attended. The run waits for r
 
 ## D0 result on the Erista
 
-First run (2026-11-25): the loader reached EL1, read 25 MC registers equal to the OLED's values, read the 6 GIC words,
-walked the DTB (172032 bytes, 3 reservations, 2 banks, no range of the loader in them: `ALL RANGES FREE`) and returned to
-hekate through the reset path. As reported; values pending a transcript. Open: whether the U-Boot-time and loader-time MC
-rows match (they are equal to the OLED's in both, so equal to each other if both runs are as reported), the GIC words
-against the normal loader's expectations, and the three reservations. A pass here is not a proof of thermal safety or of
-the memory outside the listed ranges.
+Run 2026-11-25, attended, hekate 6.5.5, from `More configs`. Fixture: `boot/diag/erista-d0-run.log` (transcribed from a
+photograph by the reviewer). Its test is `tools/package/test/d0_run_test.py`.
+
+| Item | Result |
+| --- | --- |
+| Board, EL | `T210B01=0 SKU=0 BOOT=0`, `HIDREV 00022117`, `ODM4 00000204`, `EL1 STATE PASS`, `CNTFRQ=19200000`, `HCR=80000000` |
+| Entry SP | `FF87D010`: `0x2700` below U-Boot's `sp start` `FF87F710` from bdinfo, so inside U-Boot's own stack |
+| MC | 25 rows, in `native_gate`'s order, equal to its table, all SAME |
+| Exit | `RESET IN 15 S`, then hekate. PSCI `SYSTEM_RESET` from EL1 and the `wfe` wake are seen to work once |
+
+MC at U-Boot time against loader time. The first diagnostic reported 25 same, 0 different against the same table, and
+`erista-first-run.log` holds the table's values, not typed rows. So equality of the two moments follows from both runs
+matching one table, not from two transcripts. Run `diag_boot.py adopt` with the first run's `LOG.txt` to make it a
+comparison of two measurements.
+
+The carveout rows decode to the layout bdinfo showed: secure firmware `FFE00000` and 8 units of 128 KiB (to `FFF00000`),
+GPU firmware `FFD00000` and 2 units (to `FFD40000`), GPU WPR `FFD40000` and 6 units (to `FFE00000`), TZDRAM base
+`FFF00000`. They end where bank 0 ends plus 3 MiB, as `memory_layout_test` already checks.
+
+GIC words, read as a GIC-400 (register layouts from the GICv2 specification, not fetched here). `native_gate` records these
+words and expects none, and the repository has no OLED values for them, so there is nothing to compare with except that the
+six addresses equal the normal loader's.
+
+| Word | Value | Reads as |
+| --- | --- | --- |
+| `GICD_CTLR` | `00000001` | group 0 forwarding on |
+| `GICD_TYPER` | `0000FC66` | 224 interrupt lines, 4 CPU interfaces, security extensions, 31 lockable SPIs |
+| `GICD_ISENABLER0` | `0000FEFF` | SGIs and PPIs 0 to 7 and 9 to 15 enabled, 8 off, 16 to 31 off |
+| `GICC_CTLR` | `00000061` | group 0 enabled, IRQ and FIQ bypass disabled |
+| `GICC_PMR` | `00000080` | priority mask `0x80` |
+| `GICC_IIDR` | `0202143B` | Arm, GIC architecture version 2, product `0x020` (GIC-400) |
+
+FDT. Derived from the source versus measured:
+
+| Quantity | From the source | Measured |
+| --- | --- | --- |
+| Banks 2 | the walk requires `/memory` to equal `0x80000000+0x7FD00000` and `0x100000000+0x80000000` (`memory.c`) | equal to U-Boot's own banks (bdinfo): the packaged DTB and U-Boot agree |
+| Nodes 3 | `/reserved-memory` children `ramoops_carveout` (`0xB0000000..0xB0200000`), `fb0_carveout`, `fb1_carveout` (reg all zero in the DTB bytes, so no range) | the count only |
+| Reservations 3 | reserve map entries: one in the DTB (`0x80000000..0x80020000`), one the script adds (framebuffer `0xF5A00000..0xF5E00000`) | the count only; one entry has no source here |
+| Total 172032 | the DTB is 168190 bytes; `0x2A000` is page aligned | the number only |
+
+The third reserve-map entry is added between the DTB copy and the loader's entry. The likely place is `bootm prep`, but the
+pinned U-Boot is a fork whose source was not read, so this is not established. The walk reports no overlap with the
+loader's five ranges either way. A later loader build should print each entry's base and size; D1's design includes it.
+
+What this does not show: thermal protection (the fan was off and no reading was taken), memory that no list names, the
+hekate DTB's real size.
