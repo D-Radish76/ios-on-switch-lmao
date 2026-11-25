@@ -6,8 +6,7 @@ line for line (`t1v3_hardware_test.cpp`). The photograph is not stored in the re
 `boot/diag/erista-t1v3-run1.txt`.
 
 The screen showed `T1V3 COMPLETE CODE 0000`, `WRITES 11`, `TRANSFERS 2 OF 2`, `TMP451 0X4C ID(FE) 55`, `DATA1 BEFORE READ FE`,
-`BOOT STAYS 0` and the `RESET IN 15 S` line. After the countdown hekate came back by itself. The Nyx temperature before and after, the
-video and the selection-to-menu time were not reported. One observation per word.
+`BOOT STAYS 0` and the `RESET IN 15 S` line. After the countdown hekate came back by itself. The user reported at 08:45 JST that the temperature before and after the run was stable at around 35 C (Nyx; no exact figures). The total time of the whole boot and the peak temperature during the run were not measured. The video and the selection-to-menu time were not reported. One observation per word.
 
 ## What was measured
 
@@ -105,7 +104,7 @@ Not shown:
 2. The module clock stays a model. A measurement would write the CAR clock-frequency measurement registers; it was set aside.
 3. The `TIMING_1` unit is unknown. The successful ACK at the slower rate says nothing about its unit.
 4. Writers of I2C1's and I2C5's source words and of I2C5's state are not identified.
-5. The Nyx temperature before and after, the video and the selection-to-menu time were not reported.
+5. Not measured: the total boot time and the peak temperature during the run. Not reported: exact Nyx values, the video and the selection-to-menu time. "Around 35 C before and after" is not a limit and says nothing about the peak.
 6. The result is not a safety result. Every value stays a candidate.
 
 Sources: this run's photograph; hekate `bdk/soc/i2c.c`, `bdk/thermal/tmp451.c` v6.5.5; TI TMP451 data sheet; the T1-T record

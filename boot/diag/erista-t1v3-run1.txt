@@ -2,7 +2,7 @@
 # Reported by the user 2026-11-26 08:37 JST from a photograph of the loader screen; the screen text agrees with the
 # transcription line for line. The photograph is not stored here. Screen: T1V3 COMPLETE CODE 0000, WRITES 11,
 # TRANSFERS 2 OF 2, TMP451 0X4C ID(FE) 55, DATA1 BEFORE READ FE, BOOT STAYS 0, countdown RESET IN 15 S shown.
-# Reported: after the countdown hekate came back by itself. Not reported: the Nyx temperature before or after.
+# Reported: after the countdown hekate came back by itself. Reported 08:45 JST: temperature before and after stable around 35 C (no exact figures). Not measured: total boot time, peak temperature during the run.
 # Words are hexadecimal, 8 digits, except ID and DATA1_BEFORE_READ (2 digits). Keys ending in _US are decimal microseconds.
 # The times run from the go write to the first poll that saw BUSY (AT) and to the poll that saw it clear (CLEAR). They are
 # reference values of a polling loop, not an SCL measurement. One observation each.
