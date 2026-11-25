@@ -77,6 +77,30 @@ py_test(
     ],
 )
 
+# The D0 loader diagnostic (boot/diag/loader): its script, its bl33.bin, its tables against loader.c's, what its binary may
+# contain, and, where an LLVM is on PATH, a real link through the same inspection.
+py_test(
+    name = "diag_loader_test",
+    size = "small",
+    srcs = ["diag_loader_test.py"],
+    data = [
+        "//bazel/pinned:firmware/bl31.bin",
+        "//bazel/pinned:firmware/bl33.bin",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//bazel/pinned:firmware/exporter.uimg",
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:bl33",
+        "//tools/package:boot_script",
+        "//tools/package:diag_boot",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+        "//tools/package:loader_abi",
+    ],
+)
+
 # generate_adt per board: the OLED's tree byte for byte, the Erista's identity.
 py_test(
     name = "native_oled_adt_board_test",

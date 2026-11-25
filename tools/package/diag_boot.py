@@ -3,12 +3,15 @@
 
     diag_boot.py build --template T --boards SwitchBoard.h --loader-src loader.c --bl31 BL31 --bl33 BL33 --out DIR
     diag_boot.py compare LOG --loader-src loader.c        what was read, next to what native_gate expects
+    diag_boot.py adopt LOG --loader-src loader.c --source TEXT --out FIXTURE
+                                                          a measured log as a fixture, with its provenance
 
 `build` writes DIR/bootloader/ini/ios-diag.ini, DIR/switchroot/ios-diag/bl31.bin and bl33.bin. The normal entry's files
 are not touched and `boot` in the board table stays as it is.
 """
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -184,6 +187,26 @@ def compare(log: str, loader_src: str) -> list[str]:
     return lines
 
 
+def adopt(raw: bytes, loader_src: str, source: str) -> str:
+    """Return a measured log as a fixture: a header saying where it came from, then the log itself.
+
+    Refused unless it has every register the script reads, each once, in the script's order, so a log that is not the
+    whole run never becomes the reference. Only the line endings are normalized.
+    """
+    log = raw.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+    found = [int(a, 16) for a in re.findall(r'^\s*([0-9a-f]{8}):\s+[0-9a-f]{8}\b', log, re.MULTILINE | re.IGNORECASE)]
+    if found != read_addresses(loader_src):
+        raise SystemExit(
+            f"the log has {len(found)} register lines, not the script's {len(read_addresses(loader_src))} in order"
+        )
+    header = [
+        f'# {source}',
+        f'# Copied from the measured log, {len(raw)} bytes, sha256 {hashlib.sha256(raw).hexdigest()}.',
+        '# Only the line endings differ.',
+    ]
+    return '\n'.join(header) + '\n' + log.rstrip('\n') + '\n'
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     step = parser.add_subparsers(dest='step', required=True)
@@ -194,9 +217,16 @@ def main() -> None:
     p = step.add_parser('compare')
     p.add_argument('log', type=Path)
     p.add_argument('--loader-src', required=True, type=Path)
+    p = step.add_parser('adopt')
+    p.add_argument('log', type=Path)
+    p.add_argument('--loader-src', required=True, type=Path)
+    p.add_argument('--source', required=True, help='where and when it was measured')
+    p.add_argument('--out', required=True, type=Path)
     args = parser.parse_args()
     if args.step == 'build':
         build(args)
+    elif args.step == 'adopt':
+        args.out.write_text(adopt(args.log.read_bytes(), args.loader_src.read_text(), args.source))
     else:
         print('\n'.join(compare(args.log.read_text(), args.loader_src.read_text())))
 

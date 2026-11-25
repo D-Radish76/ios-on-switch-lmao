@@ -1,0 +1,25 @@
+# The D0 loader diagnostic (boot/diag/loader) on the host: its precondition checks and screen text.
+#
+#   bazel test //boot/diag/loader/test:all
+load("//bazel/lint:defs.bzl", "lint_files")
+load("//bazel/testing:defs.bzl", "host_library", "host_test")
+
+lint_files()
+
+host_library(
+    name = "checks",
+    srcs = [
+        "//boot:diag/loader/checks.c",
+        "//boot:diag/loader/checks.h",
+        "//boot:diag/loader/mc_table.h",
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "diag_checks_test",
+    srcs = ["diag_checks_test.cpp"],
+    deps = [":checks"],
+)

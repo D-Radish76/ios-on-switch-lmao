@@ -158,6 +158,26 @@ py_binary(
     ],
 )
 
+# The D0 loader diagnostic (boot/diag/loader): the link's inspection, and its link and hekate entry.
+py_binary(
+    name = "diag_loader_inspect",
+    srcs = ["diag_loader_inspect.py"],
+)
+
+py_binary(
+    name = "diag_loader",
+    srcs = ["diag_loader.py"],
+    deps = [
+        ":bl33",
+        ":boot_script",
+        ":diag_boot",
+        ":diag_loader_inspect",
+        ":loader_abi",
+        ":loader_link",
+        ":uimage",
+    ],
+)
+
 py_binary(
     name = "boot_script",
     srcs = ["boot_script.py"],

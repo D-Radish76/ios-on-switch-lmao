@@ -168,3 +168,30 @@ failed test its `test.log` under `bazel-testlogs`. A pass needs no log.
 
 The Erista's DTB, `native_gate` MC values, every feature bit's review, and every boot on a console. See
 `ERISTA_ROADMAP.md`.
+
+## D0 loader diagnostic (Mac, before any hardware run)
+
+```sh
+bazel test //tools/package/test:diag_loader_test //tools/package/test:diag_boot_test //boot/diag/loader/test:all
+bazel build //boot:diag_loader --config=ios17
+```
+
+`//boot:diag_loader` must pass its own inspection (the link fails otherwise). Report, from `bazel-bin/boot/diag_loader/`:
+
+```sh
+cat inspection.txt                  # first line: D0 loader inspection passed
+grep -cE 'loader_enter_kernel|loader_blocks|exporter' loader.map     # 0
+shasum -a 256 loader.uboot.bin package/switchroot/ios-diag-loader/*  # for the review
+ls -l package/switchroot/ios-diag-loader package/bootloader/ini
+```
+
+The measured first-run log replaces the fixture (path of your `LOG.txt` in place of `~/LOG.txt`):
+
+```sh
+PYTHONPATH=tools/package python3 tools/package/diag_boot.py adopt ~/LOG.txt --loader-src boot/loader/loader.c \
+  --source "Erista HAC-001, hekate 6.5.5, diagnostic commit c6931169, log saved from the run's screen" \
+  --out boot/diag/erista-first-run.log
+PYTHONPATH=tools/package python3 tools/package/test/diag_boot_test.py
+```
+
+`adopt` refuses a log without all 27 register lines in the script's order. Not run on hardware: the loader diagnostic waits for review.

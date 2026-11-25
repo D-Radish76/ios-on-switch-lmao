@@ -4,6 +4,7 @@ The commands and the addresses are listed here on their own, not derived from th
 is a change to this file as well.
 """
 
+import hashlib
 import re
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from boot_script import boards
 from diag_boot import (
     DWELL,
     IDENTITY_REGISTERS,
+    adopt,
     build,
     carveout_table,
     compare,
@@ -366,6 +368,35 @@ class EristaFirstRun(unittest.TestCase):
     def test_it_has_exactly_the_registers_the_script_reads(self):
         found = re.findall(r'^([0-9a-f]{8}):', self.log, re.MULTILINE)
         self.assertEqual([int(a, 16) for a in found], read_addresses(LOADER))
+
+
+class Adopt(unittest.TestCase):
+    whole = ''.join(
+        f'{a:08x}: {v:08x}    ....\r\n'
+        for a, v in [(0x70000804, 0x22117), (0x7000F9D8, 0x204), *carveout_table(LOADER)]
+    ).encode()
+
+    def test_a_whole_log_becomes_a_fixture_with_its_provenance_and_still_compares(self):
+        fixture = adopt(self.whole, LOADER, 'Erista, hekate 6.5.5, commit c6931169')
+        self.assertTrue(fixture.startswith('# Erista, hekate 6.5.5, commit c6931169\n# Copied from the measured log, '))
+        self.assertIn(hashlib.sha256(self.whole).hexdigest(), fixture)
+        self.assertNotIn('\r', fixture)
+        self.assertEqual(
+            read_addresses(LOADER), [int(a, 16) for a in re.findall(r'^([0-9a-f]{8}):', fixture, re.MULTILINE)]
+        )
+        self.assertEqual(25, len(compare(fixture, LOADER)))
+
+    def test_a_log_that_is_not_the_whole_run_is_refused(self):
+        lines = self.whole.decode().splitlines(keepends=True)
+        for broken in (
+            ''.join(lines[:-1]),
+            ''.join(lines[1:]),
+            ''.join(lines + lines[-1:]),
+            ''.join(lines[:2] + lines[3:]),
+            '',
+        ):
+            with self.assertRaises(SystemExit):
+                adopt(broken.encode(), LOADER, 'x')
 
 
 class Compare(unittest.TestCase):

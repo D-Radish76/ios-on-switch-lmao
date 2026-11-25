@@ -63,34 +63,36 @@ Status for the Erista: **seen** (the first run exercised it), **same** (same cod
 
 ## Loader diagnostic, before any kernel
 
-Goal: run the real loader path up to `native_gate`'s moment on the Erista, print what it sees, and stop. It does not lift
+Goal: run the normal loader's path on the Erista up to `native_gate`'s moment, print what it sees and stop. It does not lift
 `boot`, carries no kernel and cannot start XNU.
 
-Shape:
+D0 is implemented in `boot/diag/loader/` (`README.md` there has the CPU state it changes and the inspection). It differs from
+the first sketch in one way: it is not a `LOAD_DIAG` build of `loader.c`. It is its own set of sources that reuses
+`memory.c`, `handoff/entry.S`, `display.h` and `record.h` unchanged, so no `#if` in the normal loader decides whether a kernel
+can start. `bazel build //boot:diag_loader` gives its hekate entry (`iOS Diag Loader`), its `bl33.bin` (U-Boot, script, loader,
+Erista DTB; no exporter, no window) and the map, disassembly and inspection the link had to pass.
 
-- A second loader build, `LOAD_DIAG`, from the same sources. It has no kernel window, no copy, no `loader_enter_kernel`: those
-  files are not linked, so there is nothing to enter. `loader_after_transition` is shared up to the point where `boot` is
-  checked, and the diagnostic returns the board row instead of refusing on `boot 0`.
-- Its own hekate entry and `bl33.bin` (the same pattern as `diag_boot.py`): the pinned U-Boot, a script that does what the
-  normal one does up to `bootm prep` and `bootm go` into the diagnostic loader, and nothing after. No `bootargs.txt`, no
-  exporter in the first stage.
-- It prints, on the framebuffer the loader already draws on: the board row and its name; HIDREV and ODM4; the EL state words
-  of 0x301; entry SP against its range; the 25 registers with `same` or `DIFFERENT` against the OLED table (the same lines
-  as `diag_boot.py compare`); the six GIC words; ISAR0; the FDT memory report (banks, reservations, the range checks of
-  0x500 and 0x740 with their results); then the 15 second wait and `smc #0` with PSCI `SYSTEM_RESET`, the call U-Boot made when
-  the first run landed in hekate. No refusal exits early: each check is printed and the run goes on.
-- Hardware writes: framebuffer RAM, the loader's own RAM, CPU system registers for the EL change and caches. None to a
-  peripheral. The list goes into the review, as the diagnostic's did.
+What it prints: the board row, HIDREV and ODM4, the EL1 state words, ISAR0, the entry stack against `native_gate`'s range, the 25
+MC registers against the OLED values (`SAME` or `DIFFERENT` with the expected value), the six GIC words, the normal loader's FDT
+memory walk over the loader image, SD reference page, staged window capacity, kernel destination and boot-args page. Then 15 s
+on the CPU counter and PSCI `SYSTEM_RESET`.
+
+Preconditions are checked before the reads that depend on them: FDT pointer, header and reservation block, then the framebuffer
+(inside DRAM, clear of the image, covered by an FDT reservation) before anything is drawn; EL state and board before the MC and GIC
+reads. A failed FDT or framebuffer check draws nothing, so there is nothing to read; U-Boot's screen is gone by then. The record
+words 48 to 54 in `probe_record` keep the codes for a debugger.
+
+Hardware writes: framebuffer RAM, the loader's own RAM, and the CPU system registers listed in `boot/diag/loader/README.md`.
+None to a peripheral and none to the MC block.
+
+Unverified, and treated so: PSCI `SYSTEM_RESET` from EL1 in the loader (U-Boot's call was from EL2), and the generic timer's event
+stream waking `wfe`. If the counter's frequency is not exactly 19.2 MHz or does not advance, the loader parks instead of resetting.
 
 Stages, each reviewed before the next:
 
 1. `D0`: everything above, no SD, no exporter.
 2. `D1`: the exporter and the SD reference validate, read only (the Erista's card).
 3. `D2`: the staged window's header, trailer and CRC, with the copy left out.
-
-Tests before any console run: host tests for the report text and the compare (the existing `memory_*` and `emc` model tests
-show the pattern), a test that the diagnostic binary has no `loader_enter_kernel` symbol and no store to the MC block, and the
-Python checks on its image the way `diag_boot_test.py` does them.
 
 ## What is still open, by area
 
@@ -103,7 +105,7 @@ Python checks on its image the way `diag_boot_test.py` does them.
 | Framebuffer | hekate's handoff drew the console on the Erista's panel | rotation and format properties; the backlight stays on hekate's setting (no PWM back end), the display driver gate `sc7Display` still panics for a non-OLED panel |
 | SD | U-Boot reads the Erista's card. The kernel's SD driver skips the 1.8 V switch on a T210 | the exporter and the SD reference on the Erista; UHS modes; the card reset and suspend paths write voltage |
 | PMIC | MAX77620 is on both boards | CPU rail is MAX77621 at I2C5 `0x1B`, the OLED's MAX77812 code returns on a failed read before writing (not run); charger limits for the HAC-001 battery |
-| Temperature | nothing reads or drives the fan or the TMP451. The kernel's watchdog service touches no hardware (`ERISTA_RESEARCH.md`, section 5), so a hung kernel is not bounded by anything | the TMP451's U-Boot bus number; a fan and temperature plan before a kernel runs for more than seconds |
+| Temperature | the TMP451 is on Tegra I2C controller 1 (`0x7000c000`, device `0x4c`, as hekate's `I2C_1` and U-Boot's `i2c5` alias say). Reading it takes controller register writes, so D0 does not; the U-Boot way is `i2c bus` and `i2c md 0x4c 0x01 1` once the bus number is known. Nothing reads or drives the fan or the TMP451. The kernel's watchdog service touches no hardware (`ERISTA_RESEARCH.md`, section 5), so a hung kernel is not bounded by anything | the TMP451's U-Boot bus number; a fan and temperature plan before a kernel runs for more than seconds |
 
 ## Order of work to the first XNU start
 

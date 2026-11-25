@@ -1,0 +1,94 @@
+# The U-Boot half of the D0 loader diagnostic, sourced from its slot in bl33.bin (tools/package/diag_loader.py fills in
+# the values). It does what boot/u-boot-script.txt does up to the loader: the board and framebuffer checks of the control
+# FDT, the DTB copied to 0x8D000000, its framebuffer reservation, bootm prep. It stops before the exporter, bootargs.txt,
+# the SD reference and the kernel window, which this image does not carry, and hands over to the D0 loader.
+# Every refusal waits @DWELL@ s on the screen and resets; nothing here boots a kernel.
+setenv handoff_status WRONG_BOARD
+if setenv stdout vidconsole; then
+    setenv stdout serial
+    setenv stderr serial
+else
+    setenv handoff_status CONSOLE_FAILED
+fi
+base 0
+if test "${handoff_status}" = "WRONG_BOARD"; then
+@BOARD_GATE@
+fi
+
+if test "${handoff_status}" = "READY"; then
+    setenv handoff_fb_addr
+    setenv handoff_fb_size_bytes
+    setenv handoff_fb_width
+    setenv handoff_fb_height
+    setenv handoff_fb_format
+    setenv handoff_fb_rot
+    if test -n "${fdtcontroladdr}" && fdt addr ${fdtcontroladdr}; then
+        if fdt get value handoff_fb_addr /framebuffer address && fdt get size handoff_fb_size_bytes /framebuffer size && fdt get value handoff_fb_width /framebuffer width && fdt get value handoff_fb_height /framebuffer height && fdt get value handoff_fb_format /framebuffer format && fdt get value handoff_fb_rot /framebuffer rot; then
+            if itest.l ${handoff_fb_addr} == 0xF5A00000 && itest.l ${handoff_fb_size_bytes} == 4 && itest.l ${handoff_fb_width} == 0x2D0 && itest.l ${handoff_fb_height} == 0x500 && test "${handoff_fb_format}" = "a8b8g8r8" && itest.l ${handoff_fb_rot} == 3; then
+                true
+            else
+                setenv handoff_status FRAMEBUFFER_MISMATCH
+            fi
+        else
+            setenv handoff_status FRAMEBUFFER_PROPERTY_FAILED
+        fi
+    else
+        setenv handoff_status CONTROL_FDT_FAILED
+    fi
+fi
+
+if test "${handoff_status}" = "READY"; then
+    if cp.b @DTB@ 0x8D000000 @DTB_BYTES@; then
+        if fdt addr 0x8D000000 0x30000; then
+            if itest.l *0x8D000000 == 0xedfe0dd0 && itest.l *0x8D000004 == 0x00000300; then
+                if fdt rsvmem add 0xF5A00000 0x400000; then
+                    echoe "FDT READY"
+                else
+                    setenv handoff_status FRAMEBUFFER_RESERVE_FAILED
+                fi
+            else
+                setenv handoff_status DTB_PADDING_FAILED
+            fi
+        else
+            setenv handoff_status DTB_HEADER_FAILED
+        fi
+    else
+        setenv handoff_status DTB_COPY_FAILED
+    fi
+fi
+
+if test "${handoff_status}" = "READY"; then
+    if setenv fdt_high ffffffffffffffff && setenv bootm_low 0x80000000 && setenv bootm_size 0x7FD00000 && setenv bootm_mapsize 0x7FD00000 && setenv bootargs switch_diag=1 && setenv verify no; then
+        if bootm start @LOADER@ - 0x8D000000; then
+            if bootm loados; then
+                echoe "D0 LOADER LOADED"
+            else
+                setenv handoff_status IMAGE_LOAD_FAILED
+            fi
+        else
+            setenv handoff_status BOOT_HEADER_FAILED
+        fi
+    else
+        setenv handoff_status BOOT_ENVIRONMENT_FAILED
+    fi
+fi
+if test "${handoff_status}" = "READY"; then
+    if bootm prep; then
+        echoe "HANDOFF TO THE D0 LOADER"
+        bootm go
+        setenv handoff_status UNEXPECTED_BOOTM_RETURN
+    else
+        setenv handoff_status BOOT_PREP_FAILED
+    fi
+fi
+setenv stdout vidconsole
+setenv stderr vidconsole
+echoe "REFUSED: ${handoff_status}. Reset in @DWELL@ s, expected to land in hekate, not verified"
+for left in @DWELL_STEPS@; do
+    sleep @STEP@
+    echoe "RESET in ${left} s"
+done
+reset
+while true; do
+    sleep 1
+done
