@@ -35,6 +35,7 @@ Any failed step names its status, waits 15 s and resets. None of them reaches a 
   structure version, and says the rest is not shown. Fixtures hold synthetic values.
 - Link inspection (`tools/package/diag_loader_inspect.py --sd`) allows the controller address `0x700B0000` only as a
   compare constant in the validator. A load, a store or a copy of it anywhere fails the link.
-- The helpers are `ic ialluis; isb` and `dsb sy; isb`. Neither cleans the D-cache (no `dc cvau`), and nothing here shows
-  that `bootm loados` does. Whether the exporter's bytes reach instruction fetch is not verified; a hang at
-  `go 0xA7000000` is the symptom.
+- `bootm loados` cleans the D-cache over what it loads (`dc civac`) and `go` does no cache work, so the one step that makes
+  the exporter's bytes current for instruction fetch is the first helper (`ic ialluis; isb`); the second is a `dsb sy; isb`
+  that is the tail of the TLB invalidate. This is read from the pinned binary, not observed; a hang at `go 0xA7000000` is
+  the symptom of being wrong. Details: `ERISTA_CACHE.md`.

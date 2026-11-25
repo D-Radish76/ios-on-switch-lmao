@@ -195,7 +195,7 @@ cover.
 | --- | --- | --- |
 | Build | `exporter.uimg` SHA-256 equals its pin in `bazel/pinned/SHA256SUMS` (`7c33bbdc...`); header magic, OS 17, architecture 22, type standalone, no compression, load and entry `0xA7000000`, name `Switch MMC RAM Export v1`; the header's data CRC (`0x630D1CB8`) equals the CRC32 of the payload; payload `0x5E50` bytes, at most the 64 KiB of `EXPORTER_RUN` and the exporter slot; `exporter_audit` passes on those bytes | the build fails |
 | Build | `bl33.bin` SHA-256 equals its pin (`b492a401...`) | the build fails |
-| Build | the cache helpers' words are read from that `bl33.bin` at `0x1920` (`d508711f d5033fdf d65f03c0`, `ic ialluis; isb; ret`) and `0x1A64` (`d5033f9f d5033fdf d65f03c0`, `dsb sy; isb; ret`) | the build fails |
+| Build | the cache helpers' words are read from that `bl33.bin` at `0x1920` (`d508711f d5033fdf d65f03c0`, `ic ialluis; isb; ret`) and `0x1A64` (`d5033f9f d5033fdf d65f03c0`, `dsb sy; isb; ret`; not a function start, the tail of the TLB invalidate, see `ERISTA_CACHE.md`) | the build fails |
 | Run, after `bootm loados` | `crc32 0xA7000000 0x5E50 <scratch>`, then `itest.l *<scratch> == 0x630D1CB8` | `EXPORTER_IMAGE_CORRUPT`, no `go` |
 | Run, before each helper `go` | `itest.l` the three words at `0xAA001920`, then at `0xAA001A64` | `CACHE_HELPER_MISMATCH`, no `go` |
 | Run, immediately before `go 0xA7000000` | the same `crc32` and `itest.l` again; the loader and `bootm prep` run between load and `go`, so the first check is not enough | `EXPORTER_IMAGE_CORRUPT`, no `go` |
@@ -290,7 +290,44 @@ says what the script does; `RUN_CHECKLIST.md` is the run. Where it differs from 
 `script_sim.py` models the commands the script uses. It is not U-Boot: it shows what the script does when a command
 fails or RAM differs, not what the hardware does.
 
-Still unverified: the exporter on this console (the first `go` into a loaded payload may hang); the helpers are
-`ic ialluis; isb` and `dsb sy; isb`, with no `dc cvau`, and nothing shows `bootm loados` cleans the D-cache; thermal
-protection (fan off, no sensor read, T1 excluded, the trip not known to be armed); memory no list names; single data rate and
-the other conditions `mmc info` cannot show.
+Still unverified: the exporter on this console (the first `go` into a loaded payload may hang); the I-side freshness of
+the exporter's bytes (`ERISTA_CACHE.md`: `bootm loados` cleans the D-cache with `dc civac`, `go` does nothing, and the one
+`ic ialluis` that makes the fetch side current is the first helper; no U-Boot command shows the cache state); thermal
+protection (fan off, no sensor read, T1 excluded, no trip known to be armed; `ERISTA_THERMAL.md`); memory no list names;
+single data rate and the other conditions `mmc info` cannot show.
+
+### What the indirect MMIO audit guarantees
+
+`diag_loader_inspect.py` reads the link map and the disassembly. It guarantees, for the code in the image:
+
+- no instruction forms an address in `0x50000000..0x7fffffff` (as `movz`/`movk` pairs or a whole `mov` immediate), except
+  the identity registers' `0x7000` page and, in the validator only, `0x700B0000` as a compare constant;
+- the controller constant is never loaded through, stored through or copied (tracked per register, in the three validator
+  functions);
+- the only device read is the single load in `switch_diag_read32`, and its only call sites are in
+  `switch_diag_after_transition`, with addresses from `mc_table.h`, the GIC list and the two identity registers;
+- no `ic`, `dc`, `hvc`, `svc`, `sys`, `at`, `wfi`, `sev`; the `msr` targets and counts are those listed;
+- a source scan (`diag_loader_test.py`) rejects a volatile cast or a device address outside that function and the report
+  code. A scan of the linked D1 image finds device range words in `.rodata` only as the memory controller table
+  (`0x70019xxx`) and the six GIC addresses (`0x5004xxxx`), none in `.data`, and the one literal-pool load in code is
+  `SCTLR_EL1`'s value.
+
+What it cannot guarantee: an address that comes from data. The loader reads the DTB pointer, the FDT, the exporter's record
+and the reference page, and a value read from one of them could in principle be used as a pointer. The code does not do it
+(the validator compares the record's controller field and nothing else), but a binary scan does not prove it; the review of
+`sd_report.c` and `sd_reference.c` does. It also cannot see an address built by arithmetic from a register other than the
+patterns above, a literal pool of a different shape, or what U-Boot and the exporter do. For the exporter the equivalent
+statement is `exporter_audit_test`'s: no device address formed, every read of firmware objects range-checked to DRAM.
+
+### What the QEMU model can and cannot show
+
+| Can | Cannot |
+| --- | --- |
+| The exporter's exact machine code on a generic Cortex-A57 with synthetic firmware RAM: the record's bytes and fields, the refusals (bad `gd`, heap mismatch, class and device faults, card links, state, capacity), that firmware RAM is unchanged, that `x18` and the stack are preserved | U-Boot, the script, `bootm`, `go` as U-Boot runs it, the helpers |
+| That the image returns, and what it returns | Caches (TCG models none), so any stale I-side line |
+| That the 277 instruction signatures match the pinned `bl33.bin` | A real card, the SDHCI controller, DMA, timing |
+| | The loader, the status block, the handoff, the screen |
+| | Thermal behaviour, a hang on this console |
+
+`model.py` and `test_export.py` run on the Mac only (they need `qemu-system-aarch64`). `script_sim.py` covers the script's
+control flow for the commands it uses, and nothing about the commands themselves.

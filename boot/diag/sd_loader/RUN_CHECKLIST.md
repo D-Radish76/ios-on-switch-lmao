@@ -30,7 +30,10 @@ These do not depend on the compiler and can be checked from the repository (`too
 ## During
 
 Expected U-Boot lines: `BOARD OK`, `FRAMEBUFFER OK`, `DTB COPIED AND FRAMEBUFFER RESERVED`, `SD EXPORTER LOADED AND
-CHECKED`, `LOADER WRITTEN TO 0xA0000000`, `READ SD SECTOR 0`, `HANDOFF TO THE LOADER`. Then the loader's report: D0-R's rows,
+CHECKED`, then `## Starting application at 0xAA001920 ...` and `## Application terminated, rc = 0x1`, the same pair for
+`0xAA001A64`, `LOADER WRITTEN TO 0xA0000000`, `READ SD SECTOR 0`, `## Starting application at 0xA7000000 ...` and
+`## Application terminated, rc = 0x0`, `HANDOFF TO THE LOADER`. The two `rc = 0x1` are the helpers returning 1, as read from the
+binary; a helper line with `rc = 0x0` means other code ran: hold the power button. Then the loader's report: D0-R's rows,
 the FDT reservation display, and the D1 lines:
 
 | Line | Good |
@@ -47,10 +50,11 @@ Nothing prints the CID, the CSD words or a U-Boot address. Do not photograph a s
 | --- | --- |
 | Report appears, hekate returns after about 15 s | Done. |
 | `REFUSED: <status>` | RAM may be written (table below). Wait for the reset (about 15 s) or hold the power button. Report the line. |
-| Screen stops after `READ SD SECTOR 0` or `SD EXPORTER LOADED AND CHECKED` and stays for 10 s | The exporter's first `go` may hang (a loaded payload run for the first time, caches not verified). Hold the power button. Report the last line. |
+| Screen stops at `## Starting application at 0xA7000000` and stays for 10 s | The exporter's first `go` may hang (a loaded payload run for the first time; a stale I-cache line is the case in `ERISTA_CACHE.md`). A hang does not reset by itself. Hold the power button at once. Report the last line. |
+| Screen stops after `READ SD SECTOR 0` for 15 s | The card read did not finish. Hold the power button at once. |
 | Screen stops at `HANDOFF TO THE LOADER` and never clears | As in D0: treat as a hang. Hold the power button. |
 | `SD STATUS BLOCK MISSING` or `SD STEPS` under 10 | Report it. The 15 s countdown still applies. |
-| Any stage past its deadline, black screen, hot console, garbage | Hold the power button now. Do not retry on the spot. |
+| Any stage past its deadline, black screen, hot console, garbage | Hold the power button now, for at least 12 s (Nintendo's force-off time; not tried against this firmware). Do not retry on the spot. |
 
 ### Stage deadlines
 
