@@ -94,6 +94,15 @@ No boot test until code review and a Bazel build are done.
 - Not verified: free memory at `0xA0000000` on an Erista beyond the OLED analogy; DTB copy equal to the pinned file.
   Details in `ERISTA_LOADER_DIAG.md`, "Pre-checking the destination".
 
+## D0-pre memory diagnostic (built and tested on Linux, not run on a console)
+
+- `iOS Diag Memory` and `iOS Diag Memory FDT` print `bdinfo` and the control FDT's memory nodes, then reset after 15 s.
+- Confirmed from the pinned `bl33.bin`'s machine code: `bdinfo` only reads `gd`/`bd` and prints. `fdt addr` with a size
+  rewrites the blob (`fdt_open_into`), so the scripts use the address alone; a test forbids the other form.
+- `fdt` behaviour is read from upstream v2018.01/v2024.01 sources. Not shown on hardware: the commands' output, the reset.
+- `fdt_ranges.py` now refuses every malformed or unsupported DTB (header version, bounds, overlap, FDT_END, hierarchy,
+  cells, ranges, 64 bit overflow); `fdt_ranges_test` covers each case.
+
 ## Before the first boot test
 
 - Keep the SD card as the only write target and boot from hekate, so Linux and hekate stay the fallback.

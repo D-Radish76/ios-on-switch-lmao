@@ -146,3 +146,17 @@ The `oled-sku3.dtb` has the same two reservations.
 Not claimed: that the Erista's DRAM is free at `0xA0000000` beyond what the OLED showed; that the copy at `0x8D000000` is
 byte equal to the pinned file (the header magic and version are checked, not a hash). A runtime hash would need `crc32`
 with a destination word, which is held until its behaviour can be confirmed on the console.
+
+## D0-pre: memory diagnostic
+
+Two read-only entries, `iOS Diag Memory` (board, `bdinfo`) and `iOS Diag Memory FDT` (control FDT `/memory`,
+`/reserved-memory`, reserve map), built by `tools/package/diag_memory.py`; see `boot/diag/memory/README.md`. They give a
+person the numbers the script cannot compare: DRAM banks, `relocaddr`, `sp start`, `irq_sp`, `TLB addr`, `fdt_blob`.
+
+`bdinfo` in the pinned `bl33.bin` (function at `0x4d64`, found from its `arch_number` label) was disassembled:
+it loads `gd` and `bd` fields, calls a print helper and printf, stores only to its stack frame, and uses no system
+instruction. `diag_memory_test` repeats that audit when an AArch64 `llvm-objdump` is on PATH.
+
+D0-pre can show U-Boot's own placement and DRAM banks. It cannot show BL31's or hekate's reservations, memory-controller
+carveouts or anything U-Boot does not track, so a bank with room at `0xA0000000` does not prove the range free.
+

@@ -110,6 +110,25 @@ py_library(
     imports = ["."],
 )
 
+# The memory diagnostic (boot/diag/memory): its scripts' commands, its images, and bdinfo in the pinned bl33.bin read from
+# its machine code (skipped without an AArch64 llvm-objdump on PATH).
+py_test(
+    name = "diag_memory_test",
+    size = "small",
+    srcs = ["diag_memory_test.py"],
+    data = [
+        "//bazel/pinned:firmware/bl33.bin",
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:bdinfo_audit",
+        "//tools/package:bl33",
+        "//tools/package:diag_boot",
+        "//tools/package:diag_memory",
+    ],
+)
+
 # fdt_ranges.py (the DTB's reserved memory): the pinned DTBs, and every malformed tree it must refuse.
 py_test(
     name = "fdt_ranges_test",

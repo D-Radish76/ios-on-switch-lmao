@@ -196,3 +196,18 @@ PYTHONPATH=tools/package python3 tools/package/test/diag_boot_test.py
 ```
 
 `adopt` refuses a log without all 27 register lines in the script's order. Not run on hardware: the loader diagnostic waits for review.
+
+## D0-pre memory diagnostic
+
+```sh
+bazel test //tools/package/test:diag_memory_test //tools/package/test:fdt_ranges_test //tools/package/test:diag_loader_test
+python3 tools/package/diag_memory.py build --frame boot/diag/memory/u-boot-script.txt \
+  --page1 boot/diag/memory/page-1-bdinfo.txt --page2 boot/diag/memory/page-2-fdt.txt \
+  --boards kits/SwitchBoard/SwitchBoard.h --bl31 bazel/pinned/firmware/bl31.bin \
+  --bl33 bazel/pinned/firmware/bl33.bin --out "$PWD/build/diag-memory"
+(cd build/diag-memory && find . -type f | sort | xargs shasum -a 256)
+```
+
+`bdinfo` in `diag_memory_test` is skipped when no AArch64 `llvm-objdump` is on PATH; on the Mac, run it with Xcode's
+(`xcrun --find llvm-objdump` on PATH) so it does not skip. Not run on hardware.
+

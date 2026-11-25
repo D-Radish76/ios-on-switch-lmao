@@ -1,0 +1,31 @@
+# Read only memory diagnostic, page @PAGE@ of 2, sourced from its slot in this build's bl33.bin
+# (tools/package/diag_memory.py). It prints what U-Boot says about memory and stops. No address is read, written or
+# loaded. Its only exit is the reset after the wait, as in boot/diag/u-boot-diag-script.txt.
+# diag_memory_test.py lists the commands and fdt forms it may use.
+setenv diag_status WRONG_BOARD
+if setenv stdout vidconsole; then
+    setenv diag_console OK
+else
+    setenv diag_console FAILED
+fi
+
+if test "${diag_console}" = "OK"; then
+@BOARD_CHECK@
+fi
+
+echo MEMORY DIAGNOSTIC PAGE @PAGE@ OF 2: READ ONLY, NO BOOT
+echo board t210b01=${t210b01} sku=${sku} status=${diag_status} console=${diag_console}
+if test "${diag_status}" = "READY"; then
+@BODY@
+else
+    echo REFUSED: nothing was shown, status=${diag_status} console=${diag_console}
+fi
+echo Photograph the screen now. Reset in @DWELL@ s, or hold the power button.
+for left in @DWELL_STEPS@; do
+    sleep @STEP@
+    echo RESET in ${left} s. Expected to land in hekate, not verified
+done
+reset
+while true; do
+    sleep 1
+done

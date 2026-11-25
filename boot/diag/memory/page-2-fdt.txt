@@ -1,0 +1,16 @@
+    echo control FDT at ${fdtcontroladdr}
+    if test -n "${fdtcontroladdr}"; then
+        if fdt addr ${fdtcontroladdr}; then
+            echo [/memory]
+            fdt print /memory
+            echo [/reserved-memory] an error here means the node is absent
+            fdt print /reserved-memory
+            echo [reserve map]
+            fdt rsvmem print
+            echo END OF THE CONTROL FDT
+        else
+            echo CONTROL_FDT_ADDR_FAILED
+        fi
+    else
+        echo CONTROL_FDT_ADDR_EMPTY
+    fi

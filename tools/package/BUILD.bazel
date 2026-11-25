@@ -164,6 +164,22 @@ py_binary(
     srcs = ["diag_loader_inspect.py"],
 )
 
+# The read only memory diagnostic (boot/diag/memory): two hekate entries that print what U-Boot says about memory.
+py_binary(
+    name = "diag_memory",
+    srcs = ["diag_memory.py"],
+    deps = [
+        ":bl33",
+        ":diag_boot",
+    ],
+)
+
+py_library(
+    name = "bdinfo_audit",
+    srcs = ["bdinfo_audit.py"],
+    imports = ["."],
+)
+
 py_library(
     name = "fdt_ranges",
     srcs = ["fdt_ranges.py"],
