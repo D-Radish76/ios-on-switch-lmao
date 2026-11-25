@@ -95,6 +95,63 @@ Attach `hekate_ctcaer_6.5.5.bin` (110208 bytes) and `nyx.bin` (477565 bytes) as 
 `hekate_bin_check.py` and send its output. The disassembly (items 3 and 4 of the request) cannot be done from hashes.
 Also useful: the zip's SHA-256 and the hashes of the card's `bootloader/update.bin` and the file that started hekate.
 
+## Correction: the hekate file is compressed (2026-11-26)
+
+`hekate_ctcaer_6.5.5.bin` is not the payload. It is the loader (`loader/`, ARM, linked at `0x40007000`) followed by two
+LZ77 streams. Everything below this section that was read from the hekate file at an offset above `0x784` (table rows,
+missing literals, Thumb disassembly) decoded compressed data as if it were code, and is withdrawn. The Nyx findings stand:
+`nyx.bin` is not compressed.
+
+Layout, from the loader's literal pool (`0x534` to `0x570`) and `loader/link.ld`:
+
+| Part | File offset | Size |
+| --- | --- | --- |
+| loader | `0x0` | `0x784` |
+| `payload_00` | `0x784` | `0xe219` |
+| `payload_01` | `0xe9a0` | `0xc4d8` |
+| tail | `0x1ae78` | 8 bytes, the last six read `ICTC49` |
+
+`payload_01` starts 3 bytes after `payload_00` ends, on a 4 byte boundary (the loader copies
+`sizeof(payload_00)` rounded up). `tools/lz/lz77` splits the payload at half its size, so the two outputs are
+`0x107e6` and `0x107e7` bytes, together `135117` (`0x20FCD`).
+
+`LZ_Uncompress` (`tools/lz/lz.c`, identical in `bdk/libs/compr/lz.c`): the first input byte is the marker. A marker
+followed by `0` is a literal marker byte. Otherwise two 7 bit varints follow, length then offset, and `length` bytes are
+copied one at a time from `out[pos - offset]`. The loader calls it twice, the second time with the output of the first as
+its start. The original has no range checks; `tools/package/hekate_unpack.py` rejects a varint that runs past the input,
+an offset of 0 or beyond the output so far, output past `0x30000`, payload ranges outside the image, overlapping streams
+and unaligned starts.
+
+Result (`boot/diag/erista-hekate-unpack.txt`): the file SHA-256 is the one above, the unpacked image has SHA-256
+`d7ff4ae2cc8dddf1fb5bf215e5f5cda995e09d7ca2fe9af8aa2b393ac0865200` and size `135117`. Both streams consume their input
+to the last byte. The expected split holds, which is evidence the boundaries are right. The unpacked image is not stored
+here. `ICTC` is at `0x118` in both the loader and the unpacked image with the same version word (`'6' '5' '5' 0x31`), so
+compression does not change it; the `0x31` against `BLVERSION_REL := 0` in the tag is still unexplained. The `ICTC` at
+`0x82b` was compressed data.
+
+`hekate_bin_check.py` on the unpacked image:
+
+- the 48 byte I2C clock table is present at `0x1aff0`, exactly the six source rows (I2C1 divider 3, I2C5 divider 0);
+- `0x00030003` and `0x600060a8` (`PLLP_OUTB`) are literals at `0xe1a4` and `0xe1a0`;
+- the I2C source addresses are not literals, which is right: `clock_enable` adds the table's `source` field to
+  `0x60006000`.
+
+Code in the unpacked image (Thumb, base `0x40008000`), matching `hw_init` as written in the source:
+
+- `clock_enable` (`0x4000bcf8`) sets reset, gates the clock, writes `(clk_src << 29) | clk_div` to `source` when it is
+  non zero, enables, waits (`0x4000d474`, 2 us), releases reset and reads the reset register back. The source register is
+  not read back.
+- `clock_enable_i2c` (`0x4000bf44`) calls it with the table at `0x40022ff0` plus `idx * 8`, between two calls of
+  `0x4000b8ac`.
+- `hw_init` calls it with 0 (`0x40016134`) and 4 (`0x4001613a`), i.e. I2C1 and I2C5, then `i2c_init(4)`
+  (`0x4000d1f0`), the regulators, and `i2c_init(0)`.
+- `i2c_init` stores `0x00050001` at offset `0x6c` (`I2C_CLK_DIVISOR`) and `0x00090003` at `0x84`
+  (`I2C_BUS_CLEAR_CONFIG`).
+
+So the release does write `0xC0000003` to `CLK_SOURCE_I2C1` and `0xC0000000` to `CLK_SOURCE_I2C5` in `hw_init`, as the
+source says. The T1-R readings (`00000003` for both) differ from those writes, so something after `hw_init` changed
+them. This shows nothing about what. The disassembly was not followed through `hw_deinit` or the `l4t` path here.
+
 ## Binaries received and read (2026-11-26)
 
 The user sent both files in a zip and reports that their SHA-256 equal the card's `bootloader/update.bin` and

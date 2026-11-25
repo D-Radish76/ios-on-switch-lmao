@@ -176,6 +176,12 @@ py_binary(
     srcs = ["hekate_bin_check.py"],
 )
 
+# Expands the two LZ77 streams of a hekate release binary on the host (ERISTA_HEKATE_BINARY.md); nothing is stored here.
+py_binary(
+    name = "hekate_unpack",
+    srcs = ["hekate_unpack.py"],
+)
+
 # Offline reader for the pinned BL31 and U-Boot, which looks for device accesses and call arguments (ERISTA_BOOTCHAIN_CAR.md).
 py_binary(
     name = "a64_scan",

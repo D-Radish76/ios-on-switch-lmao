@@ -412,6 +412,14 @@ py_test(
     deps = ["//tools/package:hekate_bin_check"],
 )
 
+# hekate_unpack.py on synthetic streams.
+py_test(
+    name = "hekate_unpack_test",
+    size = "small",
+    srcs = ["hekate_unpack_test.py"],
+    deps = ["//tools/package:hekate_unpack"],
+)
+
 # The first T1-R run on the Erista (boot/diag/erista-t1r-run.log), decoded.
 py_test(
     name = "t1r_run_test",

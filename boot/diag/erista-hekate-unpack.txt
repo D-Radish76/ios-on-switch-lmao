@@ -1,0 +1,23 @@
+image sha256 09752abd207803708add6e22151e94b71ffbaaff769d1bad759584b76ef6f05e size 110208
+payload_00 offset 0x784 size 0xe219
+payload_01 offset 0xe9a0 size 0xc4d8
+gap between streams 3 bytes
+trailing bytes 8
+half 0 0x107e6 half 1 0x107e7
+unpacked sha256 d7ff4ae2cc8dddf1fb5bf215e5f5cda995e09d7ca2fe9af8aa2b393ac0865200 size 135117
+
+hekate sha256 d7ff4ae2cc8dddf1fb5bf215e5f5cda995e09d7ca2fe9af8aa2b393ac0865200 size 135117
+I2C clock table (6 rows, 48 bytes): at 0x1aff0
+literal 0x00030003 PLLP_OUTB value written by hw_init: 1 at 0xe1a4
+literal 0x600060a8 PLLP_OUTB register address: 1 at 0xe1a0
+literal 0x60006124 CLK_SOURCE_I2C1 address: 0 at none
+literal 0x60006128 CLK_SOURCE_I2C5 address: 0 at none
+literal 0x60006110 CLK_SOURCE_PWM address: 0 at none
+literal 0x40008000 IPL_LOAD_ADDR: 5 at 0x7c, 0x4e4, 0xc58, 0x1d8c, 0xf604
+literal 0xed000000 NYX_STORAGE_ADDR: 1 at 0x18244
+literal 0xc0000000 EXT_PAYLOAD_ADDR: 2 at 0x1bd40, 0x1c500
+literal 0x40010000 PATCHED_RELOC_ENTRY: 2 at 0xc68, 0x9b88
+literal 0x40007000 PATCHED_RELOC_STACK: 1 at 0xc64
+identity b'hekate v6.5.5': at 0x199d4
+identity b'ICTC': at 0x118
+ARM mov rd, #0x30000 (0x30003 in two instructions): none
