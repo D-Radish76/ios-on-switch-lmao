@@ -284,7 +284,7 @@ head -1 bazel-bin/boot/diag_loader_sd/inspection.txt                            
 ```
 
 `bl31.bin`, `script.txt` and the `.ini` of `ios-diag-loader-sd` do not depend on the compiler; their hashes are in
-`boot/diag/sd_loader/RUN_CHECKLIST.md`. `bl33.bin` holds the Xcode-built loader: record the Mac's value there before any run.
+`boot/diag/sd_loader/RUN_CHECKLIST.md`. `bl33.bin` holds the Xcode-built loader: the Mac's value is `aedd7b951a3037dd2c27d70cb3326e7284419c4b8c3a9d801944aac8c772b4a0` (2026-11-25; Bazel tests, build and static inspection pass, D0 and D0-R hashes unchanged).
 `//boot:diag_loader` and `//boot:diag_loader_r` must not change. Linux checks: the tests above except the two Bazel-only
 ones (`bl33_stage_test` needs `lz4`; the C++ tests ran against a stand-in for GoogleTest), and the D1 loader links with
 Linux clang and lld and passes `diag_loader_inspect --sd`.

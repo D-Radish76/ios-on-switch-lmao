@@ -57,7 +57,7 @@ scale agreed (hekate's cap of 236 against the repository's 256).
 1. How to read the TMP451 at all: patched FDT or a controller driver in the loader, and what else sits on I2C1.
 2. Whether the PMIC thermal shutdown is enabled and at what threshold (not read).
 3. The CPU rate and voltage hekate leaves on the Erista (`SwitchThermal.cpp` has only the OLED's figures).
-4. Whether the PWM clock is on after Nyx's `hw_deinit`.
+4. Whether the PWM clock is on after Nyx's `hw_deinit`. Hekate's own launch paths differ in what they leave (`ERISTA_THERMAL_DESIGN.md`).
 5. Whether BL31 (the pinned binary) touches SOC_THERM.
 
 ## What to do until then

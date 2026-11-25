@@ -17,7 +17,7 @@ These do not depend on the compiler and can be checked from the repository (`too
 | `switchroot/ios-diag-loader-sd/bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
 | `switchroot/ios-diag-loader-sd/script.txt` | `23ba8ef408819e698eb6d7d616d3dff40b927ed37ae812933c868aeba8eeae0c` |
 | `bootloader/ini/ios-diag-loader-sd.ini` | `87a7e040bbcfe5fa337a4fa97b9f3bfcee39f940e151cf8b58760a1f967622f4` |
-| `switchroot/ios-diag-loader-sd/bl33.bin` | from the Mac build; it holds the Xcode-built loader |
+| `switchroot/ios-diag-loader-sd/bl33.bin` | `aedd7b951a3037dd2c27d70cb3326e7284419c4b8c3a9d801944aac8c772b4a0` (Mac build, 2026-11-25; it holds the Xcode-built loader) |
 
 - [ ] Experiment card only, backed up. The `iOS`, `iOS Diag`, `iOS Diag Memory`, `iOS Diag SD`, `iOS Diag Loader` and
       `iOS Diag Loader R` entries are untouched.
