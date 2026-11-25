@@ -49,3 +49,48 @@ not survive to P1. So retention of a CAR source write across that chain is the n
 the exceptions. That points at something that touches those two (and not the PWM or the other four I2C sources), and
 does not say what. It is an observation, not an identification. Nyx reads the TMP451 on I2C1 and showed a temperature,
 which suggests I2C1 works at that point; it does not show its source word.
+
+## Mac run of `hekate_bin_check.py` (2026-11-26, reported by the user, not run here)
+
+| File | SHA-256 | Size |
+| --- | --- | --- |
+| hekate (`hekate_ctcaer_6.5.5.bin` as the user named it) | `09752abd207803708add6e22151e94b71ffbaaff769d1bad759584b76ef6f05e` | 110208 |
+| `nyx.bin` | `309f58f934b50c4ae990f8dbb02b7106c16b9391bb1e516d66f1aa48871d1e6d` | 477565 |
+
+Output: hekate, all six I2C table rows not found; Nyx, the whole table at `0x71b74`; the literal `0x00030003` in neither.
+Not yet known: whether these files are the ones in the release zip (the zip's hash and the card copies were not part of
+the report), and which card file started hekate. Equality with the release zip and with the card stays unverified. The
+size of 110208 bytes has no earlier record to compare with.
+
+The check is a byte search. It says nothing about which code runs.
+
+### Why the literal is absent (both files)
+
+Expected from the compilers, so no finding by itself. In ARM mode (Nyx, no `-mthumb`) GCC builds `0x30003` as
+`mov rd, #0x30000` then `orr rd, rd, #3`, because both halves are encodable immediates, so no literal word exists. The
+checker now looks for that `mov` (`arm_mov_30000`). The Thumb build (hekate, `-mthumb`) has no `movw` on ARMv4T; it can
+use a literal pool word or a shift sequence, and a pool word would have been found at a 4 byte offset. The checker cannot
+tell which. So the absence says nothing about whether `hw_init` writes `0x30003`; it needs the disassembly.
+
+### Why the table may be absent from hekate
+
+From the source and the Makefiles: both builds compile the same `clock.c` and the same table. The flags differ (hekate
+`-mthumb -fno-inline`, Nyx ARM mode with inlining; both `-O2`, `-fdata-sections`, `--gc-sections`). The table is data
+indexed by the runtime argument of `clock_enable_i2c`, so the instruction set does not change it, and GCC at `-O2` does
+not clone a function for two different constants (hekate passes 0 and 4). The source therefore predicts the table in
+both files. Candidates, none confirmed:
+
+1. the file is not the 6.5.5 payload of the release (a different build, or another file in the zip);
+2. the rows are in the file in another layout (an older struct, padding, or bitfield order in the Thumb build);
+3. `hw_init` in this build does not use the table (a different `clock.c`).
+
+What separates them needs the file: the identity strings the checker now reports (`hekate v6.5.5`, the `ICTC` magic, as
+set by `main.c:1429` and the Makefile), a search of the hekate file for the single I2C source addresses and offsets as
+literals (the checker now looks for `0x60006124`, `0x60006128`, `0x60006110` and `0x600060A8`), and a Thumb disassembly
+of the code around any hit. In ARM mode the same words can be searched in Nyx beside the table that is there.
+
+### Needed
+
+Attach `hekate_ctcaer_6.5.5.bin` (110208 bytes) and `nyx.bin` (477565 bytes) as the Mac hashed them, or run the updated
+`hekate_bin_check.py` and send its output. The disassembly (items 3 and 4 of the request) cannot be done from hashes.
+Also useful: the zip's SHA-256 and the hashes of the card's `bootloader/update.bin` and the file that started hekate.

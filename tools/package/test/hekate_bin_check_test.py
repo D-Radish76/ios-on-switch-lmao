@@ -3,7 +3,7 @@
 import struct
 import unittest
 
-from hekate_bin_check import I2C_TABLE, LITERALS, check, row, table
+from hekate_bin_check import I2C_TABLE, LITERALS, arm_mov_30000, check, row, table
 
 
 class Table(unittest.TestCase):
@@ -35,6 +35,15 @@ class Check(unittest.TestCase):
         value = LITERALS['nyx']['EXT_PAYLOAD_ADDR']
         out = '\n'.join(check('nyx', b'\0' + struct.pack('<I', value)))
         self.assertIn('0xc0000000 EXT_PAYLOAD_ADDR: 0', out)
+
+    def test_an_arm_mov_of_0x30000_is_found_for_any_register(self) -> None:
+        data = struct.pack('<II', 0xE3A03803, 0xE3B02803) + struct.pack('<I', 0xE3A03802)
+        self.assertEqual([0, 4], arm_mov_30000(data))
+
+    def test_the_identity_strings_are_reported(self) -> None:
+        out = '\n'.join(check('hekate', b'\0\0\0\0hekate v6.5.5'))
+        self.assertIn("identity b'hekate v6.5.5': at 0x4", out)
+        self.assertIn('not found', '\n'.join(check('hekate', b'')))
 
 
 if __name__ == '__main__':

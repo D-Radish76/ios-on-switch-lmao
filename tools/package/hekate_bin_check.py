@@ -21,6 +21,10 @@ I2C_TABLE = (
 LITERALS = {
     'hekate': {
         'PLLP_OUTB value written by hw_init': 0x00030003,
+        'PLLP_OUTB register address': 0x600060A8,
+        'CLK_SOURCE_I2C1 address': 0x60006124,
+        'CLK_SOURCE_I2C5 address': 0x60006128,
+        'CLK_SOURCE_PWM address': 0x60006110,
         'IPL_LOAD_ADDR': 0x40008000,
         'NYX_STORAGE_ADDR': 0xED000000,
         'EXT_PAYLOAD_ADDR': 0xC0000000,
@@ -29,11 +33,21 @@ LITERALS = {
     },
     'nyx': {
         'PLLP_OUTB value written by hw_init': 0x00030003,
+        'PLLP_OUTB register address': 0x600060A8,
+        'CLK_SOURCE_I2C1 address': 0x60006124,
+        'CLK_SOURCE_I2C5 address': 0x60006128,
+        'CLK_SOURCE_PWM address': 0x60006110,
         'NYX_STORAGE_ADDR': 0xED000000,
         'EXT_PAYLOAD_ADDR': 0xC0000000,
         'PATCHED_RELOC_ENTRY': 0x40010000,
         'PATCHED_RELOC_STACK': 0x40007000,
     },
+}
+
+
+STRINGS = {
+    'hekate': (b'hekate v6.5.5', struct.pack('<I', 0x43544349)),
+    'nyx': (struct.pack('<I', 0x43544349),),
 }
 
 
@@ -54,6 +68,12 @@ def find(data: bytes, needle: bytes, step: int = 1) -> list[int]:
     return found
 
 
+def arm_mov_30000(data: bytes) -> list[int]:
+    """Offsets of ARM `mov rd, #0x30000` (and `movs`), the first half of 0x30003 built with an `orr rd, rd, #3`."""
+    words = struct.unpack_from(f'<{len(data) // 4}I', data)
+    return [i * 4 for i, w in enumerate(words) if w & 0xFFEF0FFF == 0xE3A00803]
+
+
 def check(name: str, data: bytes) -> list[str]:
     lines = [f'{name} sha256 {hashlib.sha256(data).hexdigest()} size {len(data)}']
     whole = find(data, table())
@@ -69,6 +89,11 @@ def check(name: str, data: bytes) -> list[str]:
         lines.append(
             f'literal {value:#010x} {label}: {len(hits)} at {", ".join(f"{a:#x}" for a in hits[:6]) or "none"}'
         )
+    for text in STRINGS[name]:
+        at = data.find(text)
+        lines.append(f'identity {text!r}: {f"at {at:#x}" if at >= 0 else "not found"}')
+    moves = ', '.join(f'{a:#x}' for a in arm_mov_30000(data)[:6]) or 'none'
+    lines.append(f'ARM mov rd, #0x30000 (0x30003 in two instructions): {moves}')
     return lines
 
 
