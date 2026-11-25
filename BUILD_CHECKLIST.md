@@ -26,7 +26,7 @@ whose main executable or Info.plist was a symlink out of the Bazel tree (`a9b175
 `eb0758e6` copies such links as files in the signing copy). The build has no `boot` option on: the Erista row stays at
 `boot 0`.
 
-Not run yet: the ios27 and release builds, the step 1 style checks, `//tools/mc_carveout:all`, `bazel test //...`, any `bazel build //:boot`, and
+Not run yet: the ios27 and release builds, the step 1 style checks, `//tools/mc_carveout:all`, `bazel test //...`, and
 the emulator checks. The per target counts were not part of the report.
 
 ## What ran here, and with what
