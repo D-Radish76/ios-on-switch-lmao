@@ -162,6 +162,7 @@ py_binary(
 py_binary(
     name = "diag_loader_inspect",
     srcs = ["diag_loader_inspect.py"],
+    imports = ["."],
 )
 
 # Builds each diagnostic loader image on the host and prints its SHA-256, to show that a shared source change leaves the
@@ -169,6 +170,7 @@ py_binary(
 py_binary(
     name = "diag_images",
     srcs = ["diag_images.py"],
+    imports = ["."],
     deps = [":diag_loader_inspect"],
 )
 
@@ -176,6 +178,7 @@ py_binary(
 py_binary(
     name = "diag_mmio_audit",
     srcs = ["diag_mmio_audit.py"],
+    imports = ["."],
     deps = [":diag_loader_inspect"],
 )
 
