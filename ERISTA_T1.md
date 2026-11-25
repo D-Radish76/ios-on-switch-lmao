@@ -181,9 +181,10 @@ Applies after any stop that is not `T1 COMPLETE CODE 0000` followed by hekate on
 1. Hold the power button until the screen is dark and the console is off, then wait 10 s. Do not start a second diagnostic.
 2. Power on to hekate and open Nyx. Nyx's `tmp451_init` (called when Nyx starts) sets the sensor to running at 0x80 and every
    5 s its status bar reads the SoC temperature and calls `fan_set_from_temp`.
-3. Watch the status bar for 30 s: the clock moves and the SoC temperature field shows a plausible value that changes by
-   itself over a minute or two. A value stuck at one number, or `00.0`, means the sensor read is not working (a reading of
-   zero from a failed I2C read is read from the code's return path, not seen).
+3. Watch the status bar for 30 s: the clock moves and the SoC temperature field shows a plausible value. An idle console
+   may show the same value for a long time, so an unchanging value is not by itself a fault, and nothing is run to heat it.
+   `00.0`, a clock that does not move, or an abnormal screen is the sign that the sensor read is not working (a zero from a
+   failed I2C read is read from the code's return path, not seen).
 4. The fan runs only from 42 C. Not hearing it at idle is normal. If the status bar shows 42 C or more and no air moves, or the
    console is hot while the fan is silent, power off and report.
 5. Report the status-bar value, how long Nyx had been up, and whether the screen was normal. No further diagnostic, T1 or
