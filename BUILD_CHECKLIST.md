@@ -310,3 +310,22 @@ bazel build //boot:diag_t1r
 ```
 
 Then hash the package files as in `ERISTA_T1R_RUN.md` and rebuild the D0, D0-R, D1 and T1 v2 packages to confirm their hashes are unchanged. Not built on the Mac yet; not run on hardware. `boot` stays 0.
+
+Mac result for T1-R (commit `51e48829f`, reported by the user, 2026-11-25): build, static inspection and SHA-256 done.
+
+| File | SHA-256 |
+| --- | --- |
+| `ios-diag-t1r/bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `ios-diag-t1r/bl33.bin` | `748c1c6c9473deba218f984c92b3779daa0a90ea4e830ce45f55c9706c47c82a` |
+| `ios-diag-t1r/script.txt` | `744b8df3e5a411459bfa068dc7f8668c3f76be221cda1dd978b79c38a876d1b3` |
+| `ios-diag-t1r.ini` | `c78d00877acc0b11d6c53270ff7b5e8c31d94f0a58e866d05d52378ddaea3c43` |
+
+D0, D0-R, D1 and T1 v2 rebuilt: 14 of 16 files equal their earlier hashes. The D0 and D0-R inis had no earlier record in these
+files. `entry_ini` has not changed since before T1, and running it for the two entries gives the same values the Mac reported:
+
+| File | SHA-256 |
+| --- | --- |
+| `ios-diag-loader.ini` (D0) | `dd102bc6eb16790385d67600519c304cafdbed335df320cec2cab3fd4e0b4999` |
+| `ios-diag-loader-r.ini` (D0-R) | `a51a1a13f729778f0207c3236fd1622e9d445206ddaf804a1ecb3f011e666360` |
+
+The same generator gives `c32c631a...` for T1 v2, as recorded. Not run on hardware. `boot` stays 0.

@@ -15,8 +15,17 @@ PKG="$PWD/bazel-bin/boot/diag_t1r/package"
 (cd "$PKG" && find . -type f | sort | xargs shasum -a 256)
 ```
 
-Record the four hashes (`bl31.bin`, `bl33.bin`, `script.txt`, the ini) in the review before copying. The D0, D0-R, D1 and T1
-v2 packages must hash as before: build them and compare with the hashes already recorded.
+The Mac build of commit `51e48829f` gave these (reported by the user, 2026-11-25). They are the values to check on the card.
+
+| File | SHA-256 |
+| --- | --- |
+| `switchroot/ios-diag-t1r/bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `switchroot/ios-diag-t1r/bl33.bin` | `748c1c6c9473deba218f984c92b3779daa0a90ea4e830ce45f55c9706c47c82a` |
+| `switchroot/ios-diag-t1r/script.txt` | `744b8df3e5a411459bfa068dc7f8668c3f76be221cda1dd978b79c38a876d1b3` |
+| `bootloader/ini/ios-diag-t1r.ini` | `c78d00877acc0b11d6c53270ff7b5e8c31d94f0a58e866d05d52378ddaea3c43` |
+
+`bl31.bin` equals T1 v2's, as expected. The D0, D0-R, D1 and T1 v2 packages were rebuilt: 14 of 16 files equal their earlier
+Mac hashes, and the two others are the D0 and D0-R inis, which are listed in `BUILD_CHECKLIST.md`.
 
 ## 2. Copy and check (Mac)
 
@@ -27,10 +36,17 @@ mkdir -p "$SD/switchroot/ios-diag-t1r"
 cp "$PKG"/switchroot/ios-diag-t1r/bl31.bin "$PKG"/switchroot/ios-diag-t1r/bl33.bin "$PKG"/switchroot/ios-diag-t1r/script.txt "$SD/switchroot/ios-diag-t1r/"
 cp "$PKG"/bootloader/ini/ios-diag-t1r.ini "$SD/bootloader/ini/"
 sync
-cd "$SD" && shasum -a 256 switchroot/ios-diag-t1r/* bootloader/ini/ios-diag-t1r.ini
+ls -la "$SD/switchroot/ios-diag-t1r" "$SD/bootloader/ini"
+cd "$SD" && shasum -a 256 -c <<'SUMS'
+dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4  switchroot/ios-diag-t1r/bl31.bin
+748c1c6c9473deba218f984c92b3779daa0a90ea4e830ce45f55c9706c47c82a  switchroot/ios-diag-t1r/bl33.bin
+744b8df3e5a411459bfa068dc7f8668c3f76be221cda1dd978b79c38a876d1b3  switchroot/ios-diag-t1r/script.txt
+c78d00877acc0b11d6c53270ff7b5e8c31d94f0a58e866d05d52378ddaea3c43  bootloader/ini/ios-diag-t1r.ini
+SUMS
 ```
 
-The four hashes equal the recorded ones. Eject, insert again, run the last line again.
+All four print `OK`, and `ls` shows no `._` files. Eject (`diskutil eject "$SD"`), insert again and run the check a second time.
+Any `FAILED` or missing file: do not run.
 
 ## 3. Before starting
 
