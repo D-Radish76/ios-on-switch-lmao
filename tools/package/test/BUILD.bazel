@@ -222,6 +222,39 @@ py_test(
     ],
 )
 
+# The D1 loader diagnostic's script on script_sim.py's model of the commands it uses: the clean run, one injected failure
+# per status (bad header, size or data CRC, helper words, bootm, a corrupted or changed image, a failed read, exporter
+# failure, a bad record), that none goes on to a `go` or the loader, plus the script's commands, the package and the
+# inspection's SD rules. The model has no U-Boot, caches or card.
+py_library(
+    name = "script_sim",
+    testonly = True,
+    srcs = ["script_sim.py"],
+    imports = ["."],
+)
+
+py_test(
+    name = "diag_sd_loader_test",
+    size = "small",
+    srcs = ["diag_sd_loader_test.py"],
+    data = [
+        "//bazel/pinned:SHA256SUMS",
+        "//bazel/pinned:firmware/bl31.bin",
+        "//bazel/pinned:firmware/bl33.bin",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//bazel/pinned:firmware/exporter.uimg",
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        ":script_sim",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+        "//tools/package:exporter_check",
+        "//tools/package:loader_abi",
+    ],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",

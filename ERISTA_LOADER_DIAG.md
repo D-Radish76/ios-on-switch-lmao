@@ -285,3 +285,9 @@ hekate DTB's real size.
 `ERISTA_D1_DESIGN.md`. `CLEAR? BANK 0` is `CLEAR, BANK 0` drawn with a font that has no comma. The entry stack was
 `FF87DD10`, not D0's `FF87D010`; both lie below U-Boot's stack start. The six GIC words equal D0's. No overlap with any
 reservation on the screen or any range this repository can name is not proof that memory is free.
+
+## D1 (implemented, not run)
+
+`//boot:diag_loader_sd` is D0-R plus the exporter and SD reference steps; `ERISTA_D1_DESIGN.md` ("D1 as implemented") and
+`boot/diag/sd_loader/README.md` describe it. The destination check also covers the exporter's run area and the SD reference
+page. The D0 and D0-R outputs are unchanged.

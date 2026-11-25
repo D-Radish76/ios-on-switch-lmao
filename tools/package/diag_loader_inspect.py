@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the D0 loader's binary may contain, read from its link map and its disassembly.
 
-    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT]
+    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd]
 
 Exits nonzero, naming every violation, when the link pulled in the normal loader's kernel path, when code writes a CPU
 system register that WRITES does not list, or when an instruction outside the reviewed set is present. WRITES is the
@@ -72,15 +72,30 @@ FORBIDDEN_SYMBOLS = (
     'kernel_window',
 )
 REQUIRED_SYMBOLS = ('switch_diag_read32', 'switch_diag_exit', 'switch_diag_after_transition', 'probe_show_exception')
+# D1 links the same-boot SD reference validator and its reporting; nothing else of the storage path.
+SD_SYMBOLS = ('switch_sd_card_reference_validate', 'switch_diag_sd_evaluate')
+# The validator compares the controller address 0x700b0000 with the record's field and never uses it as an address;
+# these are the only functions that may hold it as an immediate, and only in comparisons.
+SD_CONTROLLER_HOLDERS = ('validate_reference', 'switch_sd_card_reference_validate', 'switch_sd_reference_validate')
+# Constants of the validator that look like device addresses to DEVICE_IMMEDIATE: 0x76dc4190, a word of the CRC32 loop,
+# and 0x52445349, the reference page's magic.
+SD_CONSTANTS = {0x76DC, 0x5244}
+SD_FUNCTIONS = ('switch_sd_crc32', *SD_CONTROLLER_HOLDERS)
+COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
 # The one place a device register address is formed. It loads and returns.
 READ32_BODY = re.compile(r'\A(?:mov\s+w\d+, w0\s*\n)?ldr\s+w0, \[x\d+\]\s*\nret\s*\Z')
 # Device addresses built as an immediate in code: 0x5000xxxx to 0x7fffxxxx, except the identity registers (0x7000....).
 DEVICE_IMMEDIATE = re.compile(r'\b(?:movk|movz|mov)\s+[wx]\d+, #0x([0-9a-f]{4}), lsl #16')
+# The same, as one `mov` of a 32 bit value: 0x50000000 to 0x7fffffff. Only the D1 inspection looks for it.
+WHOLE_IMMEDIATE = re.compile(r'\bmov\s+[wx]\d+, #0x([0-9a-f]{8})\b')
 
 
-def inspect_map(text: str) -> list[str]:
-    problems = [f'the link has {name}' for name in FORBIDDEN_SYMBOLS if name in text]
-    problems += [f'the link lacks {name}' for name in REQUIRED_SYMBOLS if name not in text]
+def inspect_map(text: str, sd: bool = False) -> list[str]:
+    forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
+    problems = [f'the link has {name}' for name in forbidden if name in text]
+    problems += [
+        f'the link lacks {name}' for name in (*REQUIRED_SYMBOLS, *(SD_SYMBOLS if sd else ())) if name not in text
+    ]
     return problems
 
 
@@ -96,7 +111,44 @@ def functions(disassembly: str) -> dict[str, list[str]]:
     return found
 
 
-def count_instructions(code: dict[str, list[str]]) -> tuple[dict[str, int], dict[str, int], list[str]]:
+def controller_page_immediates(name: str, body: list[str]) -> list[str]:
+    """Return the functions' `mov` of a value inside the SD controller's page; only the validator's compare may."""
+    return [
+        f'{name}: the SD controller address is formed in code: {instruction}'
+        for instruction in body
+        if (m := WHOLE_IMMEDIATE.search(instruction))
+        and m.group(1).startswith('700b0')
+        and not (name in SD_CONTROLLER_HOLDERS and m.group(1) == '700b0000')
+    ]
+
+
+def controller_uses(name: str, body: list[str]) -> list[str]:
+    """Return what a function does with a register holding 0x700b0000 other than compare it.
+
+    The immediate is built as `movz`/`movk ... #0x700b, lsl #16`; the register is tracked until it is written again.
+    A load or store through it, or a copy of it, is a path to the SD controller by a formed address.
+    """
+    problems, held = [], None
+    for instruction in body:
+        mnemonic = instruction.split()[0] if instruction else ''
+        built = re.match(
+            r'(?:(?:movk|movz|mov)\s+([wx])(\d+), #0x700b, lsl #16|mov\s+([wx])(\d+), #0x700b0000\b)', instruction
+        )
+        if built:
+            held = built.group(2) or built.group(4)
+            continue
+        if held is None or not re.search(rf'\b[wx]{held}\b', instruction):
+            continue
+        if re.match(rf'{mnemonic}\s+[wx]{held}\b', instruction) and mnemonic not in COMPARISONS:
+            held = None
+        elif mnemonic not in COMPARISONS:
+            problems.append(f'{name}: the controller address is used other than in a comparison: {instruction}')
+    return problems
+
+
+def count_instructions(
+    code: dict[str, list[str]], sd: bool = False
+) -> tuple[dict[str, int], dict[str, int], list[str]]:
     """Count the msr targets and the special instructions; return them with the problems found on the way."""
     writes: dict[str, int] = {}
     special: dict[str, int] = {}
@@ -113,13 +165,24 @@ def count_instructions(code: dict[str, list[str]]) -> tuple[dict[str, int], dict
                 special[mnemonic] = special.get(mnemonic, 0) + 1
             device = DEVICE_IMMEDIATE.search(instruction)
             if device and 0x5000 <= int(device.group(1), 16) < 0x8000 and int(device.group(1), 16) != 0x7000:
+                high = int(device.group(1), 16)
+                if (
+                    sd
+                    and name in SD_FUNCTIONS
+                    and (high in SD_CONSTANTS or (high == 0x700B and name != SD_FUNCTIONS[0]))
+                ):
+                    continue
                 problems.append(f'{name}: device address immediate in code: {instruction}')
+        if sd:
+            problems += controller_page_immediates(name, body)
+            if name in SD_CONTROLLER_HOLDERS:
+                problems += controller_uses(name, body)
     return writes, special, problems
 
 
-def inspect_disassembly(disassembly: str) -> list[str]:
+def inspect_disassembly(disassembly: str, sd: bool = False) -> list[str]:
     code = functions(disassembly)
-    writes, special, problems = count_instructions(code)
+    writes, special, problems = count_instructions(code, sd)
     for target, count in writes.items():
         if target not in WRITES:
             problems.append(f'unreviewed system register write: msr {target} ({count}x)')
@@ -148,8 +211,9 @@ def main() -> int:
     parser.add_argument('--map', required=True, type=Path)
     parser.add_argument('--disassembly', required=True, type=Path)
     parser.add_argument('--report', type=Path)
+    parser.add_argument('--sd', action='store_true', help='the D1 image: the SD reference validator is linked')
     args = parser.parse_args()
-    problems = inspect_map(args.map.read_text()) + inspect_disassembly(args.disassembly.read_text())
+    problems = inspect_map(args.map.read_text(), args.sd) + inspect_disassembly(args.disassembly.read_text(), args.sd)
     if args.report:
         args.report.write_text('\n'.join(problems or ['D0 loader inspection passed']) + '\n' + report() + '\n')
     if problems:

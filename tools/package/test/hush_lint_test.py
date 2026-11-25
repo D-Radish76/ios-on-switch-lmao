@@ -20,6 +20,7 @@ SCRIPTS = (
     'boot/diag/sd/u-boot-script.txt',
     'boot/diag/sd/page-1-state.txt',
     'boot/diag/sd/page-2-info.txt',
+    'boot/diag/sd_loader/u-boot-script.txt',
 )
 BROKEN_ON_THE_ERISTA = "echo U-Boot's own view: DRAM banks, relocaddr, reloc off, irq_sp, sp start, TLB addr, fdt_blob"
 

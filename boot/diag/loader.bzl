@@ -41,6 +41,8 @@ def _impl(ctx):
     args.add("--objcopy", ctx.file._objcopy)
     args.add("--objdump", ctx.file._objdump)
     args.add("--linker-script", ctx.file.linker_script)
+    if ctx.attr.sd:
+        args.add("--sd")
     args.add("--map", linkmap)
     args.add("--disassembly", dis)
     args.add("--report", report)
@@ -71,10 +73,15 @@ def _impl(ctx):
     build.add("--title", ctx.attr.title)
     build.add("--ident", ctx.attr.ident)
     build.add("--out", package.path)
+    exporter_inputs = []
+    if ctx.file.exporter:
+        build.add("--exporter", ctx.file.exporter)
+        build.add("--sums", ctx.file.sums)
+        exporter_inputs = [ctx.file.exporter, ctx.file.sums]
     ctx.actions.run(
         executable = ctx.executable._diag_loader,
         arguments = [build],
-        inputs = [loader, ctx.file.script_template, ctx.file.boards, ctx.file.dtb, ctx.file.bl31, ctx.file.bl33],
+        inputs = [loader, ctx.file.script_template, ctx.file.boards, ctx.file.dtb, ctx.file.bl31, ctx.file.bl33] + exporter_inputs,
         outputs = [package],
         mnemonic = "DiagLoaderPackage",
         progress_message = "Composing the D0 loader's bl33.bin and hekate entry",
@@ -96,6 +103,9 @@ diag_loader_package = rule(
         "bl31": attr.label(mandatory = True, allow_single_file = True),
         "bl33": attr.label(mandatory = True, allow_single_file = True),
         "dwell": attr.int(default = 15),
+        "sd": attr.bool(default = False, doc = "D1: the link carries the SD reference validator and the inspection allows it"),
+        "exporter": attr.label(allow_single_file = True, doc = "D1: the pinned exporter.uimg, which gets the bl33.bin slot"),
+        "sums": attr.label(allow_single_file = True, doc = "D1: bazel/pinned/SHA256SUMS, the pins the exporter and bl33.bin are checked against"),
         "defines": attr.string_list(doc = "extra compile flags for every source (D0-R's -DSWITCH_DIAG_RESERVATIONS=1)"),
         "entry": attr.string(default = "ios-diag-loader", doc = "the directory under switchroot/ and the ini's file name"),
         "title": attr.string(default = "iOS Diag Loader", doc = "the hekate menu entry"),

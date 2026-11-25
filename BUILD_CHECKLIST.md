@@ -268,3 +268,23 @@ bazel test //tools/package/test:diag_sd_test //tools/package/test:d0r_run_test /
 
 What is measured and what is not is in `ERISTA_D1_DESIGN.md` ("Measured on the Erista"). Single data rate, the exporter on
 hardware, thermal protection and memory no list names are unverified.
+
+## D1 (Mac, before any hardware run)
+
+```sh
+bazel test //tools/package/test:diag_sd_loader_test //tools/package/test:diag_loader_test //tools/package/test:hush_lint_test \
+  //tools/package/test:exporter_audit_test //tools/package/test:d0r_run_test //tools/package/test:bl33_reserve_audit_test \
+  //boot/diag/sd_loader/test:all //boot/diag/loader/test:all //boot/storage/firmware_export/test:all
+bazel build //boot:diag_loader_sd //boot:diag_loader //boot:diag_loader_r --config=ios17
+(cd bazel-bin/boot/diag_loader_sd/package && find . -type f | sort | xargs shasum -a 256)
+shasum -a 256 bazel-bin/boot/diag_loader/package/switchroot/ios-diag-loader/*     # must equal the reviewed D0 values
+shasum -a 256 bazel-bin/boot/diag_loader_r/package/switchroot/ios-diag-loader-r/* # must equal the reviewed D0-R values
+head -1 bazel-bin/boot/diag_loader_sd/inspection.txt                               # D0 loader inspection passed
+# optional, needs qemu-system-aarch64, exporter machine code only: bazel run //boot:firmware_export_model -- --build <exporter build dir> --output <dir under out/>
+```
+
+`bl31.bin`, `script.txt` and the `.ini` of `ios-diag-loader-sd` do not depend on the compiler; their hashes are in
+`boot/diag/sd_loader/RUN_CHECKLIST.md`. `bl33.bin` holds the Xcode-built loader: record the Mac's value there before any run.
+`//boot:diag_loader` and `//boot:diag_loader_r` must not change. Linux checks: the tests above except the two Bazel-only
+ones (`bl33_stage_test` needs `lz4`; the C++ tests ran against a stand-in for GoogleTest), and the D1 loader links with
+Linux clang and lld and passes `diag_loader_inspect --sd`.

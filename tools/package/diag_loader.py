@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The D0 loader diagnostic: its loader, its own bl33.bin and its own hekate entry. No kernel window, no exporter.
+"""The D0 loader diagnostic: its loader, bl33.bin and hekate entry, with no kernel window. D1 adds the exporter.
 
     diag_loader.py link --ld-lld P --objcopy P --objdump P --linker-script LD --map OUT --disassembly OUT --report OUT
                         --elf OUT --out LOADER.UBOOT OBJ...
     diag_loader.py build --template T --boards SwitchBoard.h --board NAME --loader L --dtb D --bl31 BL31 --bl33 BL33
-                         --out DIR [--dwell S]
+                         --out DIR [--dwell S] [--exporter EXPORTER.UIMG --sums SHA256SUMS]
 
 `link` links the objects, refuses an image the inspection (diag_loader_inspect.py) does not pass and wraps the raw image
 for bootm. `build` writes DIR/bootloader/ini/ios-diag-loader.ini and DIR/switchroot/ios-diag-loader/{bl31.bin,
@@ -22,12 +22,14 @@ from bl33 import bl33_patch
 from boot_script import boards, script_image
 from diag_boot import DWELL, STEP, diag_env_edits, dwell_steps
 from diag_loader_inspect import inspect_disassembly, inspect_map, report
+from exporter_check import BL33_PIN, check_exporter, check_pinned, exporter_values
 from fdt_ranges import reserved_ranges
 from loader_abi import (
     BL33_BASE,
     BOOT_ARGS_PAGE,
     DTB_SLOT,
     EXPORTER_RUN,
+    EXPORTER_SLOT,
     LOADER_SLOT,
     SCRIPT_SLOT,
     SD_REFERENCE,
@@ -78,8 +80,8 @@ def board_gate(header: str, wanted: str) -> str:
     )
 
 
-def diag_script(template: str, header: str, board: str, dtb_bytes: int, dwell: int = DWELL) -> str:
-    values = {
+def script_values(header: str, board: str, dtb_bytes: int, dwell: int) -> dict[str, str]:
+    return {
         'BOARD_GATE': board_gate(header, board),
         'DTB': hex(DTB_SLOT[0]),
         'DTB_BYTES': hex(dtb_bytes),
@@ -88,18 +90,29 @@ def diag_script(template: str, header: str, board: str, dtb_bytes: int, dwell: i
         'DWELL': str(dwell),
         'STEP': str(STEP),
     }
+
+
+def fill(template: str, values: dict[str, str]) -> str:
     for name, value in values.items():
         if f'@{name}@' not in template:
-            raise SystemExit(f'the D0 script template has no @{name}@')
+            raise SystemExit(f'the script template has no @{name}@')
         template = template.replace(f'@{name}@', value)
     if re.search(r'@[A-Z_0-9]+@', template):
-        raise SystemExit('the D0 script template has a value this tool does not fill')
+        raise SystemExit('the script template has a value this tool does not fill')
     return template
 
 
-def diag_loader_bl33(patched_u_boot: bytes, script: str, loader: bytes, dtb: bytes) -> bytes:
-    """U-Boot, then the script, loader and DTB in their slots, and nothing else: no exporter, no kernel window."""
+def diag_script(template: str, header: str, board: str, dtb_bytes: int, dwell: int = DWELL) -> str:
+    return fill(template, script_values(header, board, dtb_bytes, dwell))
+
+
+def diag_loader_bl33(
+    patched_u_boot: bytes, script: str, loader: bytes, dtb: bytes, exporter: bytes | None = None
+) -> bytes:
+    """U-Boot, then the script, loader and DTB in their slots, the exporter's too for D1; no kernel window."""
     slots = [(SCRIPT_SLOT, script_image(script)), (LOADER_SLOT, loader), (DTB_SLOT, dtb)]
+    if exporter is not None:
+        slots.append((EXPORTER_SLOT, exporter))
     floor = min(slot[0] - BL33_BASE for slot, _ in slots)
     end_ofs = int.from_bytes(patched_u_boot[0x10:0x18], 'little')
     bss_end_ofs = int.from_bytes(patched_u_boot[0x20:0x28], 'little')
@@ -173,7 +186,7 @@ def link(args: argparse.Namespace) -> None:
             [args.objdump, '-d', '--no-show-raw-insn', args.elf], check=True, capture_output=True, text=True
         ).stdout
         args.disassembly.write_text(disassembly)
-        problems = inspect_map(args.map.read_text()) + inspect_disassembly(disassembly)
+        problems = inspect_map(args.map.read_text(), args.sd) + inspect_disassembly(disassembly, args.sd)
         if problems:
             raise SystemExit('D0 loader inspection failed:\n' + '\n'.join(problems))
         args.report.write_text('D0 loader inspection passed\n' + report() + '\n')
@@ -183,14 +196,21 @@ def link(args: argparse.Namespace) -> None:
 
 def build(args: argparse.Namespace) -> None:
     dtb = args.dtb.read_bytes()
-    script = diag_script(args.template.read_text(), args.boards.read_text(), args.board, len(dtb), args.dwell)
+    values = script_values(args.boards.read_text(), args.board, len(dtb), args.dwell)
+    exporter = None
+    if args.exporter:
+        sums, bl33 = args.sums.read_text(), args.bl33.read_bytes()
+        check_pinned(bl33, sums, BL33_PIN)
+        exporter = args.exporter.read_bytes()
+        values.update(exporter_values(check_exporter(exporter, sums), bl33))
+    script = fill(args.template.read_text(), values)
     u_boot = bl33_patch(args.bl33.read_bytes(), diag_env_edits(args.dwell))
     switchroot = args.out / 'switchroot' / args.entry
     switchroot.mkdir(parents=True, exist_ok=True)
     (args.out / 'bootloader' / 'ini').mkdir(parents=True, exist_ok=True)
     (switchroot / 'bl31.bin').write_bytes(args.bl31.read_bytes())
     loader = args.loader.read_bytes()
-    image = diag_loader_bl33(u_boot, script, loader, dtb)
+    image = diag_loader_bl33(u_boot, script, loader, dtb, exporter)
     check_destination(len(loader), len(image), dtb)
     (switchroot / 'bl33.bin').write_bytes(image)
     (switchroot / 'script.txt').write_text(script)
@@ -203,10 +223,13 @@ def main() -> None:
     p = step.add_parser('link')
     for name in ('ld-lld', 'objcopy', 'objdump', 'linker-script', 'map', 'disassembly', 'report', 'elf', 'out'):
         p.add_argument('--' + name, required=True, type=Path)
+    p.add_argument('--sd', action='store_true', help='the D1 loader: link and inspect the SD reference validator')
     p.add_argument('objects', nargs='+', type=Path)
     p = step.add_parser('build')
     for name in ('template', 'boards', 'loader', 'dtb', 'bl31', 'bl33', 'out'):
         p.add_argument('--' + name, required=True, type=Path)
+    p.add_argument('--exporter', type=Path, help='D1: the pinned exporter.uimg, with --sums')
+    p.add_argument('--sums', type=Path, help='D1: bazel/pinned/SHA256SUMS')
     p.add_argument('--board', default='erista')
     p.add_argument('--entry', default=ENTRY)
     p.add_argument('--title', default='iOS Diag Loader')

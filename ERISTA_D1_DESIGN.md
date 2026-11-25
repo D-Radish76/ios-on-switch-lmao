@@ -253,3 +253,44 @@ The exporter is the first code outside the diagnostic's own image that D1 runs, 
    initialized the controller?
 3. T1's stale reading: accepted as useful, or should T1 wait for T2?
 4. Should the `mc_verified` change travel with D1 or alone? (The reserve-map print already shipped with D0-R.)
+
+## D1 as implemented (not run on hardware)
+
+Code in `boot/diag/sd_loader/`, packaged by `//boot:diag_loader_sd` as the entry `iOS Diag Loader SD`. `README.md` there
+says what the script does; `RUN_CHECKLIST.md` is the run. Where it differs from the table above:
+
+- The measured CRC32 values and the step flags go to a status block at `0xA700F000` (256 bytes, inside the exporter's 64 KiB
+  run area, above the 24144 byte image and clear of the exporter's writes), not to a scratch word at `0xA001F600`. The
+  loader reads the block; its magic is written last.
+- The exporter is checked in four places: the build (pin, header, data CRC, size), its slot before `bootm start` (all 16
+  header words, then the data CRC32), `bootm start` with `verify yes`, and at `0xA7000000` twice (after `bootm loados`,
+  and again right before `go`).
+- The helpers are called with `go`, after the exporter is loaded and before the loader is. Each returns 1 and leaves `x0`
+  alone, so the script requires `go` to report failure.
+
+### Answers to the reviewer's questions
+
+1. `verify yes` works in the pinned `bootm start`: the header CRC is always checked, the data CRC only when `verify` is
+   nonzero, and it covers the copy in the slot, not the copy at `0xA7000000`. D1 sets it for the exporter only and returns to
+   `verify no` before the loader's `bootm`. The CRC32 checks at the run address stay. CRC32 is not tamper protection.
+2. One read is the only data access: sector 0 of `mmc 1`, 512 bytes, no retry, no `mmc0`. The card-initialization commands
+   U-Boot's driver issues inside that read are not separately observable and are recorded as such in the checklist.
+3. T1 is not part of D1. A stale TMP451 value is not used for any safety decision. T1 to T4 continue as separate work.
+4. `mc_verified` is separate and unchanged.
+
+### What the tests show, and what they cannot
+
+| Test | Shows |
+| --- | --- |
+| `diag_sd_loader_test` | The real script on `script_sim.py`: a clean run hands off with 10 of 10 steps; one injected failure per status (wrong board, status block, devnum, header size, slot data CRC, helper words, `bootm start`, `bootm loados`, image corrupt after load, helper `go` reporting success, page clear, read, image changed after the read, exporter return, bad record, metadata) ends in `reset`, with its own status, no `bootm go`, the exporter's `go` only when every gate before it held, and at most one `read`. Also the command allowlist, the single `read mmc 1`, the `go` targets, the `mw` ranges, the package contents and the inspection's SD rules. |
+| `sd_report_test` (C++) | The status block and reference page evaluation: a valid run, a refused page, a missing block, fewer than 10 flags, a changed CRC, no identity in any line, line width. |
+| `exporter_audit_test`, `test_export.py` | The exporter's machine code and its pins, unchanged. |
+| QEMU `model.py` (Mac only, needs `qemu-system-aarch64`) | The exporter's machine code on synthetic firmware RAM. It does not run U-Boot or the script, so it cannot show the `go`, the caches or the card. |
+
+`script_sim.py` models the commands the script uses. It is not U-Boot: it shows what the script does when a command
+fails or RAM differs, not what the hardware does.
+
+Still unverified: the exporter on this console (the first `go` into a loaded payload may hang); the helpers are
+`ic ialluis; isb` and `dsb sy; isb`, with no `dc cvau`, and nothing shows `bootm loados` cleans the D-cache; thermal
+protection (fan off, no sensor read, T1 excluded, the trip not known to be armed); memory no list names; single data rate and
+the other conditions `mmc info` cannot show.

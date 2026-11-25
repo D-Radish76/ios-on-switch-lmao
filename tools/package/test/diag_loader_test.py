@@ -198,6 +198,8 @@ class Image(unittest.TestCase):
                     bl33=ROOT / 'bazel/pinned/firmware/bl33.bin',
                     out=Path(out),
                     dwell=DWELL,
+                    exporter=None,
+                    sums=None,
                     entry='ios-diag-loader',
                     title='iOS Diag Loader',
                     ident='iDiagL',

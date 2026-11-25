@@ -1,0 +1,27 @@
+# The D1 loader diagnostic's report of the exporter's record (boot/diag/sd_loader) on the host: which lines it writes for a
+# valid reference page, a refused one and a missing status block, and that none of them carries the card's identity.
+#
+#   bazel test //boot/diag/sd_loader/test:all
+load("//bazel/lint:defs.bzl", "lint_files")
+load("//bazel/testing:defs.bzl", "host_library", "host_test")
+
+lint_files()
+
+host_library(
+    name = "sd_report",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/sd_loader/sd_report.c",
+        "//boot:diag/sd_loader/sd_report.h",
+        "//boot:storage/sd_reference.c",
+        "//boot:storage/sd_reference.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "sd_report_test",
+    srcs = ["sd_report_test.cpp"],
+    deps = [":sd_report"],
+)

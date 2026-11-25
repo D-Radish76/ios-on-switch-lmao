@@ -234,6 +234,14 @@ py_library(
     imports = ["."],
 )
 
+# The pinned exporter's and U-Boot cache helpers' facts the D1 script checks (diag_loader.py's --exporter).
+py_library(
+    name = "exporter_check",
+    srcs = ["exporter_check.py"],
+    imports = ["."],
+    deps = [":loader_abi"],
+)
+
 py_binary(
     name = "diag_loader",
     srcs = ["diag_loader.py"],
@@ -242,6 +250,7 @@ py_binary(
         ":boot_script",
         ":diag_boot",
         ":diag_loader_inspect",
+        ":exporter_check",
         ":fdt_ranges",
         ":loader_abi",
         ":loader_link",

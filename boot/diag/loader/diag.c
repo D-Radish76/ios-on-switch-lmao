@@ -11,6 +11,9 @@
 #ifdef SWITCH_DIAG_RESERVATIONS
 #include "reservations.h"
 #endif
+#ifdef SWITCH_DIAG_SD
+#include "sd_report.h"
+#endif
 
 _Static_assert(SWITCH_DIAG_FB_PA == DISPLAY_BASE && SWITCH_DIAG_FB_BYTES == DISPLAY_BYTES,
                "the checked framebuffer is the one display.h draws on");
@@ -27,6 +30,10 @@ enum {
     D_MC_DIFFERENT,
     D_WALK_CODE,
     D_WALK_RANGE,
+#ifdef SWITCH_DIAG_SD
+    D_SD_REFERENCE_ERROR,
+    D_SD_FLAGS,
+#endif
 };
 
 /* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
@@ -267,7 +274,11 @@ static void report_area(unsigned row, const char *label, uint64_t start, uint64_
     } else if (bank < 0) {
         switch_diag_line_add(&line, " OUTSIDE THE BANKS");
     } else {
+#ifdef SWITCH_DIAG_SD
+        switch_diag_line_add(&line, " CLEAR IN BANK ");
+#else
         switch_diag_line_add(&line, " CLEAR, BANK ");
+#endif
         switch_diag_line_decimal(&line, (uint64_t)bank);
     }
     put(LEFT, row, &line, over >= 0 || bank < 0 ? DISPLAY_RED : DISPLAY_GREEN);
@@ -299,6 +310,21 @@ static void report_reservations(const struct loader_memory_report *memory)
     }
     report_area(28, "EXPORTER", SWITCH_DIAG_EXPORTER_START, SWITCH_DIAG_EXPORTER_END, memory);
     report_area(29, "SD REFERENCE", SWITCH_DIAG_SD_REFERENCE, SWITCH_DIAG_SD_REFERENCE + 0x1000, memory);
+}
+#endif
+
+#ifdef SWITCH_DIAG_SD
+/* Rows 23 to 27 and 30 of the left column, between D0-R's ranges and the status lines. */
+static void report_sd(void)
+{
+    static const unsigned rows[SWITCH_DIAG_SD_LINES] = {23, 24, 25, 26, 27, 30};
+    struct switch_diag_sd_result result;
+    switch_diag_sd_evaluate_fixed(&result);
+    for (unsigned i = 0; i < SWITCH_DIAG_SD_LINES; ++i)
+        if (result.line[i].text.length)
+            put(LEFT, rows[i], &result.line[i].text, result.line[i].bad ? DISPLAY_RED : DISPLAY_GREEN);
+    probe_record[D_SD_REFERENCE_ERROR] = (uint64_t)(int64_t)result.reference_error;
+    probe_record[D_SD_FLAGS] = result.flags_set;
 }
 #endif
 
@@ -371,7 +397,9 @@ void switch_diag_after_transition(void)
                                         r[R_HCR_AFTER], r[R_CNTHCTL_AFTER], r[R_CNTVOFF_AFTER]};
     const int el_ok = !switch_diag_el1_state(&el1);
     begin_screen();
-#ifdef SWITCH_DIAG_RESERVATIONS
+#ifdef SWITCH_DIAG_SD
+    put_text(0, "LOAD DIAG D1. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_RESERVATIONS)
     put_text(0, "LOAD DIAG D0-R. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #else
     put_text(0, "LOAD DIAG D0. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
@@ -392,6 +420,9 @@ void switch_diag_after_transition(void)
         put_text(1, "NO DEVICE REGISTER WAS READ", DISPLAY_RED);
     }
     report_fdt();
+#ifdef SWITCH_DIAG_SD
+    report_sd();
+#endif
     put_text(14, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD", DISPLAY_WHITE);
     put_text(15, "PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
     r[R_STAGE] = 0xd0;
