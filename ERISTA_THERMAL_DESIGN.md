@@ -39,7 +39,7 @@ Order is by risk. Each stage is its own review and its own run. A stage never st
 
 | | Purpose | Writes | Reads |
 | --- | --- | --- | --- |
-| T1 | Prove the I2C path reaches the TMP451 | I2C1 transfer registers and the TMP451 register pointer, nothing else | CAR (I2C1 and PWM clock and reset bits), I2C1, TMP451 0xFE, 0x09, 0x0A, 0x00, 0x01 |
+| T1 | Prove the I2C path reaches the TMP451 | I2C1 transfer registers and the TMP451 register pointer, nothing else | CAR (I2C1 and PWM clock and reset bits), I2C1, TMP451 0xFE, 0x03, 0x04, 0x00, 0x01 |
 | T2 | One conversion, read as a temperature | TMP451 one-shot command | TMP451 status, both temperature bytes |
 | T3 | Fan on, shown to turn | 5V rail GPIOs, PWM, pinmux | tachometer GPIO S7, TMP451 |
 | T4 | Hang and overheat protection | MAX77620 watchdog, SOC_THERM trip, PMC | the same sensors |
@@ -53,7 +53,7 @@ Separate from T2. Implementation and run notes are in `ERISTA_T1.md`.
 - **No controller setup.** T1 does not write `CLK_DIVISOR`. It requires hekate's value (0x50001) and stops on any other.
 - **Transfers.** Normal mode exactly as `_i2c_send_normal` and `_i2c_recv_normal` do it: `CMD_ADDR0`, `CMD_DATA1`, `CNFG`, `CONFIG_LOAD` (0x25), `CNFG` with go, wait for `BUSY` to clear, check the NOACK bits. Ten transfers: five register pointer writes (one byte each, so the sensor's configuration is not written) and five one-byte reads. Each transfer happens once. A failure ends the stage.
 - **Timeouts.** 100 ms for `BUSY` (hekate's bound), 1 ms for `CONFIG_LOAD`. Counter based.
-- **Registers read from the TMP451.** Manufacturer ID 0xFE (TI documents 0x55), configuration 0x09, conversion rate 0x0A, local 0x00, remote 0x01. Status 0x02 is left for T2 because a read clears latched flags.
+- **Registers read from the TMP451.** Manufacturer ID 0xFE (TI documents 0x55), configuration 0x03, conversion rate 0x04 (their read addresses; 0x09 and 0x0A are the write addresses), local 0x00, remote 0x01. Status 0x02 is left for T2 because a read clears latched flags.
 - **Use of the values.** Shown as hex bytes and never as a temperature. Not used for any decision. In shutdown mode they are the last conversion or zero.
 
 The pointer write is not a sensor setting. A TMP451 read needs the pointer set first, and the datasheet gives no way to read without it.

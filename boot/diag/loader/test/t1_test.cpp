@@ -34,30 +34,37 @@ bool is_i2c(unsigned reg)
 }
 
 struct Fake {
-    bool clock_on = true, in_reset = false, ack = true, stuck_busy = false, load_stuck = false;
+    bool clock_on = true, in_reset = false, ack = true, load_stuck = false, frozen = false;
     uint32_t divisor = SWITCH_T1_DIVISOR_HEKATE, status_busy = 0;
-    uint8_t id = 0x55, config = 0xc0, rate = 0x08, local = 0x12, remote = 0x34;
-    uint64_t now = 0;
-    uint32_t addr0 = 0, data1 = 0, cnfg = 0, noack_bits = 0;
+    uint8_t id = 0x55, config = 0xc0, rate = 0x02, local = 0x12, remote = 0x34;
+    /* A transfer lasts `duration` microseconds after go; BUSY is visible from `busy_delay` until then. Data read before the
+     * end is still the pointer the write left in CMD_DATA1. A duration of ~0 models a transfer that never ends. */
+    uint64_t duration = 200, busy_delay = 0;
+    uint64_t now = 0, go_at = 0;
+    uint32_t addr0 = 0, data1 = 0, noack_bits = 0;
     uint8_t pointer = 0;
-    int busy_polls = 0;
-    unsigned i2c_touches = 0, go_writes = 0;
+    bool in_flight = false;
+    unsigned i2c_touches = 0, go_writes = 0, reads = 0;
     std::vector<std::pair<unsigned, uint32_t>> writes;
 
     uint8_t value() const
     {
         switch (pointer) {
         case 0xfe: return id;
-        case 0x09: return config;
-        case 0x0a: return rate;
+        case 0x03: return config;
+        case 0x04: return rate;
         case 0x00: return local;
         case 0x01: return remote;
         default: return 0xff;
         }
     }
+    bool done() const { return in_flight && now >= go_at + duration; }
+    bool busy() const { return in_flight && now >= go_at + busy_delay && now < go_at + duration; }
     uint32_t read(unsigned reg)
     {
-        now += 50;
+        ++reads;
+        if (!frozen)
+            now += 5;
         if (is_i2c(reg))
             ++i2c_touches;
         switch (reg) {
@@ -65,22 +72,19 @@ struct Fake {
         case T1_CAR_CLK_OUT_ENB_L: return clock_on ? (1u << 12) : 0;
         case T1_CAR_CLK_SOURCE_I2C1: return 0x6;
         case T1_I2C1_CLK_DIVISOR: return divisor;
-        case T1_I2C1_STATUS:
-            if (stuck_busy && busy_polls)
-                return 0x100;
-            if (busy_polls > 0) {
-                --busy_polls;
-                return 0x100;
-            }
-            return noack_bits | status_busy;
+        case T1_I2C1_STATUS: return (busy() ? 0x100 : 0) | noack_bits | status_busy;
         case T1_I2C1_CONFIG_LOAD: return load_stuck ? 1 : 0;
-        case T1_I2C1_CMD_DATA1: return data1;
+        case T1_I2C1_CMD_DATA1:
+            if (done() && (addr0 & 1))
+                data1 = value();
+            return data1;
         default: return 0;
         }
     }
     void write(unsigned reg, uint32_t v)
     {
-        now += 50;
+        if (!frozen)
+            now += 5;
         writes.emplace_back(reg, v);
         if (is_i2c(reg))
             ++i2c_touches;
@@ -90,11 +94,10 @@ struct Fake {
             data1 = v;
         else if (reg == T1_I2C1_CNFG && (v & 0x200)) {
             ++go_writes;
-            busy_polls = stuck_busy ? 1 : 3;
+            go_at = now;
+            in_flight = true;
             noack_bits = ack ? 0 : 1;
-            if (ack && (addr0 & 1))
-                data1 = value();
-            else if (ack)
+            if (ack && !(addr0 & 1))
                 pointer = static_cast<uint8_t>(data1);
         }
     }
@@ -102,7 +105,13 @@ struct Fake {
 
 uint32_t f_read(void *c, unsigned r) { return static_cast<Fake *>(c)->read(r); }
 void f_write(void *c, unsigned r, uint32_t v) { static_cast<Fake *>(c)->write(r, v); }
-uint64_t f_now(void *c) { return static_cast<Fake *>(c)->now; }
+uint64_t f_now(void *c)
+{
+    auto *f = static_cast<Fake *>(c);
+    if (!f->frozen)
+        f->now += 1;
+    return f->now;
+}
 
 switch_t1_result run(Fake &fake)
 {
@@ -152,7 +161,8 @@ TEST(T1Allowlist, TmpRegisterListHasNoWriteOnlyOrStatusRegister)
     for (uint8_t reg : switch_t1_tmp451_register) {
         EXPECT_NE(reg, 0x02);  // status: a read clears latched flags
         EXPECT_NE(reg, 0x0f);  // one shot: T2
-        EXPECT_NE(reg, 0x03);
+        EXPECT_NE(reg, 0x09);  // write addresses are not read addresses
+        EXPECT_NE(reg, 0x0a);
     }
 }
 
@@ -210,7 +220,7 @@ TEST(T1Run, HealthyBus)
     EXPECT_EQ(r.have, 0x1fu);
     EXPECT_EQ(r.value[0], 0x55);
     EXPECT_EQ(r.value[1], 0xc0);
-    EXPECT_EQ(r.value[2], 0x08);
+    EXPECT_EQ(r.value[2], 0x02);
     EXPECT_EQ(r.value[3], 0x12);
     EXPECT_EQ(r.value[4], 0x34);
     EXPECT_EQ(fake.writes.size(), 45u);
@@ -230,7 +240,7 @@ TEST(T1Run, EveryWriteIsAPointerWriteOrATransferSetup)
     for (auto [reg, value] : fake.writes)
         if (reg == T1_I2C1_CMD_DATA1)
             pointers.insert(value);
-    EXPECT_EQ(pointers, (std::set<uint32_t>{0x00, 0x01, 0x09, 0x0a, 0xfe}));
+    EXPECT_EQ(pointers, (std::set<uint32_t>{0x00, 0x01, 0x03, 0x04, 0xfe}));
     EXPECT_EQ(fake.config, 0xc0);  // the model's sensor configuration is as it was
 }
 
@@ -251,6 +261,102 @@ TEST(T1Run, TransferOrderIsHekatesFromTheFirstWriteToTheLastRead)
         expected.insert(expected.end(), read.begin(), read.end());
     }
     EXPECT_EQ(fake.writes == expected, true);
+}
+
+TEST(T1Run, AFrozenCounterStopsBeforeAnyDeviceIsTouched)
+{
+    Fake fake;
+    fake.frozen = true;
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, SWITCH_T1_COUNTER_STALLED);
+    EXPECT_EQ(fake.reads, 0u);
+    EXPECT_EQ(fake.writes.size(), 0u);
+}
+
+TEST(T1Run, TheCounterStopsAfterTheCheckAndEveryLoopStillEnds)
+{
+    Fake fake;
+    fake.duration = ~0ull >> 1;  // BUSY never clears
+    const switch_t1_io io = {&fake,
+                             [](void *c, unsigned r) { return static_cast<Fake *>(c)->read(r); },
+                             [](void *c, unsigned r, uint32_t v) { static_cast<Fake *>(c)->write(r, v); },
+                             [](void *c) -> uint64_t {
+                                 auto *f = static_cast<Fake *>(c);
+                                 static unsigned calls = 0;
+                                 if (++calls < 3000)  // advances through the check and the first settle, then stops
+                                     f->now += 1;
+                                 return f->now;
+                             }};
+    switch_t1_result r;
+    switch_t1_run(&io, &r);
+    EXPECT_NE(r.stop, 0);
+    EXPECT_LE(fake.reads, 4u * SWITCH_T1_POLL_LIMIT);
+}
+
+TEST(T1Run, ConfigLoadThatNeverFinishesEndsByCountWhenTheCounterIsFrozenAfterTheCheck)
+{
+    Fake fake;
+    fake.load_stuck = true;
+    const switch_t1_io io = {&fake,
+                             [](void *c, unsigned r) { return static_cast<Fake *>(c)->read(r); },
+                             [](void *c, unsigned r, uint32_t v) { static_cast<Fake *>(c)->write(r, v); },
+                             [](void *c) -> uint64_t {
+                                 auto *f = static_cast<Fake *>(c);
+                                 static unsigned calls = 0;
+                                 if (++calls < 2000)
+                                     f->now += 1;
+                                 return f->now;
+                             }};
+    switch_t1_result r;
+    switch_t1_run(&io, &r);
+    EXPECT_EQ(r.stop, SWITCH_T1_CONFIG_LOAD_TIMEOUT);
+    EXPECT_EQ(fake.go_writes, 0u);
+}
+
+TEST(T1Run, BusyThatShowsLateIsStillWaitedFor)
+{
+    Fake fake;
+    fake.busy_delay = 100;  // BUSY appears 100 us after go and the transfer ends at 400 us
+    fake.duration = 400;
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, 0);
+    EXPECT_EQ(r.value[3], 0x12);
+    EXPECT_EQ(r.value[4], 0x34);
+}
+
+TEST(T1Run, AShortTransferThatEndsInsideTheSettleTimeReadsCorrectly)
+{
+    Fake fake;
+    fake.duration = 20;
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, 0);
+    EXPECT_EQ(r.value[0], 0x55);
+    EXPECT_EQ(r.value[4], 0x34);
+}
+
+TEST(T1Run, ADataReadBeforeTheTransferEndedIsCaughtOnlyForTheIdRegister)
+{
+    // BUSY invisible for 5 ms and the transfer lasting 6 ms: after the settle time the poll finds BUSY clear and the
+    // read returns the pointer byte left in CMD_DATA1. The wait is not a completion test; the ID check stops the run.
+    Fake fake;
+    fake.busy_delay = 5000;
+    fake.duration = 6000;
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, SWITCH_T1_ID_MISMATCH);
+    EXPECT_EQ(r.value[0], 0xfe);
+}
+
+TEST(T1Run, AValueEqualToThePointerIsNotAFailure)
+{
+    Fake fake;
+    fake.remote = 0x01;  // the pointer for register 0x01
+    fake.local = 0x00;   // and for 0x00
+    fake.config = 0x03;  // and for 0x03
+    fake.rate = 0x04;
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, 0);
+    EXPECT_EQ(r.value[1], 0x03);
+    EXPECT_EQ(r.value[4], 0x01);
 }
 
 TEST(T1Run, ClockOffTouchesNoI2cRegister)
@@ -305,7 +411,7 @@ TEST(T1Run, NoAckStopsAtTheFirstTransferWithoutRetry)
 TEST(T1Run, BusyThatNeverClearsStopsWithinTheBoundAndDoesNotRetry)
 {
     Fake fake;
-    fake.stuck_busy = true;
+    fake.duration = ~0ull >> 1;
     const auto r = run(fake);
     EXPECT_EQ(r.stop, SWITCH_T1_BUSY_TIMEOUT);
     EXPECT_EQ(fake.go_writes, 1u);
@@ -344,6 +450,8 @@ TEST(T1Report, HealthyRunNeverPrintsATemperature)
         EXPECT_EQ(line.bad, 0);
     }
     EXPECT_NE(all.find("NOT A TEMPERATURE"), std::string::npos);
+    EXPECT_NE(all.find("CONFIG(03)"), std::string::npos);
+    EXPECT_EQ(all.find("CONFIG(09)"), std::string::npos);
     EXPECT_NE(all.find("ID(FE) 55"), std::string::npos);
     EXPECT_NE(all.find("T1 COMPLETE CODE 0000"), std::string::npos);
     EXPECT_EQ(all.find(" C\n"), std::string::npos);
@@ -367,6 +475,6 @@ TEST(T1Report, ClockOffShowsOnlyTheCarLines)
 
 TEST(T1Report, EveryStopHasAName)
 {
-    for (int stop : {0x501, 0x502, 0x503, 0x504, 0x505, 0x506, 0x507, 0x508, 0x509, 0x50a, 0x50b})
+    for (int stop : {0x501, 0x502, 0x503, 0x504, 0x505, 0x506, 0x507, 0x508, 0x509, 0x50a, 0x50b, 0x50c})
         EXPECT_NE(std::string(switch_t1_stop_name(stop)), "UNKNOWN");
 }

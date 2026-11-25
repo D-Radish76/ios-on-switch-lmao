@@ -65,15 +65,37 @@ static int load_configuration(struct run *run)
 {
     put(run, T1_I2C1_CONFIG_LOAD, 0x25u);
     const uint64_t start = run->io->now_us(run->io->context);
-    while (get(run, T1_I2C1_CONFIG_LOAD) & LOAD_PENDING) {
+    for (unsigned polls = 0; get(run, T1_I2C1_CONFIG_LOAD) & LOAD_PENDING; ++polls) {
         if (run->result->stop)
             return 0;
-        if (run->io->now_us(run->io->context) - start > SWITCH_T1_LOAD_TIMEOUT_US) {
+        if (polls >= SWITCH_T1_POLL_LIMIT || run->io->now_us(run->io->context) - start > SWITCH_T1_LOAD_TIMEOUT_US) {
             run->result->stop = SWITCH_T1_CONFIG_LOAD_TIMEOUT;
             return 0;
         }
     }
     return !run->result->stop;
+}
+
+/* Wait SWITCH_T1_SETTLE_US after go before the first BUSY poll. Ends by count too, so a stopped counter cannot hold it. */
+static int settle(struct run *run, uint64_t start)
+{
+    for (unsigned polls = 0; run->io->now_us(run->io->context) - start < SWITCH_T1_SETTLE_US; ++polls) {
+        if (polls >= SWITCH_T1_POLL_LIMIT) {
+            run->result->stop = SWITCH_T1_COUNTER_STALLED;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The counter T1's time limits rest on must advance before any device is touched. */
+static int counter_advances(const struct switch_t1_io *io)
+{
+    const uint64_t first = io->now_us(io->context);
+    for (unsigned i = 0; i < SWITCH_T1_POLL_LIMIT; ++i)
+        if (io->now_us(io->context) != first)
+            return 1;
+    return 0;
 }
 
 /* One normal mode transaction as hekate's _i2c_send_normal and _i2c_recv_normal do it: address, data, configuration,
@@ -88,10 +110,12 @@ static int transaction(struct run *run, int read, uint32_t pointer)
         return 0;
     put(run, T1_I2C1_CNFG, read ? 0x2a40u : 0x2a00u);
     const uint64_t start = run->io->now_us(run->io->context);
-    while (get(run, T1_I2C1_STATUS) & STATUS_BUSY) {
+    if (!settle(run, start))
+        return 0;
+    for (unsigned polls = 0; get(run, T1_I2C1_STATUS) & STATUS_BUSY; ++polls) {
         if (run->result->stop)
             return 0;
-        if (run->io->now_us(run->io->context) - start > SWITCH_T1_BUSY_TIMEOUT_US) {
+        if (polls >= SWITCH_T1_POLL_LIMIT || run->io->now_us(run->io->context) - start > SWITCH_T1_BUSY_TIMEOUT_US) {
             run->result->stop = SWITCH_T1_BUSY_TIMEOUT;
             return 0;
         }
@@ -125,6 +149,10 @@ void switch_t1_run(const struct switch_t1_io *io, struct switch_t1_result *resul
     /* A struct assignment would call memset, which this image does not link. */
     for (volatile uint8_t *p = (volatile uint8_t *)result; p < (volatile uint8_t *)(result + 1); ++p)
         *p = 0;
+    if (!counter_advances(io)) {
+        result->stop = SWITCH_T1_COUNTER_STALLED;
+        return;
+    }
     read_car(&run);
     if (result->stop)
         return;

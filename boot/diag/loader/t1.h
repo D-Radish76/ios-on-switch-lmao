@@ -25,6 +25,12 @@ enum switch_t1_reg {
 #define SWITCH_T1_BUSY_TIMEOUT_US   100000u
 #define SWITCH_T1_LOAD_TIMEOUT_US   1000u
 #define SWITCH_T1_REGISTERS         5u
+/* One byte after the address at 100 kHz is 18 clocks plus start and stop, about 200 microseconds (hekate's I2C1 comment:
+ * 4.8 MHz source, 100 kHz). The wait before the first BUSY poll keeps that poll from running before the controller has
+ * started. It is not a completion test: BUSY and the NOACK bits still decide, and a wait cannot show the transfer ended. */
+#define SWITCH_T1_SETTLE_US         250u
+/* Every poll loop also ends after this many reads, whatever the counter says. */
+#define SWITCH_T1_POLL_LIMIT        1000000u
 
 /* Why T1 stopped. 0 is a completed run; any other code ends the I2C work at once, with no retry. */
 enum {
@@ -39,6 +45,7 @@ enum {
     SWITCH_T1_NOT_IDLE = 0x509,
     SWITCH_T1_DENIED = 0x50a,
     SWITCH_T1_NOT_ERISTA = 0x50b,
+    SWITCH_T1_COUNTER_STALLED = 0x50c,
 };
 
 /* The TMP451 registers T1 reads, in the order it reads them. Status (0x02) is not among them: reading it clears the

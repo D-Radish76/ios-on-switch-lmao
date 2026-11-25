@@ -27,6 +27,8 @@ const char *switch_t1_stop_name(int stop)
         return "ACCESS REFUSED BY THE ALLOWLIST. LOADER BUG";
     case SWITCH_T1_NOT_ERISTA:
         return "NOT AN ERISTA. NO T1 REGISTER TOUCHED";
+    case SWITCH_T1_COUNTER_STALLED:
+        return "COUNTER DID NOT ADVANCE. NO DEVICE TOUCHED";
     default:
         return "UNKNOWN";
     }
@@ -77,9 +79,9 @@ void switch_t1_lines(const struct switch_t1_result *r, struct switch_t1_line lin
     if (r->have) {
         switch_diag_line_add(&lines[4].text, "TMP451 0X4C ID(FE) ");
         byte(&lines[4].text, r, 0);
-        switch_diag_line_add(&lines[4].text, " EXPECT 55. CONFIG(09) ");
+        switch_diag_line_add(&lines[4].text, " EXPECT 55. CONFIG(03) ");
         byte(&lines[4].text, r, 1);
-        switch_diag_line_add(&lines[4].text, ". RATE(0A) ");
+        switch_diag_line_add(&lines[4].text, ". RATE(04) ");
         byte(&lines[4].text, r, 2);
         lines[4].bad = (r->have & 1u) && r->value[0] != 0x55;
         switch_diag_line_add(&lines[5].text, "RAW 00 ");

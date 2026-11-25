@@ -25,7 +25,9 @@ static const struct {
     [T1_I2C1_CONFIG_LOAD] = {I2C1 + 0x8c, R | W},
 };
 
-const uint8_t switch_t1_tmp451_register[SWITCH_T1_REGISTERS] = {0xfe, 0x09, 0x0a, 0x00, 0x01};
+/* Read addresses (TI TMP451 Table 3): manufacturer ID, configuration (written at 0x09), conversion rate (written at 0x0A),
+ * local and remote high bytes. */
+const uint8_t switch_t1_tmp451_register[SWITCH_T1_REGISTERS] = {0xfe, 0x03, 0x04, 0x00, 0x01};
 
 uint32_t switch_t1_address(unsigned reg)
 {
@@ -52,7 +54,7 @@ int switch_t1_may_write(unsigned reg, uint32_t value)
     }
     case T1_I2C1_CNFG: /* one byte, 4 clock debounce, new master FSM; write or read; without and with the go bit */
         return value == 0x2800u || value == 0x2840u || value == 0x2a00u || value == 0x2a40u;
-    case T1_I2C1_CONFIG_LOAD: /* hekate's value: bit 5, timeout load, master load */
+    case T1_I2C1_CONFIG_LOAD: /* hekate's value: bit 0 master load (Linux), bit 2 timeout load (Linux defines it, no use), bit 5 unknown */
         return value == 0x25u;
     default:
         return 0;

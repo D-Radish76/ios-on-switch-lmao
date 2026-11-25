@@ -1,7 +1,5 @@
 # T1: I2C1 and TMP451 communication check
 
-> Second review (`ERISTA_T1_REVIEW.md`): T1 reads TMP451 configuration and rate at their write addresses (0x09, 0x0A); the read addresses are 0x03 and 0x04. Those two bytes are not to be interpreted until the fix is reviewed.
-
 Entry `iOS Diag T1` (`//boot:diag_t1`, ident `iDiagT1`). Implemented 2026-11-25, built and inspected on Linux only, not built
 on the Mac, not run on the console. Its first run needs the review that follows this file. `boot` stays 0. Design context:
 `ERISTA_THERMAL_DESIGN.md`.
@@ -20,7 +18,7 @@ Every device access goes through `switch_t1_access` (`t1_gate.c`), which asks `t
 | Pinmux I2C1 SCL, SDA pads | 0x700030BC, C0 | yes | no |
 | I2C1 `CNFG` | 0x7000C000 | yes | 0x2800, 0x2840, 0x2A00, 0x2A40 |
 | I2C1 `CMD_ADDR0` | 0x7000C004 | no | 0x98, 0x99 |
-| I2C1 `CMD_DATA1` | 0x7000C00C | yes | 0xFE, 0x09, 0x0A, 0x00, 0x01 (register pointers) |
+| I2C1 `CMD_DATA1` | 0x7000C00C | yes | 0xFE, 0x03, 0x04, 0x00, 0x01 (register pointers; configuration and rate at their read addresses) |
 | I2C1 `STATUS`, `INT_STATUS`, `CLK_DIVISOR` | 0x7000C01C, 68, 6C | yes | no |
 | I2C1 `CONFIG_LOAD` | 0x7000C08C | yes | 0x25 |
 
@@ -28,7 +26,7 @@ The sequence is hekate's `_i2c_send_normal` and `_i2c_recv_normal` (`ERISTA_THER
 write, no FIFO flush, no interrupt clear. I2C1 registers are not touched unless CAR says the clock is on and the block is
 out of reset.
 
-Limits: one attempt per transfer, no retry, 100 ms for `BUSY`, 1 ms for `CONFIG_LOAD`, then the stage ends. The screen
+Limits: one attempt per transfer, no retry, 100 ms for `BUSY`, 1 ms for `CONFIG_LOAD`, then the stage ends. The time comes from the generic counter (`CNTPCT_EL0`, 19.2 MHz), which is checked to advance before any device access. Every poll also ends after 1,000,000 reads, so a counter that stops later cannot hold the loop. After `go`, the first `BUSY` poll waits 250 microseconds (one byte after the address at 100 kHz takes about 200, from hekate's I2C1 comment; not measured). That wait only keeps the poll from running before the controller starts. It does not show a transfer ended: `BUSY` and the NOACK bits decide, and a data byte read too early is caught only for register 0xFE (the ID check). The screen
 shows hex bytes only; the code has no conversion to degrees.
 
 ## Screen
@@ -51,6 +49,7 @@ usual `RESET IN 15 S`. The same values go to `probe_record` words 55 to 59.
 | 0509 | `BUSY` set after the last transfer |
 | 050A | the allowlist refused an access (a loader bug) |
 | 050B | not an Erista; no T1 register touched |
+| 050C | the counter did not advance, or a wait ended only by its count; no device touched in the first case |
 
 ## Expected on the Erista, from the Nyx path
 
@@ -97,3 +96,24 @@ loader images).
 - [ ] Started from Nyx "More configs", the path the earlier diagnostics used.
 - [ ] Mac hashes recorded and equal to the card's.
 - [ ] Photograph the screen. Hold the power button at the first sign of a stall.
+
+## Revisions
+
+| | Source commit | Linux loader image SHA-256 | Notes |
+| --- | --- | --- | --- |
+| v1 | `15934b805` | `5a93738245f1...` (Linux build) | Reads TMP451 configuration and rate at 0x09 and 0x0A, the write addresses. Counter checked only at exit. No wait before the first `BUSY` poll. Mac results for v1 are history, not the current artifact. |
+| v2 | this commit | see `NOTES.md` | Read addresses 0x03 and 0x04; counter checked first; count limits on every poll; 250 microsecond wait; stop code 050C. Mac retest, rebuild and hash still to come. |
+
+`CONFIG_LOAD` stays 0x25, hekate's value: bit 0 (master load) is in Linux, bit 2 (timeout load) is defined there and unused,
+bit 5 has no definition in any source read and its meaning is unknown. It is kept because normal mode with this value is
+what works on this console, not because the bit is understood.
+
+No bus clear or FIFO flush was added. After a timeout the controller can be left mid-transfer and the reset that follows is
+not shown to recover it. hekate's next `i2c_init` bus clear is the expected recovery and has not been observed.
+
+## End of the stage
+
+`exit.c` is shared with D0, D0-R and D1, so it is not changed here. Its waits: the 15 s loop ends by counter and is guarded by
+`counter_advances` before it starts, but sleeps in `wfe` and relies on the event stream (`CNTKCTL_EL1`) to wake; if no event
+arrives it waits forever. After a failed `PSCI` call or an exception the loader halts on purpose. These are the cases
+`RUN_CHECKLIST.md` covers with the power-button hold.

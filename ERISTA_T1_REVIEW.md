@@ -4,6 +4,9 @@
 changed. One test (`TransferOrderIsHekatesFromTheFirstWriteToTheLastRead`) was added to `t1_test.cpp`; it passes against the
 current code. T1 stays unrun.
 
+Findings 1 to 3 were then approved and applied (T1 v2, `ERISTA_T1.md` "Revisions"); finding 4 was kept as is; finding 5 is
+unchanged by decision. The text below is the review as written.
+
 ## Findings
 
 | # | Finding | Effect | Proposed fix |
