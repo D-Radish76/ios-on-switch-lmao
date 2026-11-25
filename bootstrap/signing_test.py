@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bootstrap.signing import sign_bundle
+from bootstrap.signing import CodesignError, run_checked, sign_bundle
 
 
 class SigningTests(unittest.TestCase):
@@ -54,6 +54,16 @@ class SigningTests(unittest.TestCase):
                     )
                     self.assertNotEqual(result.returncode, 0)
                     target.write_bytes(original)
+
+    def test_a_failed_command_reports_its_output(self):
+        with self.assertRaises(CodesignError) as raised:
+            run_checked(['/bin/sh', '-c', 'echo seen-out; echo seen-err >&2; exit 3'])
+        text = str(raised.exception)
+        for expected in ('exit status 3', 'seen-out', 'seen-err'):
+            self.assertIn(expected, text)
+
+    def test_a_command_that_works_says_nothing(self):
+        run_checked(['/usr/bin/true'])
 
 
 if __name__ == '__main__':

@@ -8,6 +8,40 @@ from pathlib import Path
 from tools.common import macho
 from tools.install_policy.installd import arm64_slice
 
+BUNDLE_SUFFIXES = ('.app', '.appex', '.framework', '.xpc')
+
+
+class CodesignError(RuntimeError):
+    pass
+
+
+def run_checked(command: list[str]) -> None:
+    """Run a command and raise with its status, stdout and stderr on failure, which a bare CalledProcessError hides."""
+    result = subprocess.run(command, check=False, capture_output=True, text=True, errors='replace')
+    if result.returncode:
+        raise CodesignError(
+            f'{" ".join(command)}\nexit status {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}'
+        )
+
+
+def bundle_context(bundle: Path, identifier: str, entitlements: Path | None) -> str:
+    """Describe the bundle, its identifier and its contents, which is what a failed signature has to be read against."""
+    names = sorted(p.name for p in bundle.iterdir())
+    nested = sorted(str(p.relative_to(bundle)) for p in bundle.rglob('*') if p.suffix in BUNDLE_SUFFIXES)
+    attributes = subprocess.run(['/usr/bin/xattr', '-lr', str(bundle)], check=False, capture_output=True, text=True)
+    lines = [
+        f'signing bundle {bundle} as {identifier}',
+        f'top level: {names[:40]}{" ..." if len(names) > 40 else ""}',
+        f'nested bundles: {nested}',
+        f'extended attributes: {attributes.stdout.strip() or attributes.stderr.strip() or "none"}',
+    ]
+    if entitlements:
+        lint = subprocess.run(
+            ['/usr/bin/plutil', '-lint', str(entitlements)], check=False, capture_output=True, text=True
+        )
+        lines.append(f'entitlements: {(lint.stdout + lint.stderr).strip()}')
+    return '\n'.join(lines)
+
 
 def sign_file(path: Path, identifier: str | None = None, entitlements: Path | None = None) -> None:
     args = [
@@ -26,7 +60,7 @@ def sign_file(path: Path, identifier: str | None = None, entitlements: Path | No
         args += ['--identifier', identifier]
     if entitlements:
         args += ['--entitlements', str(entitlements)]
-    subprocess.run([*args, str(path)], check=True, capture_output=True)
+    run_checked([*args, str(path)])
 
 
 def sign_bundle(source: Path, destination: Path, entitlements: Path) -> Path:
@@ -45,20 +79,22 @@ def sign_bundle(source: Path, destination: Path, entitlements: Path) -> Path:
             images.append(path)
     bundles = [
         destination,
-        *[p for p in destination.rglob('*') if p.suffix in ('.app', '.appex', '.framework', '.xpc')],
+        *[p for p in destination.rglob('*') if p.suffix in BUNDLE_SUFFIXES],
     ]
     for bundle in sorted(bundles, key=lambda p: len(p.parts), reverse=True):
         info = plistlib.loads((bundle / 'Info.plist').read_bytes())
-        sign_file(bundle, info['CFBundleIdentifier'], entitlements if bundle == destination else None)
+        used = entitlements if bundle == destination else None
+        try:
+            sign_file(bundle, info['CFBundleIdentifier'], used)
+        except CodesignError as error:
+            raise CodesignError(f'{error}\n{bundle_context(bundle, info["CFBundleIdentifier"], used)}') from error
     for path in images:
         data = path.read_bytes()
         check_signature(data, macho.macho(data))
     info = plistlib.loads((destination / 'Info.plist').read_bytes())
     data = (destination / info['CFBundleExecutable']).read_bytes()
     check_signature(data, macho.macho(data), info['CFBundleIdentifier'])
-    subprocess.run(
-        ['/usr/bin/codesign', '--verify', '--deep', '--strict', str(destination)], check=True, capture_output=True
-    )
+    run_checked(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(destination)])
     return destination
 
 
@@ -71,7 +107,7 @@ def sign(entries: dict, work: Path) -> None:
         macho.macho(thin)
         target.write_bytes(thin)
         sign_file(target)
-        subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(target)], check=True, capture_output=True)
+        run_checked(['/usr/bin/codesign', '--verify', '--strict', str(target)])
         updated = target.read_bytes()
         image = macho.macho(updated)
         check_signature(updated, image)
