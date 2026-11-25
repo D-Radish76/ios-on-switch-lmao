@@ -14,6 +14,7 @@ from pathlib import Path
 from bl33 import ENV_EDITS, bl33_patch
 from boot_script import boards
 from diag_boot import (
+    DWELL,
     IDENTITY_REGISTERS,
     build,
     carveout_table,
@@ -108,12 +109,12 @@ class DiagScript(unittest.TestCase):
     def test_reset_is_used_once_and_only_after_the_wait(self):
         lines = [line.strip() for line in self.script.splitlines() if line.strip() and not line.startswith('#')]
         self.assertEqual(lines.count('reset'), 1)
-        wait = lines.index('for left in 20 10 0; do')
+        wait = lines.index('for left in 10 5 0; do')
         self.assertEqual(
             lines[wait : wait + 5],
             [
-                'for left in 20 10 0; do',
-                'sleep 10',
+                'for left in 10 5 0; do',
+                'sleep 5',
                 'echo RESET in ${left} s. Expected to land in hekate, not verified',
                 'done',
                 'reset',
@@ -247,7 +248,7 @@ class DiagFallback(unittest.TestCase):
         env = self.entries(diag_u_boot(BL33))
         self.assertEqual(env['scan_dev_for_extlinux'], 'scan_dev_for_extlinux=true')
         self.assertEqual(env['distro_bootcmd'].count('reset'), 1)
-        self.assertIn('sleep 30;reset;while true; do sleep 1; done;', env['distro_bootcmd'])
+        self.assertIn('sleep 15;reset;while true; do sleep 1; done;', env['distro_bootcmd'])
         self.assertNotIn('Rebooting in 10s', env['distro_bootcmd'])
         self.assertEqual(env['boot_targets'], 'boot_targets=mmc1')
         self.assertNotIn('bootcmd_mmc0', env)
@@ -271,6 +272,27 @@ class DiagFallback(unittest.TestCase):
         with self.assertRaises(SystemExit):
             bl33_patch(BL33, {b'nothing_like_this=1': b'x=1'})
         self.assertNotIn(b'nothing_like_this=1', ENV_EDITS)
+
+
+class DiagWait(unittest.TestCase):
+    def test_the_wait_is_one_number_in_the_script_and_in_u_boot(self):
+        for dwell, steps in ((10, '5 0'), (15, '10 5 0'), (60, '55 50 45 40 35 30 25 20 15 10 5 0')):
+            script = diag_script(TEMPLATE, HEADER, LOADER, dwell)
+            self.assertIn(f'for left in {steps}; do', script)
+            self.assertIn(f'Reset in {dwell} s, or hold', script)
+            image = diag_u_boot(BL33, dwell)
+            self.assertIn(f'Reset in {dwell} s, expected'.encode(), image)
+            self.assertIn(f'sleep {dwell};reset;'.encode(), image)
+
+    def test_a_wait_outside_what_a_photograph_needs_is_refused(self):
+        for dwell in (0, 5, 12, 61, 120):
+            with self.assertRaises(SystemExit):
+                diag_script(TEMPLATE, HEADER, LOADER, dwell)
+            with self.assertRaises(SystemExit):
+                diag_u_boot(BL33, dwell)
+
+    def test_the_default_is_short(self):
+        self.assertLessEqual(DWELL, 20)
 
 
 class DiagImage(unittest.TestCase):
@@ -303,6 +325,7 @@ class DiagPackage(unittest.TestCase):
                     bl31=BL31,
                     bl33=Path('bazel/pinned/firmware/bl33.bin'),
                     out=Path(out),
+                    dwell=DWELL,
                 )
             )
             files = sorted(str(p.relative_to(out)) for p in Path(out).rglob('*') if p.is_file())

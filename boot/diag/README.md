@@ -30,7 +30,7 @@ to read before you copy anything). Copy the two folders onto the SD card's FAT. 
 3. The screen lists the board (`t210b01`, `sku`) and then one `address: value` line per register. Photograph it.
    `DONE: all 27 registers read` means every `md.l` returned success and was counted. `INCOMPLETE` names the register that
    failed (`status=READ_FAILED_<address>`) and the count so far, in hex.
-4. Photograph the screen when `DONE`, `INCOMPLETE` or `REFUSED` shows. After 30 seconds the script runs `reset`, which is
+4. Photograph the screen when `DONE`, `INCOMPLETE` or `REFUSED` shows. After 15 seconds the script runs `reset`, which is
    expected to land in hekate (see "What `reset` does"; not seen on hardware). Hold the power button to end it sooner.
 5. Type the lines into a text file and run `diag_boot.py compare LOG --loader-src boot/loader/loader.c` to see each
    value next to the OLED's. That table is not a threshold for the Erista: send the raw lines.
@@ -71,7 +71,7 @@ What each run should show
 
 Stop at once, by holding the power button until the console is off: a black screen, a stalled line, heat, or any line
 the script does not print. Do not retry in the same sitting. The script has no path to iPadOS: its only exit is the
-`reset` after the 30 second wait, and a `reset` that does nothing leaves it in a `sleep 1` loop.
+`reset` after the wait (15 seconds by default, `--dwell` at build), and a `reset` that does nothing leaves it in a `sleep 1` loop.
 
 ## When something is not as expected
 
@@ -81,12 +81,12 @@ boot:
 
 | What goes wrong | What U-Boot does here |
 | --- | --- |
-| The SD card does not initialize in U-Boot | `mmc dev 1` fails, nothing is scanned, `distro_bootcmd` falls to its end: the screen says `DIAGNOSTIC DID NOT RUN, NO BOOT`, waits 30 seconds and resets once. Not seen on hardware |
+| The SD card does not initialize in U-Boot | `mmc dev 1` fails, nothing is scanned, `distro_bootcmd` falls to its end: the screen says `DIAGNOSTIC DID NOT RUN, NO BOOT`, waits the same 15 seconds and resets once. Not seen on hardware |
 | The script fails to run or errors out | `SCRIPT FAILED: continuing...`, then the same end. Boot targets are `mmc1` only, so the eMMC is not tried |
 | hekate's environment is not imported | the default `scan_dev_for_extlinux` is replaced by `true` in this image, so no `extlinux.conf` is read from the SD card, whatever the prefix |
 | `md.l` fails | the failure is counted out: `INCOMPLETE`, no more reads. A bus fault is not a failure `md.l` returns: it stops U-Boot, and the line count stops there |
 
-The `reset` of `distro_bootcmd` waits 30 seconds in this image and runs once, where stock U-Boot resets after ten seconds.
+The `reset` of `distro_bootcmd` waits the same time in this image and runs once, where stock U-Boot resets after ten seconds.
 Where a reset ends is decided by BL31 and hekate, not by this package ("What `reset` does"). A power loss ends in hekate, whose own `autoboot` setting (`hekate_ipl.ini`, not part of this package) decides whether this
 entry starts again. Set it to 0 on the card you use.
 
@@ -109,7 +109,7 @@ guarantees nothing about the temperature before that point either. `ERISTA_RESEA
 
 Risks that are still open, none of them testable without the console:
 
-- The edited `distro_bootcmd` ends in `sleep 30;reset;` and a `while` loop inside an environment variable. The script uses the same loop and the
+- The edited `distro_bootcmd` ends in `sleep 15;reset;` and a `while` loop inside an environment variable. The script uses the same loop and the
   same parser, but this exact line has not run in U-Boot. If it does not parse, the end of a failed run may be a plain
   prompt-less hang, not the message.
 - `setenv stdout vidconsole` is what decides `console=OK`. It says U-Boot accepted the device, not that the panel shows
@@ -213,11 +213,12 @@ script would take PMIC writes, which this diagnostic does not do.
   `fan_set_duty`. That is a sequence of writes, so it stays out of a read only diagnostic.
 - U-Boot's `sleep` is a busy wait: the only `wfi` in the whole image is not on the delay path. Every second of waiting
   is one A57 core at full rate. The screen does not need the CPU, since the display scans out of DRAM by itself, but no
-  command in this U-Boot parks the core. The two ways would be `go` to a two instruction `wfi` stub placed in the image,
-  or the `smc` command with a PSCI call. Both execute code or firmware calls this project has not checked, so neither is
-  in. The cost of leaving them out is that the screen is held for 30 seconds, not longer.
+  command in this U-Boot parks the core. The one way would be `go` to a two instruction `wfi` stub placed in the image
+  (there is no `smc` command in this U-Boot: the `smc` string is the device tree's PSCI method). It executes code this
+  project has not run, and it has no end but the power button, so it is not in. The cost of leaving it out is that the
+  screen is held for 15 seconds, not longer.
 - Switchroot's own boot hands over to Linux within seconds, and Linux then runs its thermal and fan drivers (not read
-  here). Nothing in that path stays in U-Boot for 30 seconds, let alone minutes.
+  here). Nothing in that path stays in U-Boot for 15 seconds, let alone minutes.
 
 ## The files and the card
 
@@ -235,3 +236,16 @@ And `bootloader/sys/libsys_minerva.bso`, `73d6c05475e530a3e098065024a5a3bbde5a23
 hekate stops with `Minerva missing`. The last four hashes are of the files in `hekate_ctcaer_6.5.5_Nyx_1.9.5.zip` (its own
 SHA256 is `e3c6613fc9e099d00683063855812a6059247da6e9d75f2caa203f9e78e5df56`), downloaded from the project's release page. A
 different hash on the card is not an error by itself, but it is a difference to report. Hash the card's copies before the run.
+
+## Is the wait needed
+
+The screen is the only way to read the result: this U-Boot has no `fatwrite`, `ext4write` or `saveenv` (no such strings in
+the binary), and its console is the serial port or the screen. A reset sends the screen back to hekate, so the result must
+be read before it. The wait exists for the photograph and for nothing else, and `reset` needs no other wait.
+
+- `--dwell 10` is the least the build accepts, `--dwell 60` the most. The default is 15. The wait is a multiple of 5 s and
+  is the same number in the script and in U-Boot's failure path.
+- Without a wait the diagnostic would have no output. The alternative that needs none, writing the result to the SD card, needs
+  a file write U-Boot does not have, and a read only diagnostic should not write there anyway.
+- Everything before the wait, from hekate's launch to the last register, takes seconds. The wait is the only long part.
+- To end sooner, hold the power button (about 12 seconds to a forced shutdown, not tried here), or accept the reset.

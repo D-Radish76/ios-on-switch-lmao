@@ -18,25 +18,44 @@ from boot_script import boards, script_image
 from loader_abi import BL33_BASE, SCRIPT_SLOT
 
 IDENTITY_REGISTERS = (0x70000804, 0x7000F9D8)  # HIDREV and FUSE_RESERVED_ODM4: what native_gate's board detection reads
+# Seconds the result stays on screen before the reset. The screen is the only way to read it and nothing cools the
+# console meanwhile, so it is as short as a photograph allows.
+DWELL = 15
+STEP = 5
+
 # What U-Boot does when its script does not run, in the diagnostic's image only:
 #   * extlinux is not looked for at all, whatever hekate's environment says or fails to say, so no kernel is booted from
 #     the SD card's FAT.
 #   * distro_bootcmd ends in `reset` after ten seconds, which would send the console back to hekate in a loop with
-#     nothing on the screen; it says so, waits 30 s and resets once.
+#     nothing on the screen; it says so, waits the same time as the script does and resets once.
 DIAG_ENV_EDITS = {
     (
         b'scan_dev_for_extlinux=if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}extlinux/extlinux.conf; '
         b'then echo Found ${prefix}extlinux/extlinux.conf; run boot_extlinux; echoe SCRIPT FAILED: continuing...; fi'
     ): b'scan_dev_for_extlinux=true',
-    (
-        b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;'
-        b'echoe Failed to load boot device or script!;echoe Rebooting in 10s..;sleep 10; reset;'
-    ): (
-        b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;setenv stdout vidconsole;'
-        b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Reset in 30 s, expected to land in hekate, not verified;sleep 30;reset;'
-        b'while true; do sleep 1; done;'
-    ),
 }
+DISTRO_BOOTCMD = (
+    b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;'
+    b'echoe Failed to load boot device or script!;echoe Rebooting in 10s..;sleep 10; reset;'
+)
+DISTRO_BOOTCMD_DIAG = (
+    b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;setenv stdout vidconsole;'
+    b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Reset in %d s, expected to land in hekate, not verified;sleep %d;reset;'
+    b'while true; do sleep 1; done;'
+)
+
+
+def dwell_steps(dwell: int) -> str:
+    if dwell % STEP or not 10 <= dwell <= 60:
+        raise SystemExit(f'the wait must be a multiple of {STEP} s from 10 to 60, not {dwell}')
+    return ' '.join(str(left) for left in range(dwell - STEP, -1, -STEP))
+
+
+def diag_env_edits(dwell: int) -> dict[bytes, bytes]:
+    dwell_steps(dwell)
+    return {**DIAG_ENV_EDITS, DISTRO_BOOTCMD: DISTRO_BOOTCMD_DIAG % (dwell, dwell)}
+
+
 ENTRY = 'ios-diag'
 INI = '\n'.join(
     [
@@ -99,7 +118,7 @@ def read_step(address: int) -> str:
     )
 
 
-def diag_script(template: str, header: str, loader_src: str) -> str:
+def diag_script(template: str, header: str, loader_src: str, dwell: int = DWELL) -> str:
     addresses = read_addresses(loader_src)
     reads = '\n'.join(read_step(a) for a in addresses)
     for marker in ('@BOARD_CHECK@', '@READS@'):
@@ -110,14 +129,17 @@ def diag_script(template: str, header: str, loader_src: str) -> str:
         .replace('@READS@', reads)
         .replace('@COUNT@', str(len(addresses)))
         .replace('@COUNT_HEX@', f'{len(addresses):x}')
+        .replace('@DWELL_STEPS@', dwell_steps(dwell))
+        .replace('@DWELL@', str(dwell))
+        .replace('@STEP@', str(STEP))
     )
     if re.search(r'@[A-Z_0-9]+@', text):
         raise SystemExit('the diagnostic template has a value this tool does not fill')
     return text
 
 
-def diag_u_boot(bl33: bytes) -> bytes:
-    return bl33_patch(bl33, DIAG_ENV_EDITS)
+def diag_u_boot(bl33: bytes, dwell: int = DWELL) -> bytes:
+    return bl33_patch(bl33, diag_env_edits(dwell))
 
 
 def diag_bl33(patched_u_boot: bytes, script: str) -> bytes:
@@ -136,8 +158,8 @@ def diag_bl33(patched_u_boot: bytes, script: str) -> bytes:
 
 def build(args: argparse.Namespace) -> None:
     loader_src = args.loader_src.read_text()
-    script = diag_script(args.template.read_text(), args.boards.read_text(), loader_src)
-    u_boot = diag_u_boot(args.bl33.read_bytes())
+    script = diag_script(args.template.read_text(), args.boards.read_text(), loader_src, args.dwell)
+    u_boot = diag_u_boot(args.bl33.read_bytes(), args.dwell)
     switchroot = args.out / 'switchroot' / ENTRY
     switchroot.mkdir(parents=True, exist_ok=True)
     (args.out / 'bootloader' / 'ini').mkdir(parents=True, exist_ok=True)
@@ -168,6 +190,7 @@ def main() -> None:
     p = step.add_parser('build')
     for name in ('template', 'boards', 'loader-src', 'bl31', 'bl33', 'out'):
         p.add_argument('--' + name, required=True, type=Path)
+    p.add_argument('--dwell', type=int, default=DWELL, help=f'seconds on screen before the reset (default {DWELL})')
     p = step.add_parser('compare')
     p.add_argument('log', type=Path)
     p.add_argument('--loader-src', required=True, type=Path)
