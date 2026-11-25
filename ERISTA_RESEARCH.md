@@ -232,3 +232,22 @@ Addendum, checked against hekate `8e1392d` (the bootloader build, not Nyx)
   reboot to a copy of hekate when the RCM bit is clear. `SYSTEM_OFF` panics in that ATF and U-Boot has no `poweroff`. Detail in
   `boot/diag/README.md`, "What `reset` does". The release's `bpmpfw.bin` has no thermal strings, and BL31 powers the BPMP off
   on the Erista, so no firmware watches the temperature during the diagnostic.
+
+## 12. First diagnostic run (observed)
+
+Seen on a video of about 21 s, commit `c6931169`, hekate 6.5.5, launched from Nyx `More configs`, Auto Boot off:
+
+| What | Result | Earlier statement |
+| --- | --- | --- |
+| Board | `t210b01=0`, `sku=0`, `status=READY`, `console=OK` | the Erista row of the board table matches this console |
+| Reads | `DONE: all 27 registers read` | no bus fault on any address of the whitelist |
+| Exit | 15 s wait, `reset`, hekate's main menu with no input | "inferred" in the reset section: now observed (U-Boot PSCI `SYSTEM_RESET`, ATF reboot to payload) |
+| Stability | no freeze, no reboot loop | not claimed before |
+
+Not observed: the register values (on the video, not in the repository), the temperature, the fan, a failed run. The
+temperature protection is unverified, and the run was 21 s, so it says nothing about longer runs. The `native_gate` values
+for the Erista are still unwritten and `boot` is still 0.
+
+Next: type the 27 lines from the video into a text file and run `diag_boot.py compare LOG --loader-src boot/loader/loader.c`.
+A `DIFFERENT` row is a finding, not a fault: the OLED values are the T210B01 ones. No memory or voltage setting changes
+until each row has an explanation from a source.

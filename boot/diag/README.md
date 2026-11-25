@@ -31,7 +31,7 @@ to read before you copy anything). Copy the two folders onto the SD card's FAT. 
    `DONE: all 27 registers read` means every `md.l` returned success and was counted. `INCOMPLETE` names the register that
    failed (`status=READ_FAILED_<address>`) and the count so far, in hex.
 4. Photograph the screen when `DONE`, `INCOMPLETE` or `REFUSED` shows. After 15 seconds the script runs `reset`, which is
-   expected to land in hekate (see "What `reset` does"; not seen on hardware). Hold the power button to end it sooner.
+   landed in hekate's main menu on the first run (see "First run on an Erista"). Hold the power button to end it sooner.
 5. Type the lines into a text file and run `diag_boot.py compare LOG --loader-src boot/loader/loader.c` to see each
    value next to the OLED's. That table is not a threshold for the Erista: send the raw lines.
 
@@ -45,7 +45,7 @@ to read before you copy anything). Copy the two folders onto the SD card's FAT. 
 
 ## On the Erista
 
-Not run on any console yet. Run it only after review.
+Run once on an Erista, see "First run on an Erista" at the end.
 
 Artifacts: `build/diag/` as built above, four files: `bootloader/ini/ios-diag.ini`, `switchroot/ios-diag/bl31.bin`,
 `bl33.bin` and `script.txt`. The target is `//tools/package:diag_boot`, a `py_binary` with no Bazel build output of its
@@ -178,7 +178,7 @@ will not start, that is not something this diagnostic is known to cause; say so 
 
 ## What `reset` does
 
-Read in the pinned `bl33.bin` (disassembled with `llvm-objdump`) and in Switchroot's ATF source. Not run on any console.
+Read in the pinned `bl33.bin` (disassembled with `llvm-objdump`) and in Switchroot's ATF source. The first run matched it, see the end.
 
 1. U-Boot's `reset` command prints `resetting ...`, waits 50 ms and calls a board function that reads HIDREV
    (`0x70000804`, bits 7:4, the chip major revision; 1 is the Erista, 2 the Mariko). For the Erista it issues PSCI
@@ -249,3 +249,18 @@ be read before it. The wait exists for the photograph and for nothing else, and 
   a file write U-Boot does not have, and a read only diagnostic should not write there anyway.
 - Everything before the wait, from hekate's launch to the last register, takes seconds. The wait is the only long part.
 - To end sooner, hold the power button (about 12 seconds to a forced shutdown, not tried here), or accept the reset.
+
+## First run on an Erista
+
+Commit `c6931169`, Erista (t210b01=0, sku=0), hekate 6.5.5, from Nyx `More configs`, Auto Boot off, full battery. Seen on a video of
+about 21 seconds, reported by the person who ran it:
+
+- `iOS Diag` started U-Boot, `status=READY`, `console=OK`.
+- `DONE: all 27 registers read`.
+- The 15 second wait, then `reset`, then hekate's main menu with no action from anyone.
+- No freeze, no reboot loop.
+
+Not seen or not measured: the register values (they are on the video and not in this repository yet), the temperature, the
+fan, whether the screen was lit by hekate's handoff for the whole run (the video shows it was readable), and a failed run:
+the SD, script and `md.l` failure paths have not been triggered. Temperature protection is still unverified. Erista stays
+`boot 0`.
