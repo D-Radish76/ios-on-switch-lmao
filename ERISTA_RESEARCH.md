@@ -228,3 +228,7 @@ Addendum, checked against hekate `8e1392d` (the bootloader build, not Nyx)
 - Launched from Nyx (`More configs`), the fan is already off before the diagnostic starts: `_launch_hos` runs `hw_deinit(false)` in
   the Nyx build, which has `fan_set_duty(0)` and `tmp451_end()` (`nyx/nyx_gui/frontend/gui.c:903-914`, `bdk/soc/hw_init.c:481-490`).
   The path and the first run conditions are in `boot/diag/README.md`.
+- U-Boot's `reset` on the Erista is PSCI `SYSTEM_RESET` (disassembly of the pinned `bl33.bin`), which Switchroot's ATF turns into a
+  reboot to a copy of hekate when the RCM bit is clear. `SYSTEM_OFF` panics in that ATF and U-Boot has no `poweroff`. Detail in
+  `boot/diag/README.md`, "What `reset` does". The release's `bpmpfw.bin` has no thermal strings, and BL31 powers the BPMP off
+  on the Erista, so no firmware watches the temperature during the diagnostic.

@@ -98,16 +98,28 @@ class DiagScript(unittest.TestCase):
         lines = [line.strip() for line in self.script.splitlines() if line.strip()]
         self.assertEqual(lines[-3:], ['while true; do', 'sleep 1', 'done'])
 
+    def test_no_line_claims_where_the_reset_lands(self):
+        for text in (self.script, ''.join(diag_u_boot(BL33).decode('latin1').split('\0'))):
+            for sentence in re.findall(r'[^\n]*hekate[^\n]*', text):
+                if 'echo' in sentence:
+                    self.assertTrue('Expected' in sentence or 'expected' in sentence, sentence)
+                    self.assertIn('not verified', sentence)
+
     def test_reset_is_used_once_and_only_after_the_wait(self):
         lines = [line.strip() for line in self.script.splitlines() if line.strip() and not line.startswith('#')]
         self.assertEqual(lines.count('reset'), 1)
-        wait = lines.index('for left in 90 60 30 0; do')
+        wait = lines.index('for left in 20 10 0; do')
         self.assertEqual(
             lines[wait : wait + 5],
-            ['for left in 90 60 30 0; do', 'sleep 30', 'echo resetting to hekate in ${left} s', 'done', 'reset'],
+            [
+                'for left in 20 10 0; do',
+                'sleep 10',
+                'echo RESET in ${left} s. Expected to land in hekate, not verified',
+                'done',
+                'reset',
+            ],
         )
         self.assertNotIn('reset', [t[0] for t in commands('\n'.join(lines[:wait]))])
-        self.assertEqual(90 + 30, 120)
 
     def test_every_table_row_is_let_through_and_none_is_enabled_by_it(self):
         rows = boards(HEADER)
@@ -235,7 +247,7 @@ class DiagFallback(unittest.TestCase):
         env = self.entries(diag_u_boot(BL33))
         self.assertEqual(env['scan_dev_for_extlinux'], 'scan_dev_for_extlinux=true')
         self.assertEqual(env['distro_bootcmd'].count('reset'), 1)
-        self.assertIn('sleep 120;reset;while true; do sleep 1; done;', env['distro_bootcmd'])
+        self.assertIn('sleep 30;reset;while true; do sleep 1; done;', env['distro_bootcmd'])
         self.assertNotIn('Rebooting in 10s', env['distro_bootcmd'])
         self.assertEqual(env['boot_targets'], 'boot_targets=mmc1')
         self.assertNotIn('bootcmd_mmc0', env)

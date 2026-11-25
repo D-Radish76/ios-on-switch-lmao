@@ -22,7 +22,7 @@ IDENTITY_REGISTERS = (0x70000804, 0x7000F9D8)  # HIDREV and FUSE_RESERVED_ODM4: 
 #   * extlinux is not looked for at all, whatever hekate's environment says or fails to say, so no kernel is booted from
 #     the SD card's FAT.
 #   * distro_bootcmd ends in `reset` after ten seconds, which would send the console back to hekate in a loop with
-#     nothing on the screen; it says so, waits two minutes and resets once.
+#     nothing on the screen; it says so, waits 30 s and resets once.
 DIAG_ENV_EDITS = {
     (
         b'scan_dev_for_extlinux=if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}extlinux/extlinux.conf; '
@@ -33,7 +33,7 @@ DIAG_ENV_EDITS = {
         b'echoe Failed to load boot device or script!;echoe Rebooting in 10s..;sleep 10; reset;'
     ): (
         b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;setenv stdout vidconsole;'
-        b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Resetting to hekate in 2 minutes;sleep 120;reset;'
+        b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Reset in 30 s, expected to land in hekate, not verified;sleep 30;reset;'
         b'while true; do sleep 1; done;'
     ),
 }
