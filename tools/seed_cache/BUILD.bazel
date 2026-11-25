@@ -1,4 +1,5 @@
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel/lint:defs.bzl", "lint_files")
 
@@ -6,17 +7,21 @@ package(default_visibility = ["//visibility:public"])
 
 lint_files()
 
+py_library(
+    name = "seed_cache_lib",
+    srcs = ["seed_cache.py"],
+    imports = ["."],
+)
+
 py_binary(
     name = "seed_cache",
     srcs = ["seed_cache.py"],
+    main = "seed_cache.py",
 )
 
 py_test(
     name = "test_seed_cache",
     size = "small",
-    srcs = [
-        "seed_cache.py",
-        "test_seed_cache.py",
-    ],
-    main = "test_seed_cache.py",
+    srcs = ["test_seed_cache.py"],
+    deps = [":seed_cache_lib"],
 )
