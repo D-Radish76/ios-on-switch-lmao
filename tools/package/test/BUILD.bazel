@@ -420,6 +420,14 @@ py_test(
     deps = ["//tools/package:hekate_unpack"],
 )
 
+# hekate_car_scan.py on a synthetic disassembly.
+py_test(
+    name = "hekate_car_scan_test",
+    size = "small",
+    srcs = ["hekate_car_scan_test.py"],
+    deps = ["//tools/package:hekate_car_scan"],
+)
+
 # The first T1-R run on the Erista (boot/diag/erista-t1r-run.log), decoded.
 py_test(
     name = "t1r_run_test",

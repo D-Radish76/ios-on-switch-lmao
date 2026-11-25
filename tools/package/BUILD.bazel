@@ -182,6 +182,12 @@ py_binary(
     srcs = ["hekate_unpack.py"],
 )
 
+# Lists clock controller stores and clock_enable callers in an unpacked hekate image (ERISTA_HEKATE_BOOTPATH.md).
+py_binary(
+    name = "hekate_car_scan",
+    srcs = ["hekate_car_scan.py"],
+)
+
 # Offline reader for the pinned BL31 and U-Boot, which looks for device accesses and call arguments (ERISTA_BOOTCHAIN_CAR.md).
 py_binary(
     name = "a64_scan",

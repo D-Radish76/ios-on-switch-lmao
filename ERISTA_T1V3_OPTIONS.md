@@ -1,7 +1,7 @@
 # T1 v3: options for the I2C1 clock (comparison only)
 
 Finding the writer of the changed clock sources and getting the TMP451 to answer are separate problems. This note is about
-the second. Nothing is implemented, no register is written, T1 v3 and everything after T1-R stay on hold, `boot` stays 0.
+the second. Option 1 is worked out in `ERISTA_T1V3_DESIGN.md`. Nothing is implemented, no register is written, T1 v3 and everything after T1-R stay on hold, `boot` stays 0.
 Sources: Linux (`clk-tegra-periph.c`, `clk-divider.c`, `clk-tegra210.c`, `i2c-tegra.c`), hekate 6.5.5 source, TI's
 TMP451 data sheet (SBOS686A), the T1 v2 and T1-R runs. The Tegra X1 TRM was not available.
 
