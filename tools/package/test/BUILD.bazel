@@ -1,6 +1,7 @@
 # Host tests of tools/package's Python packaging steps, each over only the module it tests.
 #
 #   bazel test //tools/package/test:all
+load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel/lint:defs.bzl", "lint_files")
 
@@ -92,13 +93,36 @@ py_test(
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
     deps = [
+        ":fdt_tree",
         "//tools/package:bl33",
         "//tools/package:boot_script",
         "//tools/package:diag_boot",
         "//tools/package:diag_loader",
         "//tools/package:diag_loader_inspect",
-        "//tools/package:fdt_ranges",
         "//tools/package:loader_abi",
+    ],
+)
+
+py_library(
+    name = "fdt_tree",
+    testonly = True,
+    srcs = ["fdt_tree.py"],
+    imports = ["."],
+)
+
+# fdt_ranges.py (the DTB's reserved memory): the pinned DTBs, and every malformed tree it must refuse.
+py_test(
+    name = "fdt_ranges_test",
+    size = "small",
+    srcs = ["fdt_ranges_test.py"],
+    data = [
+        "//bazel/pinned:firmware/bl33.bin",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//bazel/pinned:firmware/oled-sku3.dtb",
+    ],
+    deps = [
+        ":fdt_tree",
+        "//tools/package:fdt_ranges",
     ],
 )
 
