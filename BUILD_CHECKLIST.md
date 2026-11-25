@@ -173,6 +173,7 @@ The Erista's DTB, `native_gate` MC values, every feature bit's review, and every
 
 ```sh
 bazel test //tools/package/test:diag_loader_test //tools/package/test:diag_boot_test //boot/diag/loader/test:all
+# diag_loader_test now also reads the DTB's reservations (tools/package/fdt_ranges.py); 46 tests passed on Linux, not on Bazel
 bazel build //boot:diag_loader --config=ios17
 ```
 

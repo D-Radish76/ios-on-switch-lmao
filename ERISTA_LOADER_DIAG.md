@@ -82,7 +82,7 @@ DRAM, clear of the image, covered by an FDT reservation) are checked at EL2, bef
 there, draws nothing and never changes EL; U-Boot's own progress lines are then the only thing on screen. After the EL change, a
 failed EL1 state skips every device read, HIDREV and ODM4 included; an unknown board skips the MC and GIC reads; a failed FDT check
 skips the memory walk. The record words 48 to 54 in `probe_record` keep the codes for a debugger. `bootm loados` writes
-`0xA0000000` before any loader code runs; only the build can check that span (`check_destination`), see the README.
+`0xA0000000` before any loader code runs; only the build can check that span (`check_destination`, now including the DTB's reservations), see below and the README.
 
 Hardware writes: framebuffer RAM, the loader's own RAM, and the CPU system registers listed in `boot/diag/loader/README.md`.
 None to a peripheral and none to the MC block.
@@ -123,3 +123,26 @@ Stages, each reviewed before the next:
    watchdog, or a person at the console with the power button.
 6. DRAM at 204 MHz is acceptable for a first start that only has to reach a console, so EMC work comes after it.
 7. `boot 1` for the Erista, in its own commit with its own review, after D2 and the items above. Not before.
+
+## Pre-checking the destination
+
+Question: can the U-Boot script check `0xA0000000..image_end` against the FDT reservations before `bootm loados`
+writes it? Answer from the pinned `bl33.bin` and DTBs (read on Linux, not run on a console): not in the script, yes at
+build time.
+
+| Source | What it holds | Usable by the script |
+| --- | --- | --- |
+| control FDT in `bl33.bin` (`fdtcontroladdr`) | no memreserve, no `/reserved-memory`, `/memory` = `0x80000000` + `0x180000000` placeholder, `/framebuffer` | no: it does not describe the free memory |
+| `fdt rsvmem print` | prints the copied DTB's reservations | no: output cannot be put in a variable |
+| `fdt get value` | one cell only (`reg` of 16 bytes is not returned as numbers) | no |
+| `bdinfo` | real DRAM banks | no: prints only |
+| `crc32 addr count dest` | the only hash in this U-Boot; the result goes to memory | not used: width and byte order of the stored word are unverified, and it is a script write |
+| DTB file (`erista-sku0.dtb`) | memreserve `0x80000000..0x80020000`, `ramoops_carveout` `0xB0000000..0xB0200000`, zero size fb carveouts | yes, at build time |
+
+Implemented: `tools/package/fdt_ranges.py` reads the reservations of the DTB the script copies and `check_destination`
+refuses a loader whose span overlaps one. The script is unchanged, so the whitelist of commands is unchanged.
+The `oled-sku3.dtb` has the same two reservations.
+
+Not claimed: that the Erista's DRAM is free at `0xA0000000` beyond what the OLED showed; that the copy at `0x8D000000` is
+byte equal to the pinned file (the header magic and version are checked, not a hash). A runtime hash would need `crc32`
+with a destination word, which is held until its behaviour can be confirmed on the console.

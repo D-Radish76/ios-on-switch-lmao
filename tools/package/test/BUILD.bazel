@@ -97,6 +97,7 @@ py_test(
         "//tools/package:diag_boot",
         "//tools/package:diag_loader",
         "//tools/package:diag_loader_inspect",
+        "//tools/package:fdt_ranges",
         "//tools/package:loader_abi",
     ],
 )

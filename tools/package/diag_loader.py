@@ -22,6 +22,7 @@ from bl33 import bl33_patch
 from boot_script import boards, script_image
 from diag_boot import DWELL, STEP, diag_env_edits, dwell_steps
 from diag_loader_inspect import inspect_disassembly, inspect_map, report
+from fdt_ranges import reserved_ranges
 from loader_abi import BL33_BASE, BOOT_ARGS_PAGE, DTB_SLOT, LOADER_SLOT, SCRIPT_SLOT, SD_REFERENCE, STAGE_HEADER
 from loader_link import validate_elf
 from uimage import LOAD, Header, legacy_image
@@ -101,11 +102,13 @@ def diag_loader_bl33(patched_u_boot: bytes, script: str, loader: bytes, dtb: byt
     return bytes(image)
 
 
-def check_destination(loader_bytes: int, bl33_bytes: int) -> None:
+def check_destination(loader_bytes: int, bl33_bytes: int, dtb: bytes | None = None) -> None:
     """Refuse an image whose `bootm loados` would write over something this package itself places.
 
-    U-Boot's script cannot list the live FDT's reservations, so the part of the check that can be made is made
-    here, from the addresses the package fixes. The loader's own FDT walk reports the rest, after the fact.
+    U-Boot's script cannot compare the live FDT's reservations with an address (`fdt rsvmem print` only prints, the
+    control FDT's /memory is a fixed 6 GiB placeholder and it has no reservations; ERISTA_LOADER_DIAG.md), so the check
+    is made here, from the addresses the package fixes and, when `dtb` is given, from the reservations of the very DTB
+    the script copies (fdt_ranges.py). The loader's own FDT walk reports the rest, after the fact.
     """
     load = (LOAD, LOAD + loader_bytes)
     if not (DRAM[0] <= load[0] and load[1] <= DRAM[1]):
@@ -122,6 +125,17 @@ def check_destination(loader_bytes: int, bl33_bytes: int) -> None:
             raise SystemExit(f'bootm loados would write {load[0]:#x}..{load[1]:#x} over {name} ({start:#x}..{end:#x})')
     if load[1] > MAX_IMAGE_END:
         raise SystemExit(f'the loader reaches {load[1]:#x}, past {MAX_IMAGE_END:#x}')
+    if dtb is not None:
+        try:
+            reserved = reserved_ranges(dtb)
+        except ValueError as problem:
+            raise SystemExit(f'the DTB cannot be read for its reservations: {problem}') from problem
+        for origin, start, end in reserved:
+            if load[0] < end and start < load[1]:
+                raise SystemExit(
+                    f'bootm loados would write {load[0]:#x}..{load[1]:#x} '
+                    f'over the DTB reservation {origin} ({start:#x}..{end:#x})'
+                )
 
 
 def link(args: argparse.Namespace) -> None:
@@ -161,7 +175,7 @@ def build(args: argparse.Namespace) -> None:
     (switchroot / 'bl31.bin').write_bytes(args.bl31.read_bytes())
     loader = args.loader.read_bytes()
     image = diag_loader_bl33(u_boot, script, loader, dtb)
-    check_destination(len(loader), len(image))
+    check_destination(len(loader), len(image), dtb)
     (switchroot / 'bl33.bin').write_bytes(image)
     (switchroot / 'script.txt').write_text(script)
     (args.out / 'bootloader' / 'ini' / f'{ENTRY}.ini').write_text(INI)

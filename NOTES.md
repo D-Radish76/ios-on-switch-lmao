@@ -84,6 +84,16 @@ Done: the board table, the table-driven boot gate, the board profile in boot-arg
 
 No boot test until code review and a Bazel build are done.
 
+## D0 loader destination (checked from files, not on the console)
+
+- Confirmed in the pinned `bl33.bin`: its control FDT has no reservations and a placeholder `/memory` of 6 GiB; this U-Boot
+  has no overlap message for `bootm loados`; `fdt rsvmem print` and `bdinfo` only print.
+- Confirmed in `erista-sku0.dtb` and `oled-sku3.dtb`: memreserve `0x80000000..0x80020000`, `ramoops_carveout`
+  `0xB0000000..0xB0200000`.
+- Done: `check_destination` now refuses a loader span that overlaps a reservation of the DTB it copies. Script unchanged.
+- Not verified: free memory at `0xA0000000` on an Erista beyond the OLED analogy; DTB copy equal to the pinned file.
+  Details in `ERISTA_LOADER_DIAG.md`, "Pre-checking the destination".
+
 ## Before the first boot test
 
 - Keep the SD card as the only write target and boot from hekate, so Linux and hekate stay the fallback.

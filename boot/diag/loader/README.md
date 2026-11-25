@@ -42,12 +42,23 @@ Erista.
 
 ## Where the loader lands
 
-`bootm loados` writes the loader to `0xA0000000` before any loader code runs, so only U-Boot's script and the build can
-check the destination. U-Boot's hush cannot list the live FDT's reservations. What is checked: at build time
-(`check_destination`) the loader's span is inside DRAM and clear of `bl33.bin`, the DTB copy, the framebuffer, the
-boot-args page and the SD reference page, and ends before `0xA001EF00`. What is not: the Erista's own reservations.
-The evidence there is that all 25 MC carveout registers read equal to the OLED's, hekate places `bl33.bin` the same way,
-and the loader's FDT walk over this span reports an overlap on the screen afterwards, too late to prevent a write.
+`bootm loados` writes the loader to `0xA0000000` before any loader code runs. The script cannot look at the live
+reservations first. Read from the pinned files (`ERISTA_LOADER_DIAG.md`, "Pre-checking the destination"):
+
+- U-Boot's control FDT (`fdtcontroladdr`) has no memory reservations and no `/reserved-memory`; its `/memory` is a fixed
+  `0x80000000` + `0x180000000` placeholder (6 GiB for a 4 GiB console), so it says nothing about what is free.
+- `fdt rsvmem print` only prints, and `fdt get value` keeps one cell, so a script has nothing to compare an address with.
+  This U-Boot has no overlap check in `bootm loados` either (no such message in the binary).
+- The DTB the script copies to `0x8D000000` does carry reservations: a memory reservation `0x80000000..0x80020000` and
+  `ramoops_carveout` `0xB0000000..0xB0200000`. Both are Linux side entries and neither is near the loader.
+
+What is checked, at build time (`check_destination`): the loader's span is inside DRAM and clear of `bl33.bin`, the DTB
+copy, the framebuffer, the boot-args page and the SD reference page, ends before `0xA001EF00`, and (new) clear of every
+reservation read from the DTB the package copies (`tools/package/fdt_ranges.py`). A DTB that cannot be read for its
+reservations stops the build. What is not checked: the Erista's own memory use that no file lists (U-Boot's relocation
+area, BL31's carveouts). The evidence there is that all 25 MC carveout registers read equal to the OLED's, hekate places
+`bl33.bin` the same way, and the loader's FDT walk over this span reports an overlap on the screen afterwards, too late
+to prevent a write.
 
 ## The exit
 

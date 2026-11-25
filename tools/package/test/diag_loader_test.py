@@ -7,6 +7,7 @@ AArch64 and ld.lld are on PATH (Bazel's build action inspects every link regardl
 
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +20,7 @@ from boot_script import boards
 from diag_boot import DWELL, carveout_table, diag_env_edits
 from diag_loader import INI, board_gate, build, check_destination, diag_loader_bl33, diag_script
 from diag_loader_inspect import FORBIDDEN_SYMBOLS, SPECIAL, WRITES, inspect_disassembly, inspect_map
+from fdt_ranges import reserved_ranges
 from loader_abi import (
     BL33_BASE,
     BOOT_ARGS_PAGE,
@@ -212,6 +214,90 @@ class Destination(unittest.TestCase):
         for size in (0x1F000, BL33_BASE - 0xA0000000 + 1, 0x4A000000):
             with self.assertRaises(SystemExit):
                 check_destination(size, 954622)
+
+
+def tree(reserve: list[tuple[int, int]], carveouts: dict[str, tuple[int, int]]) -> bytes:
+    """Build a minimal FDT: a memory reservation block and /reserved-memory children with 2+2 cell regs."""
+    strings = b'#address-cells\0#size-cells\0reg\0'
+    names = {'#address-cells': 0, '#size-cells': 15, 'reg': 27}
+
+    def prop(name: str, value: bytes) -> bytes:
+        return struct.pack('>III', 3, len(value), names[name]) + value + b'\0' * (-len(value) % 4)
+
+    def node(name: str, body: bytes) -> bytes:
+        raw = name.encode() + b'\0'
+        return struct.pack('>I', 1) + raw + b'\0' * (-len(raw) % 4) + body + struct.pack('>I', 2)
+
+    kids = b''.join(node(n, prop('reg', struct.pack('>QQ', a, z))) for n, (a, z) in carveouts.items())
+    reserved = node(
+        'reserved-memory',
+        prop('#address-cells', struct.pack('>I', 2)) + prop('#size-cells', struct.pack('>I', 2)) + kids,
+    )
+    structure = node(
+        '', prop('#address-cells', struct.pack('>I', 2)) + prop('#size-cells', struct.pack('>I', 2)) + reserved
+    ) + struct.pack('>I', 9)
+    rsv = b''.join(struct.pack('>QQ', a, z) for a, z in reserve) + struct.pack('>QQ', 0, 0)
+    off_rsv = 40
+    off_struct = off_rsv + len(rsv)
+    off_strings = off_struct + len(structure)
+    total = off_strings + len(strings)
+    header = struct.pack(
+        '>10I', 0xD00DFEED, total, off_struct, off_strings, off_rsv, 17, 16, 0, len(strings), len(structure)
+    )
+    return header + rsv + structure + strings
+
+
+class Reservations(unittest.TestCase):
+    def test_the_pinned_dtb_reserves_only_what_is_known(self) -> None:
+        self.assertEqual(
+            [(o, hex(a), hex(b)) for o, a, b in reserved_ranges(DTB)],
+            [
+                ('memreserve', '0x80000000', '0x80020000'),
+                ('/reserved-memory/ramoops_carveout', '0xb0000000', '0xb0200000'),
+            ],
+        )
+
+    def test_the_reader_finds_both_kinds_and_skips_a_carveout_of_size_zero(self) -> None:
+        got = reserved_ranges(tree([(0x1000, 0x100)], {'a': (0xB0000000, 0x1000), 'empty': (0, 0)}))
+        self.assertEqual(got, [('memreserve', 0x1000, 0x1100), ('/reserved-memory/a', 0xB0000000, 0xB0001000)])
+
+    def test_a_malformed_tree_is_an_error_and_not_an_empty_list(self) -> None:
+        good = tree([], {})
+        for bad in (good[:30], b'\0' * 4 + good[4:], good[:-8]):
+            with self.assertRaises(ValueError):
+                reserved_ranges(bad)
+
+    def test_the_control_fdt_in_bl33_reserves_nothing_and_its_memory_is_a_placeholder(self) -> None:
+        """Why the script cannot check the live tree: the one U-Boot has says nothing about reservations."""
+        u_boot = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
+        at = u_boot.find(b'\xd0\x0d\xfe\xed')
+        self.assertGreater(at, 0)
+        self.assertEqual(reserved_ranges(u_boot[at:]), [])
+        self.assertIn(bytes.fromhex('00000000800000000000000180000000'), u_boot[at:])
+
+
+class DestinationFromTheDtb(unittest.TestCase):
+    def test_the_pinned_dtb_leaves_the_loader_alone(self) -> None:
+        check_destination(86544, 954622, DTB)
+
+    def test_a_reservation_over_the_loader_is_refused(self) -> None:
+        for start, size in ((0xA0000000, 0x1000), (0x9FFFF000, 0x2000), (0xA0010000, 0x100000)):
+            with self.assertRaises(SystemExit) as caught:
+                check_destination(86544, 954622, tree([], {'x': (start, size)}))
+            self.assertIn('DTB reservation', str(caught.exception))
+        with self.assertRaises(SystemExit):
+            check_destination(86544, 954622, tree([(0xA0000000, 0x10)], {}))
+
+    def test_a_reservation_just_outside_is_allowed(self) -> None:
+        check_destination(86544, 954622, tree([(0x9FFFF000, 0x1000)], {'x': (0xA0016000, 0x1000)}))
+
+    def test_an_unreadable_dtb_is_refused(self) -> None:
+        with self.assertRaises(SystemExit):
+            check_destination(86544, 954622, DTB[:20])
+
+    def test_build_passes_the_dtb_it_copies(self) -> None:
+        source = (ROOT / 'tools/package/diag_loader.py').read_text()
+        self.assertIn('check_destination(len(loader), len(image), dtb)', source)
 
 
 class Console(unittest.TestCase):

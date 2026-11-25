@@ -164,6 +164,12 @@ py_binary(
     srcs = ["diag_loader_inspect.py"],
 )
 
+py_library(
+    name = "fdt_ranges",
+    srcs = ["fdt_ranges.py"],
+    imports = ["."],
+)
+
 py_binary(
     name = "diag_loader",
     srcs = ["diag_loader.py"],
@@ -172,6 +178,7 @@ py_binary(
         ":boot_script",
         ":diag_boot",
         ":diag_loader_inspect",
+        ":fdt_ranges",
         ":loader_abi",
         ":loader_link",
         ":uimage",
