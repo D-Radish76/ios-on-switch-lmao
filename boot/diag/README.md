@@ -102,3 +102,21 @@ What the code shows (hekate at `8e1392d`, checked out locally; no console run):
 So nothing watches or controls temperature during a diagnostic run, which is why the run is by hand and short. The
 same holds for Switchroot Linux until its own kernel's fan and thermal zones start, so a stock Switchroot boot
 guarantees nothing about the temperature before that point either. `ERISTA_RESEARCH.md`, section 11, has the rest.
+
+## Before the first run
+
+Risks that are still open, none of them testable without the console:
+
+- The edited `distro_bootcmd` ends in a `while` loop inside an environment variable. The script uses the same loop and the
+  same parser, but this exact line has not run in U-Boot. If it does not parse, the end of a failed run may be a plain
+  prompt-less hang, not the message.
+- `setenv stdout vidconsole` is what decides `console=OK`. It says U-Boot accepted the device, not that the panel shows
+  anything. A lit but empty screen, or a black one, with `console=OK` is possible: stop, and say what was seen.
+- If the SD card fails to initialize in U-Boot, the message is printed after `setenv stdout vidconsole`, which needs the
+  framebuffer from hekate. If that is not there either, there is no output at all. Treat a black screen with no input as a
+  failed run and force the console off (power button held about 12 seconds).
+- Temperature and fan: nothing watches or drives them (above). The loop's `sleep 1` is a busy wait on the CPU hekate
+  left running, at a clock this project has not read. Keep the run under 2 minutes and stay with the console.
+- hekate's `autoboot` and any other entry on the card are outside this package.
+- A bus fault in `md.l` stops U-Boot with no message the script controls. The last line on the screen is then the last
+  register that worked.
