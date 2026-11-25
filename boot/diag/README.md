@@ -39,3 +39,32 @@ to read before you copy anything). Copy the two folders onto the SD card's FAT. 
 - If the lines stop partway, the next register in `script.txt` is the one that stopped it. Hold the power button until
   the console is off, send the last line shown, and do not retry.
 - Never put `ios-diag` files in `switchroot/ios/` or add `ram_oc` keys to its ini.
+
+## On the Erista
+
+Not run on any console yet. Run it only after review.
+
+Artifacts: `build/diag/` as built above, four files: `bootloader/ini/ios-diag.ini`, `switchroot/ios-diag/bl31.bin`,
+`bl33.bin` and `script.txt`. The target is `//tools/package:diag_boot`, a `py_binary` with no Bazel build output of its
+own. `bazel run //tools/package:diag_boot -- build ... --out /absolute/path` is unchecked, and runs in the runfiles
+directory, so every path must be absolute. The Python command above is the one that was run, on Linux.
+
+SD card: copy `bootloader/ini/ios-diag.ini` and `switchroot/ios-diag/` to the FAT partition, keeping the folder names.
+Do not touch `switchroot/ios/`. To remove the diagnostic, delete those two items.
+
+The script reads the 27 registers only. DRAM, the framebuffer and the temperature are not read by it, so they are
+checks by eye, below. Anything that cannot be seen is reported as not seen, not as fine.
+
+What each run should show
+
+| Item | Seen how | Passes if | If not |
+| --- | --- | --- | --- |
+| Entry and board | first screen lines | `status=READY`, `console=OK`, and `t210b01` and `sku` are the Erista's | `REFUSED` or `FAILED`: stop, send the lines |
+| MC carveout | `compare` on the typed lines | all 25 registers read. A `DIFFERENT` row is a finding, not a failure | `NOT READ` rows: the last line shown is the one that stopped it |
+| DRAM | the script itself | it reached `DONE` on the 800 MHz table hekate set: a read of the MC window at all means DRAM trained. Size and timings are not read | a hang before the first line: report it, do not retry |
+| Framebuffer | by eye | the console is readable at 720x1280 in the right orientation, no tearing or garbage | note what it shows. Orientation or garbage points at hekate's handoff, not at this script |
+| Backlight | by eye | the panel is lit for the whole run | dark with a working console is `console=OK` and nothing visible: power off, note the time it went dark |
+| Temperature and fan | by hand | the back is not hot and the fan is heard or felt within the first minute. Nothing here reads a sensor | hot back, or no fan: power off at once. Keep the run under 2 minutes |
+
+Stop at once, by holding the power button until the console is off: a black screen, a stalled line, heat, or any line
+the script does not print. Do not retry in the same sitting. The script never leaves its loop and has no path to iPadOS.

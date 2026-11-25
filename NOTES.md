@@ -97,3 +97,5 @@ Changes that touch OLED code paths (neither changes what the OLED does): thermal
 Read only diagnostic (own hekate entry, no iPadOS): `boot/diag/README.md`.
 
 Bazel test result, Mac (Bazel 9.3.1, Xcode 27.2 27B52, commit c790f50e4): `bazel test //kits/SwitchBoard/test:all //boot/loader/test:all //tools/package/test:all` passed, 18 of 18, with the real GoogleTest. Details in `BUILD_CHECKLIST.md`. Erista stays `boot 0`.
+
+Bazel build, Mac (commit eb0758e6): `bazel build //:boot --config=ios17 --jobs=4 --verbose_failures` completed, 151 actions. Fixes on the way: codesign output in the error, and links that leave the Sileo bundle copied as files before signing. Details in `BUILD_CHECKLIST.md`. Next phase: the read only diagnostic on the Erista, after review (`boot/diag/README.md`, "On the Erista"). Erista stays `boot 0`; no iPadOS boot.

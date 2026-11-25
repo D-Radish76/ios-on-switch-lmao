@@ -20,7 +20,13 @@ Result as reported: `Executed 18 out of 18 tests: 18 tests pass.` in 30.314 s. E
 passed, so the Bazel entries for `switch_board_test`, `board_args_test`, `boot_script_board_test`,
 `native_oled_adt_board_test` and `diag_boot_test` build and run there.
 
-Not run yet: the step 1 style checks, `//tools/mc_carveout:all`, `bazel test //...`, any `bazel build //:boot`, and
+Commit `eb0758e6`, same Mac: `bazel build //:boot --config=ios17 --jobs=4 --verbose_failures` finished with
+`Build completed successfully, 151 total actions`. It first failed at `//bootstrap:payload`: codesign refused a Sileo.app
+whose main executable or Info.plist was a symlink out of the Bazel tree (`a9b1753c` made the message readable,
+`eb0758e6` copies such links as files in the signing copy). The build has no `boot` option on: the Erista row stays at
+`boot 0`.
+
+Not run yet: the ios27 and release builds, the step 1 style checks, `//tools/mc_carveout:all`, `bazel test //...`, any `bazel build //:boot`, and
 the emulator checks. The per target counts were not part of the report.
 
 ## What ran here, and with what
