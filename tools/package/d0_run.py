@@ -24,6 +24,24 @@ def parse(text: str) -> dict:
     return {'header': header, 'mc': mc, 'gic': gic}
 
 
+RANGE_ROW = re.compile(r'(BANK|MAP|NODE) (\d+) ([0-9A-F]{10}) ([0-9A-F]{10}) ([0-9A-F]{10})')
+AREA_ROW = re.compile(r'(EXPORTER|SD REFERENCE) ([0-9A-F]{10}) ([0-9A-F]{10}) (.+)')
+
+
+def ranges(lines: list[str]) -> dict[tuple[str, int], tuple[int, int, int]]:
+    """D0-R's `BANK`, `MAP` and `NODE` rows as (start, size, end), keyed by kind and index."""
+    return {
+        (m[1], int(m[2])): (int(m[3], 16), int(m[4], 16), int(m[5], 16))
+        for line in lines
+        if (m := RANGE_ROW.fullmatch(line))
+    }
+
+
+def areas(lines: list[str]) -> dict[str, tuple[int, int, str]]:
+    """D0-R's `EXPORTER` and `SD REFERENCE` rows as (start, end, verdict text as drawn)."""
+    return {m[1]: (int(m[2], 16), int(m[3], 16), m[4]) for line in lines if (m := AREA_ROW.fullmatch(line))}
+
+
 def field(lines: list[str], pattern: str) -> re.Match:
     for line in lines:
         if match := re.search(pattern, line):

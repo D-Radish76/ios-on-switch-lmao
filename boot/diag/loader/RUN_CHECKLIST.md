@@ -1,6 +1,6 @@
 # D0 and D0-R run checklist
 
-For `iOS Diag Loader` (D0, run once on the Erista and passed) and `iOS Diag Loader R` (D0-R, not run). One run, attended. Do not start it before the review that this file
+For `iOS Diag Loader` (D0, run once on the Erista and passed) and `iOS Diag Loader R` (D0-R, run once and passed). One run, attended. Do not start it before the review that this file
 belongs to has said go.
 
 ## Before
@@ -89,6 +89,6 @@ stay on the card unchanged.
 
 Expected, beyond D0's screen: the title `LOAD DIAG D0-R`; left column rows 16 to 29: `BANK 0 0080000000 007FD00000 00FFD00000`
 and `BANK 1 0100000000 0080000000 0180000000`; the reserve map entries as `MAP 0..2` (the DTB's `0x80000000..0x80020000` first)
-and the node range `NODE 0` (`0xB0000000..0xB0200000`); `EXPORTER 00A7000000 00A7010000 CLEAR, BANK 0` and
-`SD REFERENCE 00A001F000 00A0020000 CLEAR, BANK 0`. Transcribe every line. Any `OVERLAPS` or `OUTSIDE THE BANKS` is red:
+and the node range `NODE 0` (`0xB0000000..0xB0200000`); `EXPORTER 00A7000000 00A7010000 CLEAR? BANK 0` and
+`SD REFERENCE 00A001F000 00A0020000 CLEAR? BANK 0` (the font has no comma, so `CLEAR, BANK 0` is drawn with `?`). Transcribe every line. Any `OVERLAPS` or `OUTSIDE THE BANKS` is red:
 report it and do not go on to D1.

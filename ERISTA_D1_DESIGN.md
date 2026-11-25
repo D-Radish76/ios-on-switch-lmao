@@ -1,6 +1,6 @@
 # D1 design and the temperature plan
 
-For review. Nothing here is implemented. `boot` stays 0 for the Erista; D2, XNU, voltage changes and an EMC raise are not
+For review. D1 itself is not implemented (D0-R and D1-pre are, and have run). `boot` stays 0 for the Erista; D2, XNU, voltage changes and an EMC raise are not
 part of it.
 
 ## What D0 settled and what it did not
@@ -8,8 +8,9 @@ part of it.
 Settled by the run (`boot/diag/erista-d0-run.log`): the loader reaches EL1 on the Erista, reads 25 MC rows equal to the
 table, reads the GIC, walks the DTB without finding an overlap and resets to hekate through PSCI from EL1.
 
-Not settled, and D1 inherits it: thermal protection, memory no list names, the hekate DTB's size, the origin of one of the
-three reserve-map entries, whether the exporter's view of U-Boot's objects holds on this console.
+Not settled, and D1 inherits it: thermal protection, memory no list names, the hekate DTB's size, whether the exporter's
+view of U-Boot's objects holds on this console. D1-pre and D0-R have since answered the card's visible state and the
+reserve map (below).
 
 ## D1 as defined
 
@@ -38,10 +39,10 @@ Carries over, from what was measured:
 May not, and is only found by running:
 
 - The card's mode. The exporter refuses anything but SD version, OCR ready with CCS, CSD version 2, 4 bit SDR and 512 byte
-  blocks. A 32 GB card satisfies CSD version 2; the bus mode on the Erista is not known.
-- `${devnum}` equal to `1` in the script, a test the normal script makes and the D0 script does not.
+  blocks. `mmc info` showed SD 3.0, high capacity, 512 byte blocks and a 4 bit bus; single data rate, OCR, CSD version and
+  the rest are not on its screen.
 - The memory around `0xA7000000` (64 KiB of exporter and its 16 KiB stack) and `0xA001F000..0xA0020000` beyond the
-  loader's range. Neither is in any list of occupied memory, and neither is proven free.
+  loader's range. D0-R found no overlap with any reservation it can list, which is not proof the memory is free.
 
 ## Exporter audit (pinned `exporter.uimg`, `7c33bbdc...`)
 
@@ -71,7 +72,7 @@ running it.
 
 ## Steps, each reviewed before the next
 
-**D1-pre (implemented, not run): display only, U-Boot only, no loader.** Two hekate entries, `boot/diag/sd/README.md`:
+**D1-pre (run once, both pages): display only, U-Boot only, no loader.** Two hekate entries, `boot/diag/sd/README.md`:
 `iOS Diag SD` (`devnum`, `mmc list`, `part list mmc 1`, the way the exporter step's `read mmc 1` reaches the card) and
 `iOS Diag SD Info` (`mmc dev 1`, `mmc info`; `mmc dev` starts the card again, so it is its own entry). `sd_requirements.py`
 judges the `mmc info` text against the exporter's conditions and says which it cannot show. The command list is an allowlist
@@ -82,7 +83,7 @@ with a test.
 - The script template takes the exporter, SD reference and record steps from `boot/u-boot-script.txt` (the same lines, so
   the Erista runs what the OLED runs). The status names stay distinct from D0's.
 - The loader prints the record's fields (CID, CSD, RCA, capacity, bus width) and the result of `sd_reference.c`'s
-  validation. It adds one thing D0 lacks: every reserve-map entry's base and size, to settle the third entry.
+  validation. D0-R already prints every reserve-map entry's base and size; D1 keeps those lines.
 - No write to the card, and no access by the loader to `0x700B0000`.
 - `check_destination` also tests `0xA7000000..0xA7010000` and `0xA001F000..0xA0020000` against the DTB's reservations and the
   measured layout (`memory_layout.regions`).
@@ -105,9 +106,9 @@ Host, before any hardware run (Linux and Mac):
    unseen.
 5. Build, link inspection, hash comparison on the Mac, then `RUN_CHECKLIST.md` rewritten for D1.
 
-Hardware: one attended, filmed run with the stage deadlines of the D1 checklist (written with the D1 build), after D1-pre has shown a card in the mode
-the exporter accepts. Success is the loader's printed record equal to what D1-pre's `mmc info` showed. Any refusal is
-reported and stops the work.
+Hardware: one attended, filmed run with the stage deadlines of the D1 checklist (written with the D1 build). D1-pre has
+shown the card's visible state meets the exporter's conditions, except the ones `mmc info` cannot show. Success is the
+loader's printed record equal to what D1-pre's `mmc info` showed. Any refusal is reported and stops the work.
 
 ## Temperature
 
@@ -125,47 +126,130 @@ transaction; stale value, never a temperature or a safety verdict), T2 (clear sh
 from hekate's Erista branch), T4 (a bound for longer runs: SOC_THERM trip or a watchdog). None is implemented. D0-R and
 D1-pre run without any of them and are bounded by what they execute (stage deadlines in their checklists).
 
-## State after D1-pre and D0-R (2026-11-25)
+## Measured on the Erista (2026-11-25)
 
-All three ran and hekate came back by itself each time. The contents were not supplied, so what they were meant to show is
-still open:
+Fixtures: `boot/diag/erista-sd-pages.log` (D1-pre pages 1 and 2, maker, OEM and name masked) and
+`boot/diag/erista-d0r-run.log`. The reviewer transcribed both from photographs, which were not seen here. Tests:
+`diag_sd_test` (class `Erista`), `d0r_run_test`, `bl33_reserve_audit_test`. All three screens ended with hekate returning by
+itself.
 
-| Question | Answer that the screens hold | Known now |
+| Question | Answer | Status |
 | --- | --- | --- |
-| Is the card in a mode the exporter accepts (SD, high capacity, 512 byte blocks, 4 bit single rate, size)? | page 2's `mmc info` | not read |
-| Is `devnum` 1 in this script context, and is `part list mmc 1` readable? | page 1 | not read |
-| Do the exporter area and the SD reference page clear every reservation, inside a bank? | D0-R's last two lines | not read |
-| What is the third reserve map entry? | D0-R's `MAP` lines | not read |
+| Is the card in a mode the exporter accepts? | Page 2: `SD version 3.0`, `High Capacity: Yes`, `Rd Block Len: 512`, `Bus Width: 4-bit` (no `DDR`), 29.8 GiB, under 2^32 sectors. | Five conditions MET. Single data rate NOT SHOWN: `mmc info` prints no bus mode, and `Tran Speed: 50000000` agrees with single rate without reporting it. Five more NOT SHOWN (OCR with CCS, CSD version 2, RCA and CID nonzero, capacity equality, controller and driver structure). |
+| Is `devnum` 1 and is the card block device 1? | Page 1: `devnum=1 boot_targets=mmc1`, `sdhci@700b0000: 1 (SD)`, `sdhci@700b0600: 0`, one DOS partition from sector 8192, 62406656 sectors, type `0c`. | Measured. The partition ends inside the 29.8 GiB the card reports. |
+| Do the exporter area and the SD reference page clear every reservation? | D0-R: `EXPORTER 00A7000000 00A7010000` and `SD REFERENCE 00A001F000 00A0020000`, both clear, both in bank 0. | No overlap with the DTB's memreserve, the script's framebuffer entry, the blob's own entry or the ramoops node. Not proof of free memory (below). |
+| What is the third reserve map entry? | `MAP 2 008D000000 000002A000`: the blob itself, at its total size (172032, `FDT 8D000000 TOTAL 172032` on the same screen). | Origin read from machine code, not from source (below). |
+
+The two banks are U-Boot's own (`0x80000000+0x7FD00000`, `0x100000000+0x80000000`). `MAP 0` is the DTB's memreserve
+(`0x80000000..0x80020000`), `MAP 1` the script's `fdt rsvmem add 0xF5A00000 0x400000`, `NODE 0` the ramoops carveout
+(`0xB0000000..0xB0200000`). The entry stack differed from D0's (`FF87DD10` against `FF87D010`) and stayed below U-Boot's
+stack start; the loader does not depend on its value.
+
+The loader's `CLEAR? BANK 0` is `CLEAR, BANK 0`: the display font has no comma and draws `?`. Only that string has a comma.
+D0-R is a tested artifact and stays as it is; D1's loader drops the comma.
+
+### How MAP 2 gets added
+
+Upstream U-Boot (master `9d67454`) does not explain it. `fdt_shrink_to_minimum` there deletes the blob's own entry and
+adds it back only if it found one, and the packaged DTB has none. The pinned `bl33.bin` is `U-Boot 2024.NX02.b201801`, a
+fork whose source is not in this repository, so its machine code is the evidence (`tools/package/bl33_reserve_audit.py`,
+run by `bl33_reserve_audit_test`):
+
+- `fdt_add_mem_rsv` has three callers: `fdt rsvmem add`, the initrd fixup and one function that matches
+  `fdt_shrink_to_minimum` (it deletes entries whose address is the blob, holds the constant `0x104F` for five spare entries
+  and a page, writes the new `totalsize`).
+- In that function no conditional branch stands between the loop's exit and the call to `fdt_add_mem_rsv`, so the blob's own
+  entry is added whether or not one was deleted. That differs from upstream master and gives `0x8D000000` plus the page
+  aligned total, `0x2A000`.
+- The function has two callers. One passes extra size 0 straight after a call that precedes it in a function carrying the
+  `fdt_high` handling, which is where `image_setup_libfdt` calls it in upstream during `bootm prep`. That matching is by
+  structure, not by a symbol.
+
+This was read, not run. The `fdt resize` command is the other caller. Neither the fork's source nor an execution trace
+confirms the path; the screen only agrees with it.
+
+### What the no-overlap result covers
+
+`d0r_run_test` compares the two areas with every range this repository can name (`memory_layout.regions`) and with the
+screen's own `MAP` and `NODE` lines. The SD reference page touches none. The exporter's 64 KiB lies inside
+`staged-kernel-capacity` (`0xA2000000..0xA8000000`), the package's own exclusion, which `loader_abi.EXPORTER_RUN` documents
+as the exporter's home because the kernel window rides in `bl33.bin`. D1 stages no kernel, so nothing else claims it.
+That is a list of known occupants. Memory that no list names stays unverified.
 
 ## Final review before D1 is written
 
-Do not write D1 yet. Three things decide its shape and none is in hand:
+D1 is the D0-R image plus the normal script's exporter, `read mmc 1` and `go` steps, and the loader reading the record and
+running `sd_reference.c`'s validation. No write to the card, no loader access to `0x700B0000`. What is settled above
+removes three of the four open questions; the exporter and the unlisted memory remain. D1's code waits for approval of the
+requirements below.
 
-1. The `mmc info` and `part list` text. If the mode fails a condition, the exporter will refuse, and D1 becomes a different
-   problem (a card or a mode change) rather than a run.
-2. D0-R's lines. An overlap or the third entry's origin could move the exporter's or the record's address.
-3. A decision on the unverified exporter step, which cannot be tested short of running it.
+### Before D1 runs: the payload
 
-What the design holds regardless, and is ready to implement once 1 and 2 are read:
+Design for review. Constants come from the pinned files through the script template, never from literals in the script.
 
-- D1 is the D0-R image plus the normal script's exporter, `read mmc 1` and `go` steps, copied line for line, and the loader
-  reading the record and running `sd_reference.c`'s validation. No write to the card, no loader access to `0x700B0000`.
-- Build time: `check_destination` covers both areas against the DTB (it covers the exporter area now), the link inspection
-  is D0's plus a rule that no load or store reaches `0x700B0000`, a test that the D1 script's commands are the normal
-  script's exporter lines and nothing else.
-- Record handling: the loader prints field names and decoded values; the CID, CSD and the four U-Boot addresses are never
+**Integrity.** The U-Boot script uses `verify no`, so U-Boot checks nothing it loads. CRC32 is the only hash U-Boot here has
+(`crc32`; no `sha256sum`). It detects corruption, not tampering, which the build's hashes and the card's own protection
+cover.
+
+| Where | Check | On failure |
+| --- | --- | --- |
+| Build | `exporter.uimg` SHA-256 equals its pin in `bazel/pinned/SHA256SUMS` (`7c33bbdc...`); header magic, OS 17, architecture 22, type standalone, no compression, load and entry `0xA7000000`, name `Switch MMC RAM Export v1`; the header's data CRC (`0x630D1CB8`) equals the CRC32 of the payload; payload `0x5E50` bytes, at most the 64 KiB of `EXPORTER_RUN` and the exporter slot; `exporter_audit` passes on those bytes | the build fails |
+| Build | `bl33.bin` SHA-256 equals its pin (`b492a401...`) | the build fails |
+| Build | the cache helpers' words are read from that `bl33.bin` at `0x1920` (`d508711f d5033fdf d65f03c0`, `ic ialluis; isb; ret`) and `0x1A64` (`d5033f9f d5033fdf d65f03c0`, `dsb sy; isb; ret`) | the build fails |
+| Run, after `bootm loados` | `crc32 0xA7000000 0x5E50 <scratch>`, then `itest.l *<scratch> == 0x630D1CB8` | `EXPORTER_IMAGE_CORRUPT`, no `go` |
+| Run, before each helper `go` | `itest.l` the three words at `0xAA001920`, then at `0xAA001A64` | `CACHE_HELPER_MISMATCH`, no `go` |
+| Run, immediately before `go 0xA7000000` | the same `crc32` and `itest.l` again; the loader and `bootm prep` run between load and `go`, so the first check is not enough | `EXPORTER_IMAGE_CORRUPT`, no `go` |
+
+The scratch word sits at `0xA001F600`, inside the SD reference page D0-R found clear and the script clears next.
+
+**Load size.** The header says `0x5E50` (24144) bytes. The run area is 64 KiB (`0xA7000000..0xA7010000`), which holds the
+payload and the 16 KiB stack inside it; D0-R's `EXPORTER` line covers the whole 64 KiB. The build requires payload plus
+header at most the exporter slot (`0xAA0B0000`, 64 KiB) and payload at most the run area.
+
+**Placement.** Exporter `0xA7000000..0xA7010000`. SD reference page `0xA001F000..0xA0020000`, of which the script clears
+`0x1000` bytes, reads sector 0 to `0xA001F200..0xA001F400` and expects the exporter's record at
+`0xA001F400..0xA001F500`. D0-R found both areas clear of every reservation on its screen. `check_destination` gains both
+as ranges the build refuses to overlap with the loader, DTB slot and exporter slot.
+
+**SD read failure.** One attempt, no retry, nothing written to the card. In order, each a distinct status and a `REFUSED`
+line that waits the dwell and resets (stage deadline 25 s from the line):
+
+| Step | Failure status | Left in RAM |
+| --- | --- | --- |
+| `${devnum}` is not `1` | `SD_REFERENCE_WRONG_DEVICE` | nothing new |
+| `mw.b 0xA001F000 0 0x1000` | `SD_REFERENCE_CLEAR_FAILED` | the page may be partly cleared |
+| `read mmc 1 0xA001F200 0 1` | `SD_REFERENCE_READ_FAILED` | up to 512 bytes at `0xA001F200`; `go` is not run |
+| `go 0xA7000000` returns nonzero | `SD_CARD_EXPORT_FAILED` | the exporter ran and may have written its record at `0xA001F400` |
+| magic `0x4d435349`, version 1 or size `0x100` mismatch | `SD_CARD_RECORD_FAILED` | the record bytes as the exporter left them |
+
+The first read of the card's state by U-Boot's driver is `read mmc 1`, so a card that fails there fails before the exporter
+sees it. The exporter's own refusals (mode, OCR, CSD, RCA, CID, capacity, controller) arrive as the nonzero `go`.
+
+**Stage deadlines.** The SD read: 15 s. `go 0xA7000000`: 10 s. Past either, hold the power button, as in the D0 checklist.
+The exporter is the first code outside the diagnostic's own image that D1 runs, so a hang is possible, not only a refusal.
+
+### Other D1 requirements, unchanged
+
+- The loader prints field names and decoded values from the record; the CID, CSD and the four U-Boot addresses are never
   printed in full. A fixture keeps masked values.
-- Deadlines: the SD read and the exporter are the new stages, 15 s for the read and 10 s for `go`, hard cut by the power
-  button, and no retry on the spot.
+- The link inspection is D0's plus a rule that no load or store reaches `0x700B0000`, from the disassembly.
+- A test that the D1 script's commands are the normal script's exporter lines plus the checks above and nothing else (no
+  `saveenv`, no `mmc write`, no `mw` outside the two documented ranges).
+- `RUN_CHECKLIST.md` rewritten for D1 with the build's hashes.
 
-Still unverified, and not made less so by anything above: thermal protection (the fan is off, no sensor is read, the
-hardware trip is not known to be armed); memory no list names, around `0xA7000000` and `0xA001F000` above all; the exporter on
-this console. D1 is the first run that executes code from outside the diagnostic's own image on the Erista (`go` into a loaded
-payload), so the first failure there may be a hang, not a refusal.
+### Still unverified, and not made less so by anything above
+
+- The exporter on this console. D1 is the first run to execute code from outside the diagnostic's own image (`go` into a
+  loaded payload), so the first failure may be a hang.
+- Thermal protection: the fan is off, no sensor is read, the hardware trip is not known to be armed.
+- Memory that no list names, `0xA7000000` and `0xA001F000` above all. D0-R's no-overlap is against known ranges only.
+- Single data rate and the five other conditions `mmc info` cannot show.
+- The fork's U-Boot source, and therefore the exact path that adds `MAP 2`.
 
 ## Questions for the reviewer
 
-1. Is D1-pre worth its own run, or should its commands be the first lines of D1's U-Boot half? Separate is cheaper to
-   abort; combined is one fewer card read.
-2. T1's stale reading: accepted as useful, or should T1 wait for T2?
-3. Should the reserve-map print and the `mc_verified` change travel with D1 or alone?
+1. Are the integrity checks above enough for `verify no`, or should D1 also run `bootm` with `verify yes` for the exporter?
+2. Is a one-shot read of 512 bytes acceptable as the only SD access, given that a failing `read mmc 1` has already
+   initialized the controller?
+3. T1's stale reading: accepted as useful, or should T1 wait for T2?
+4. Should the `mc_verified` change travel with D1 or alone? (The reserve-map print already shipped with D0-R.)

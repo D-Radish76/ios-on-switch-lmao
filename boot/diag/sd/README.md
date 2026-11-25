@@ -38,16 +38,17 @@ So `mmc info` never runs before `mmc dev 1` (a test enforces the order, and keep
 state is the one after a restart, the same restart a normal Switchroot boot performs; page 1 is closer to what D1's
 `read mmc 1` meets. If the two pages disagree about the card, report both.
 
-`mmc info` prints no bus mode, so single data rate is read as `Bus Width: 4-bit` without a `DDR` suffix; `Tran Speed`
-is shown but not judged.
+`mmc info` prints no bus mode. A `DDR` suffix on the bus width would show double data rate, so one is judged `NOT MET`; its
+absence does not show single data rate. `Tran Speed` is shown but not judged.
 
 ## Compare with the exporter
 
 `tools/package/sd_requirements.py` takes the text of page 2 and marks each exporter condition `MET`, `NOT MET` or
-`NOT SHOWN`. Five can be judged from `mmc info` (SD card, high capacity, 512 byte blocks, 4 bit single rate, at most
-2^32 sectors). Five cannot (OCR ready with CCS, CSD version 2, RCA and CID nonzero, CSD capacity equal to the MMC and
+`NOT SHOWN`. Five can be judged from `mmc info` (SD card, high capacity, 512 byte blocks, 4 bit bus, at most 2^32
+sectors). Six cannot (single data rate, OCR ready with CCS, CSD version 2, RCA and CID nonzero, CSD capacity equal to the MMC and
 block descriptor values, initialized flag with the controller base `0x700b0000` and block device 1 on the exact
-drivers); the exporter checks them in D1 and they stay open until then.
+drivers); the exporter checks them in D1 and they stay open until then. The Erista's two pages
+(`boot/diag/erista-sd-pages.log`) meet the five and show none of the six.
 
 ## Public fixtures
 

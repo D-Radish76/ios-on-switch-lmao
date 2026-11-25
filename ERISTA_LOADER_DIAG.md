@@ -273,9 +273,15 @@ FDT. Derived from the source versus measured:
 | Reservations 3 | reserve map entries: one in the DTB (`0x80000000..0x80020000`), one the script adds (framebuffer `0xF5A00000..0xF5E00000`) | the count only; one entry has no source here |
 | Total 172032 | the DTB is 168190 bytes; `0x2A000` is page aligned | the number only |
 
-The third reserve-map entry is added between the DTB copy and the loader's entry. The likely place is `bootm prep`, but the
-pinned U-Boot is a fork whose source was not read, so this is not established. The walk reports no overlap with the
-loader's five ranges either way. A later loader build should print each entry's base and size; D1's design includes it.
+The third reserve-map entry is the blob itself (`0x8D000000`, `0x2A000`), shown by D0-R and explained in
+`ERISTA_D1_DESIGN.md` from the pinned binary's machine code; the walk reports no overlap with the loader's five ranges.
 
 What this does not show: thermal protection (the fan was off and no reading was taken), memory that no list names, the
 hekate DTB's real size.
+
+## D0-R result on the Erista
+
+`boot/diag/erista-d0r-run.log`, read by `d0r_run_test`. Banks, `MAP 0` to `MAP 2`, `NODE 0` and the two areas are in
+`ERISTA_D1_DESIGN.md`. `CLEAR? BANK 0` is `CLEAR, BANK 0` drawn with a font that has no comma. The entry stack was
+`FF87DD10`, not D0's `FF87D010`; both lie below U-Boot's stack start. The six GIC words equal D0's. No overlap with any
+reservation on the screen or any range this repository can name is not proof that memory is free.

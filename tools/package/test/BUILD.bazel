@@ -137,8 +137,8 @@ py_test(
     ],
 )
 
-# D1-pre, the SD diagnostic: the commands its scripts may run, its images, and what the exporter requires of the card as
-# judged against `mmc info` (and masked for a public fixture).
+# D1-pre, the SD diagnostic: the commands its scripts may run, its images, what the exporter requires of the card as judged
+# against `mmc info` (and masked for a public fixture), and the Erista's two pages (boot/diag/erista-sd-pages.log).
 py_test(
     name = "diag_sd_test",
     size = "small",
@@ -200,6 +200,24 @@ py_test(
     deps = [
         "//tools/package:d0_run",
         "//tools/package:fdt_ranges",
+        "//tools/package:memory_layout",
+    ],
+)
+
+# D0-R's run on the Erista (boot/diag/erista-d0r-run.log): banks, reserve map and the exporter and SD reference areas
+# against bdinfo, the packaged DTB, the script and the ABI.
+py_test(
+    name = "d0r_run_test",
+    size = "small",
+    srcs = ["d0r_run_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+    ],
+    deps = [
+        "//tools/package:d0_run",
+        "//tools/package:fdt_ranges",
+        "//tools/package:loader_abi",
         "//tools/package:memory_layout",
     ],
 )
@@ -281,4 +299,13 @@ py_test(
         "//tools/trustcache",
         "@rules_python//python/runfiles",
     ],
+)
+
+# Where the pinned bl33.bin can add a reserve-map entry (machine code only; the build's source is not in the repository).
+py_test(
+    name = "bl33_reserve_audit_test",
+    size = "small",
+    srcs = ["bl33_reserve_audit_test.py"],
+    data = ["//bazel/pinned:firmware/bl33.bin"],
+    deps = ["//tools/package:bl33_reserve_audit"],
 )

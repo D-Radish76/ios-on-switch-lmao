@@ -8,7 +8,7 @@ from diag_boot import DWELL, diag_bl33, diag_env_edits, diag_u_boot
 from diag_memory import ini, memory_script
 from diag_sd import PAGES
 from script_commands import FORBIDDEN, commands
-from sd_requirements import MET, NOT_MET, NOT_SHOWN, judge, mask
+from sd_requirements import MET, NOT_MET, NOT_SHOWN, capacity_bytes, judge, mask, pages
 
 ROOT = Path('.')
 HEADER = (ROOT / 'kits/SwitchBoard/SwitchBoard.h').read_text()
@@ -19,6 +19,7 @@ BODIES = {
 }
 BL33 = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
 COMMANDS = {'setenv', 'test', 'echo', 'mmc', 'part', 'sleep', 'reset', 'true'}
+MEASURED = pages((ROOT / 'boot/diag/erista-sd-pages.log').read_text())
 MMC_FORMS = {1: [['mmc', 'list'], ['part', 'list', 'mmc', '1']], 2: [['mmc', 'dev', '1'], ['mmc', 'info']]}
 SYNTHETIC_INFO = """Device: sdhci@700b0000
 Manufacturer ID: 3
@@ -119,6 +120,52 @@ class Requirements(unittest.TestCase):
             self.assertNotIn(hidden, text)
         self.assertIn('Rd Block Len: 512', text)
         self.assertEqual(judge(text)[:5], judge(SYNTHETIC_INFO)[:5])
+
+
+class Erista(unittest.TestCase):
+    def test_both_pages_were_read_and_each_ends_where_the_script_ends_it(self) -> None:
+        self.assertEqual(sorted(MEASURED), [1, 2])
+        for text in MEASURED.values():
+            self.assertTrue(text.startswith('board t210b01=0 sku=0 status=READY console=OK\n'))
+
+    def test_page_1_shows_devnum_1_the_sd_slot_as_device_1_and_one_dos_partition(self) -> None:
+        text = MEASURED[1]
+        for line in (
+            'devnum=1 boot_targets=mmc1',
+            'sdhci@700b0000: 1 (SD)',
+            'sdhci@700b0600: 0',
+            'Partition Type: DOS',
+        ):
+            self.assertIn(line, text)
+        self.assertEqual(text.count('Part: '), 1)
+        self.assertIn('Type: 0c', text)
+
+    def test_the_partition_ends_inside_the_card_page_2_reports(self) -> None:
+        start, sectors = 8192, 62406656
+        self.assertLess((start + sectors) * 512, capacity_bytes(MEASURED[2]) + (1 << 20))
+        self.assertLess(capacity_bytes(MEASURED[2]), (start + sectors) * 512 + (1 << 30))
+
+    def test_page_2_meets_what_mmc_info_can_show_and_the_data_rate_is_not_shown(self) -> None:
+        rows = {name: verdict for name, verdict, _ in judge(MEASURED[2])}
+        shown = {name: verdict for name, verdict in rows.items() if verdict != NOT_SHOWN}
+        self.assertEqual(set(shown.values()), {MET})
+        self.assertEqual(len(shown), 5)
+        self.assertEqual(sum(1 for v in rows.values() if v == NOT_SHOWN), 6)
+        single = next(name for name in rows if name.startswith('single data rate'))
+        self.assertEqual(rows[single], NOT_SHOWN)
+
+    def test_a_transfer_speed_line_does_not_stand_in_for_the_mode(self) -> None:
+        text = MEASURED[2].replace('Tran Speed: 50000000', 'Tran Speed: 208000000')
+        self.assertEqual(judge(text), judge(MEASURED[2]))
+
+    def test_the_card_identity_lines_are_masked_in_the_fixture(self) -> None:
+        for label in ('Manufacturer ID', 'OEM', 'Name'):
+            self.assertIn(f'{label}: [MASKED]', MEASURED[2])
+        self.assertNotRegex(MEASURED[2], r'(?i)serial|CID')
+
+    def test_page_2_names_the_driver_instance_the_exporter_requires(self) -> None:
+        self.assertIn('Device: sdhci@700b0000', MEASURED[2])
+        self.assertIn('mmc1 is current device', MEASURED[2])
 
 
 if __name__ == '__main__':

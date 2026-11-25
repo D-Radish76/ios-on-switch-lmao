@@ -205,6 +205,12 @@ py_library(
 )
 
 py_library(
+    name = "bl33_reserve_audit",
+    srcs = ["bl33_reserve_audit.py"],
+    imports = ["."],
+)
+
+py_library(
     name = "d0_run",
     srcs = ["d0_run.py"],
     imports = ["."],

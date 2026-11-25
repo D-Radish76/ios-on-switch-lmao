@@ -1,0 +1,36 @@
+# D1-pre (iOS Diag SD, then iOS Diag SD Info) on a physical Erista (t210b01=0, sku=0), 2026-11-25, hekate 6.5.5.
+# Transcribed by the reviewer from the photographs and given to this repository as text; they were not seen here. The maker,
+# OEM and name lines are masked in the transcript and stay masked. The partition's disk UUID is the DOS signature as shown
+# (00000000-01). The card was read only; hekate came back by itself after each page (confirmed by the operator).
+board t210b01=0 sku=0 status=READY console=OK
+devnum=1 boot_targets=mmc1
+MMC DEVICES
+sdhci@700b0000: 1 (SD)
+sdhci@700b0600: 0
+
+Partition Map for MMC device 1
+Partition Type: DOS
+
+Part: 1
+Start Sector: 8192
+Num Sectors: 62406656
+UUID: 00000000-01
+Type: 0c
+
+END OF PAGE 1
+board t210b01=0 sku=0 status=READY console=OK
+switch to partitions #0, OK
+mmc1 is current device
+Device: sdhci@700b0000
+Manufacturer ID: [MASKED]
+OEM: [MASKED]
+Name: [MASKED]
+Tran Speed: 50000000
+Rd Block Len: 512
+SD version 3.0
+High Capacity: Yes
+Capacity: 29.8 GiB
+Bus Width: 4-bit
+Erase Group Size: 512 Bytes
+
+END OF PAGE 2

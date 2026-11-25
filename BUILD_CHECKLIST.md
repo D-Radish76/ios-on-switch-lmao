@@ -258,7 +258,13 @@ D1-pre (first 16): `ios-diag-sd` bl33 `2a9e344fc6fd658a`, script `05ebf5c9f55826
 
 ## D1-pre and D0-R on the Erista (2026-11-25)
 
-Run once each, attended: page 1, page 2, D0-R. Each completed and returned to hekate. PASS means that and nothing about
-content. Owed from the screens, as typed text (card maker, OEM, name and any serial masked, `sd_requirements.mask`):
-page 1 and page 2 output, and D0-R's lines (`BANK`, `MAP`, `NODE`, `EXPORTER`, `SD REFERENCE`). Then
-`boot/diag/erista-sd-info.log` and `boot/diag/erista-d0r-run.log` and tests like `d0_run_test`.
+Run once each, attended: page 1, page 2, D0-R. Each completed and returned to hekate. The screens are recorded as typed
+text (maker, OEM and name masked): `boot/diag/erista-sd-pages.log` and `boot/diag/erista-d0r-run.log`, read by
+`diag_sd_test`, `d0r_run_test` and `bl33_reserve_audit_test`. These pass on Linux; run them on the Mac:
+
+```
+bazel test //tools/package/test:diag_sd_test //tools/package/test:d0r_run_test //tools/package/test:bl33_reserve_audit_test
+```
+
+What is measured and what is not is in `ERISTA_D1_DESIGN.md` ("Measured on the Erista"). Single data rate, the exporter on
+hardware, thermal protection and memory no list names are unverified.
