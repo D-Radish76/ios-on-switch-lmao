@@ -14,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from diag_loader_inspect import inspect_disassembly, inspect_map
+from diag_loader_inspect import inspect_disassembly, inspect_image, inspect_map
 
 BOOT = Path('boot')
 INCLUDES = ('diag/loader', 'diag/sd_loader', 'handoff', 'loader', 'storage')
@@ -97,6 +97,7 @@ def build(name: str, tools: argparse.Namespace, scratch: Path) -> tuple[str, lis
     )
     flags = {flag: True} if flag else {}
     problems = inspect_map(linkmap.read_text(), **flags) + inspect_disassembly(dis.stdout, **flags)
+    problems += inspect_image(flat.read_bytes(), **({'t1v3': True} if flag == 't1v3' else {}))
     return hashlib.sha256(flat.read_bytes()).hexdigest(), problems
 
 

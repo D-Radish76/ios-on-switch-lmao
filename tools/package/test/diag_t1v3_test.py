@@ -15,7 +15,7 @@ from typing import ClassVar
 
 import diag_images
 from diag_loader import entry_ini
-from diag_loader_inspect import inspect_disassembly, inspect_map
+from diag_loader_inspect import T1V3_ADDRESSES, inspect_disassembly, inspect_image, inspect_map
 
 LOADER = Path('boot/diag/loader')
 HASHES = Path('boot/diag/erista-diag-image-hashes.txt')
@@ -26,7 +26,7 @@ STORE32 = ('mov w8, w0', 'str w1, [x8]', 'ret')
 DEVICE_LITERAL = re.compile(r'0x[5-7][0-9a-f]{7}u?\b', re.IGNORECASE)
 SOURCES = ('t1v3.c', 't1v3.h', 't1v3_regs.c', 't1v3_gate.c', 't1v3_access.c', 't1v3_report.c', 't1v3_report.h')
 ALLOWED_OFFSETS = {
-    'CAR': (0x004, 0x010, 0x124),
+    'CAR': (0x004, 0x010, 0x124, 0x0A0),
     'I2C1': (0x00, 0x04, 0x0C, 0x1C, 0x68, 0x6C, 0x8C, 0x94, 0x98),
 }
 ALLOWED_WRITES = {
@@ -81,6 +81,33 @@ class Inspection(unittest.TestCase):
     def test_a_tail_call_is_a_call(self) -> None:
         text = image() + function('sneaky', 'b 0x100 <switch_t1v3_write32>')
         self.assertTrue([p for p in problems_of(text) if p.startswith('sneaky')])
+
+
+class LinkedImage(unittest.TestCase):
+    """The check on the flat image that is linked and packaged, not on the sources."""
+
+    @staticmethod
+    def flat(addresses: list[int]) -> bytes:
+        return b''.join(a.to_bytes(4, 'little') + (0).to_bytes(4, 'little') for a in addresses)
+
+    def test_exactly_the_listed_addresses_pass(self) -> None:
+        self.assertEqual([], inspect_image(self.flat(sorted(T1V3_ADDRESSES)), t1v3=True))
+        self.assertEqual(13, len(T1V3_ADDRESSES))
+
+    def test_an_extra_missing_or_repeated_address_is_refused(self) -> None:
+        listed = sorted(T1V3_ADDRESSES)
+        self.assertTrue([p for p in inspect_image(self.flat([*listed, 0x60006008]), t1v3=True) if 'not listed' in p])
+        self.assertTrue([p for p in inspect_image(self.flat([*listed, 0x7000C0A0]), t1v3=True) if 'not listed' in p])
+        self.assertTrue([p for p in inspect_image(self.flat(listed[1:]), t1v3=True) if 'lacks' in p])
+        self.assertTrue([p for p in inspect_image(self.flat([*listed, listed[0]]), t1v3=True) if '2 times' in p])
+
+    def test_other_words_do_not_count(self) -> None:
+        listed = sorted(T1V3_ADDRESSES)
+        other = [0x60007000, 0x60005FFC, 0x7000D000, 0x7000BFFC, 0x70000804, 0xF5A00000]
+        self.assertEqual([], inspect_image(self.flat([*listed, *other]), t1v3=True))
+
+    def test_other_images_are_not_held_to_it(self) -> None:
+        self.assertEqual([], inspect_image(self.flat([0x60006008]), t1v3=False))
 
 
 class Sources(unittest.TestCase):
@@ -138,13 +165,33 @@ class Sources(unittest.TestCase):
 
     def test_every_wait_loop_also_ends_by_count(self) -> None:
         text = (LOADER / 't1v3.c').read_text()
-        loops = re.findall(r'for \(unsigned polls = 0;[^\n]*', text)
-        self.assertEqual(3, len(loops))
-        for loop in loops:
-            self.assertIn('POLL_LIMIT', text[text.index(loop) : text.index(loop) + 400], loop)
+        for loop in re.findall(r'(?:for \(unsigned polls = 0;|while \(!\(get)[^\n]*', text):
+            self.assertIn('POLL_LIMIT', text[text.index(loop) : text.index(loop) + 500], loop)
         self.assertEqual(
-            {'SWITCH_T1V3_IDLE_SAMPLES', 'SWITCH_T1V3_POLL_LIMIT'}, set(re.findall(r'unsigned i = 0; i < (\w+)', text))
+            {'SWITCH_T1V3_IDLE_SAMPLES', 'SWITCH_T1V3_POLL_LIMIT'},
+            set(re.findall(r'unsigned i = 0; i < (\w+)', text)),
         )
+
+    def test_nothing_is_written_once_a_stop_code_exists(self) -> None:
+        text = (LOADER / 't1v3.c').read_text()
+        put = text[text.index('static void put(') : text.index('static uint64_t now(')]
+        self.assertLess(put.index('result->stop'), put.index('may_write'))
+        self.assertLess(put.index('result->stop'), put.index('io->write'))
+        self.assertEqual(1, len(re.findall(r'io->write\(', text)))
+
+    def test_the_run_goes_on_only_from_a_pinned_timing_word(self) -> None:
+        access = (LOADER / 't1v3_access.c').read_text()
+        self.assertIn('io = {0, 0, 0, io_read, io_write, io_now_us}', access)
+        text = (LOADER / 't1v3.c').read_text()
+        self.assertIn('if (!pin)', text)
+        self.assertLess(text.index('timing_stop(r->timing_0'), text.index('timing_stop(r->timing_1'))
+
+    def test_a_transfer_is_known_to_have_started_before_its_data_is_used(self) -> None:
+        text = (LOADER / 't1v3.c').read_text()
+        self.assertIn('SWITCH_T1V3_NOT_STARTED', text)
+        self.assertIn('SWITCH_T1V3_STALE_DATA', text)
+        self.assertNotIn('SETTLE', (LOADER / 't1v3.h').read_text())
+        self.assertLess(text.index('data_before_read = get'), text.index('transaction(run, 1)'))
 
     def test_the_divisor_is_written_once_and_never_the_old_value(self) -> None:
         text = (LOADER / 't1v3.c').read_text()
@@ -210,12 +257,24 @@ class RealLink(unittest.TestCase):
         ).stdout
         return Path(linkmap).read_text(), dis
 
+    def flat(self, scratch: str) -> bytes:
+        subprocess.run(['llvm-objcopy', '-O', 'binary', f'{scratch}/t1v3.elf', f'{scratch}/t1v3.bin'], check=True)
+        return Path(f'{scratch}/t1v3.bin').read_bytes()
+
     def test_it_links_and_passes_the_t1v3_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:
             text, dis = self.link(scratch, [])
             self.assertEqual([], inspect_map(text, t1v3=True))
             self.assertEqual([], inspect_disassembly(dis, t1v3=True))
+            self.assertEqual([], inspect_image(self.flat(scratch), t1v3=True))
             self.assertTrue(inspect_map(text))
+
+    def test_a_register_address_added_by_another_file_is_refused_in_the_linked_image(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            extra = Path(scratch) / 'extra.c'
+            extra.write_text('const unsigned extra_address = 0x60006008u;\n')
+            self.link(scratch, [str(extra)])
+            self.assertTrue([p for p in inspect_image(self.flat(scratch), t1v3=True) if '0x60006008' in p])
 
     def test_a_second_user_of_a_raw_access_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:

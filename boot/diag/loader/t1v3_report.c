@@ -45,6 +45,20 @@ const char *switch_t1v3_stop_name(int stop)
         return "I2C1 INTERRUPT STATUS NOT 0. NOTHING WRITTEN";
     case SWITCH_T1V3_INT_CHANGED:
         return "I2C1 INTERRUPT STATUS CHANGED AFTER THE LOAD. NO RESTORE";
+    case SWITCH_T1V3_LOAD_BEFORE_UNEXPECTED:
+        return "CONFIG LOAD IS NOT 00000004 BEFORE THE DIVISOR WRITE. NOTHING WRITTEN";
+    case SWITCH_T1V3_LOAD_BEFORE_PENDING:
+        return "CONFIG LOAD BIT 0 SET BEFORE THE DIVISOR WRITE. NOTHING WRITTEN";
+    case SWITCH_T1V3_LOAD_AFTER_UNEXPECTED:
+        return "CONFIG LOAD WORD UNEXPECTED AFTER A LOAD. NO TRANSFER STARTED FROM IT";
+    case SWITCH_T1V3_NOT_STARTED:
+        return "BUSY NEVER SEEN AFTER GO. NOT KNOWN TO HAVE STARTED. NO RETRY";
+    case SWITCH_T1V3_STALE_DATA:
+        return "DATA1 ALREADY HOLDS 55 BEFORE THE READ. NO READ DONE";
+    case SWITCH_T1V3_TIMING_NOT_PINNED:
+        return "TIMING WORDS HAVE NO REVIEWED VALUE YET. NOTHING WRITTEN";
+    case SWITCH_T1V3_PLLP_UNEXPECTED:
+        return "PLLP_BASE IS NOT M 8 N 85 P 1. NOTHING WRITTEN";
     default:
         return "UNKNOWN";
     }
@@ -59,8 +73,15 @@ static void word(struct switch_diag_line *line, const char *label, uint32_t valu
 static void transfer(struct switch_diag_line *line, const char *label, const struct switch_t1v3_transaction *t)
 {
     switch_diag_line_add(line, label);
+    if (!t->started) {
+        switch_diag_line_add(line, "BUSY NOT SEEN");
+        return;
+    }
+    switch_diag_line_add(line, "BUSY AT ");
+    switch_diag_line_decimal(line, t->started_us);
+    switch_diag_line_add(line, " US, CLEAR AT ");
     switch_diag_line_decimal(line, t->elapsed_us);
-    switch_diag_line_add(line, t->busy_seen ? " US BUSY SEEN" : " US BUSY NOT SEEN");
+    switch_diag_line_add(line, " US");
 }
 
 void switch_t1v3_lines(const struct switch_t1v3_result *r, struct switch_t1v3_line lines[SWITCH_T1V3_LINES])
@@ -73,43 +94,60 @@ void switch_t1v3_lines(const struct switch_t1v3_result *r, struct switch_t1v3_li
     word(&lines[0].text, " ENB_L ", r->clk_out_enb_l);
     word(&lines[0].text, " SRC_I2C1 ", r->source_i2c1);
     switch_diag_line_add(&lines[0].text, " (EXPECT 00000003)");
-    word(&lines[1].text, "BEFORE CNFG ", r->cnfg);
-    word(&lines[1].text, " STATUS ", r->status);
-    word(&lines[1].text, " INT ", r->int_status);
-    word(&lines[1].text, " DIV ", r->divisor);
-    word(&lines[1].text, " LOAD ", r->config_load);
-    word(&lines[2].text, "TIMING_0 ", r->timing_0);
-    word(&lines[2].text, " TIMING_1 ", r->timing_1);
-    switch_diag_line_add(&lines[2].text, ". READ ONLY. TIMING_0 EXPECT 00000204");
+    word(&lines[1].text, "PLLP_BASE ", r->pllp_base);
+    switch_diag_line_add(&lines[1].text, " M ");
+    switch_diag_line_decimal(&lines[1].text, SWITCH_T1V3_PLLP_M(r->pllp_base));
+    switch_diag_line_add(&lines[1].text, " N ");
+    switch_diag_line_decimal(&lines[1].text, SWITCH_T1V3_PLLP_N(r->pllp_base));
+    switch_diag_line_add(&lines[1].text, " P ");
+    switch_diag_line_decimal(&lines[1].text, SWITCH_T1V3_PLLP_P(r->pllp_base));
+    switch_diag_line_add(&lines[1].text, " (EXPECT 8 85 1). MODEL ONLY, NOT A MEASURED RATE");
+    word(&lines[2].text, "BEFORE CNFG ", r->cnfg);
+    word(&lines[2].text, " STATUS ", r->status);
+    word(&lines[2].text, " INT ", r->int_status);
+    word(&lines[2].text, " DIV ", r->divisor);
+    word(&lines[2].text, " LOAD ", r->config_load);
+    word(&lines[3].text, "TIMING_0 ", r->timing_0);
+    word(&lines[3].text, " TIMING_1 ", r->timing_1);
+    switch_diag_line_add(&lines[3].text, ". READ ONLY. 061A: NO REVIEWED VALUE");
     if (r->writes) {
-        word(&lines[3].text, "AFTER LOAD ", r->load_after);
-        word(&lines[3].text, " DIV ", r->divisor_after);
-        word(&lines[3].text, " STATUS ", r->status_load);
-        word(&lines[3].text, " INT ", r->int_status_load);
-        switch_diag_line_add(&lines[3].text, ". DIV WRITTEN 00FF0001, NOT RESTORED");
+        word(&lines[4].text, "AFTER LOAD ", r->load_after);
+        word(&lines[4].text, " DIV ", r->divisor_after);
+        word(&lines[4].text, " STATUS ", r->status_load);
+        word(&lines[4].text, " INT ", r->int_status_load);
+        switch_diag_line_add(&lines[4].text, ". DIV WRITTEN 00FF0001, NOT RESTORED");
     }
-    if (r->transfers || r->transaction[0].elapsed_us) {
-        transfer(&lines[4].text, "WRITE POINTER ", &r->transaction[0]);
-        transfer(&lines[4].text, ". READ ", &r->transaction[1]);
-        switch_diag_line_add(&lines[4].text, ". ELAPSED IS A REFERENCE, NOT AN SCL MEASUREMENT");
+    if (r->writes > 2) {
+        word(&lines[5].text, "LOAD AFTER 0X25 ", r->load_transfer[0]);
+        word(&lines[5].text, " AND ", r->load_transfer[1]);
+        switch_diag_line_add(&lines[5].text, " (EXPECT 00000004 BEFORE EACH GO)");
+        transfer(&lines[6].text, "WRITE POINTER ", &r->transaction[0]);
+        word(&lines[6].text, ". AFTER GO CNFG ", r->transaction[0].cnfg);
+        word(&lines[6].text, " INT ", r->transaction[0].int_status);
+        transfer(&lines[7].text, "READ ", &r->transaction[1]);
+        word(&lines[7].text, ". AFTER GO CNFG ", r->transaction[1].cnfg);
+        word(&lines[7].text, " INT ", r->transaction[1].int_status);
+        switch_diag_line_add(&lines[8].text, "TRANSFER TIMES AND AFTER GO WORDS ARE REFERENCE ONLY, NOT AN SCL MEASUREMENT");
     }
     if (r->have_id) {
-        switch_diag_line_add(&lines[5].text, "TMP451 0X4C ID(FE) ");
-        switch_diag_line_hex(&lines[5].text, r->id, 2);
-        switch_diag_line_add(&lines[5].text, " EXPECT 55. COMMUNICATION CHECK ONLY");
-        lines[5].bad = r->id != SWITCH_T1V3_ID_VALUE;
+        switch_diag_line_add(&lines[9].text, "TMP451 0X4C ID(FE) ");
+        switch_diag_line_hex(&lines[9].text, r->id, 2);
+        switch_diag_line_add(&lines[9].text, " EXPECT 55. DATA1 BEFORE READ ");
+        switch_diag_line_hex(&lines[9].text, r->data_before_read, 2);
+        switch_diag_line_add(&lines[9].text, ". COMMUNICATION CHECK ONLY");
+        lines[9].bad = r->id != SWITCH_T1V3_ID_VALUE;
     }
-    switch_diag_line_add(&lines[6].text, r->stop ? "T1V3 STOPPED CODE " : "T1V3 COMPLETE CODE ");
-    switch_diag_line_hex(&lines[6].text, (uint64_t)r->stop, 4);
-    switch_diag_line_add(&lines[6].text, ". ");
-    switch_diag_line_add(&lines[6].text, switch_t1v3_stop_name(r->stop));
-    lines[6].bad = r->stop != 0;
-    switch_diag_line_add(&lines[7].text, "WRITES ");
-    switch_diag_line_decimal(&lines[7].text, r->writes);
-    switch_diag_line_add(&lines[7].text, ". TRANSFERS ");
-    switch_diag_line_decimal(&lines[7].text, r->transfers);
-    switch_diag_line_add(&lines[7].text, " OF 2. NO RETRY. NO CAR WRITE. NO SENSOR WRITE. STATUS AFTER ");
-    switch_diag_line_hex(&lines[7].text, r->status_after, 8);
-    switch_diag_line_add(&lines[7].text, " INT ");
-    switch_diag_line_hex(&lines[7].text, r->int_status_after, 8);
+    switch_diag_line_add(&lines[10].text, r->stop ? "T1V3 STOPPED CODE " : "T1V3 COMPLETE CODE ");
+    switch_diag_line_hex(&lines[10].text, (uint64_t)r->stop, 4);
+    switch_diag_line_add(&lines[10].text, ". ");
+    switch_diag_line_add(&lines[10].text, switch_t1v3_stop_name(r->stop));
+    lines[10].bad = r->stop != 0;
+    switch_diag_line_add(&lines[11].text, "WRITES ");
+    switch_diag_line_decimal(&lines[11].text, r->writes);
+    switch_diag_line_add(&lines[11].text, ". TRANSFERS ");
+    switch_diag_line_decimal(&lines[11].text, r->transfers);
+    switch_diag_line_add(&lines[11].text, " OF 2. NO RETRY. NO CAR WRITE. STATUS AFTER ");
+    switch_diag_line_hex(&lines[11].text, r->status_after, 8);
+    switch_diag_line_add(&lines[11].text, " INT ");
+    switch_diag_line_hex(&lines[11].text, r->int_status_after, 8);
 }

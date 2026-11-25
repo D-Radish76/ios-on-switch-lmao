@@ -3,7 +3,7 @@
 #include "report.h"
 #include "t1v3.h"
 
-#define SWITCH_T1V3_LINES 8u
+#define SWITCH_T1V3_LINES 12u
 
 struct switch_t1v3_line {
     struct switch_diag_line text;

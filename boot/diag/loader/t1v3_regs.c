@@ -12,6 +12,7 @@ static const struct {
     [T1V3_CAR_RST_DEVICES_L] = {CAR + 0x004, R},
     [T1V3_CAR_CLK_OUT_ENB_L] = {CAR + 0x010, R},
     [T1V3_CAR_CLK_SOURCE_I2C1] = {CAR + 0x124, R},
+    [T1V3_CAR_PLLP_BASE] = {CAR + 0x0a0, R},
     [T1V3_I2C1_CNFG] = {I2C1 + 0x00, R | W},
     [T1V3_I2C1_CMD_ADDR0] = {I2C1 + 0x04, W},
     [T1V3_I2C1_CMD_DATA1] = {I2C1 + 0x0c, R | W},

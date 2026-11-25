@@ -21,7 +21,7 @@ from pathlib import Path
 from bl33 import bl33_patch
 from boot_script import boards, script_image
 from diag_boot import DWELL, STEP, diag_env_edits, dwell_steps
-from diag_loader_inspect import inspect_disassembly, inspect_map, report
+from diag_loader_inspect import inspect_disassembly, inspect_image, inspect_map, report
 from exporter_check import BL33_PIN, check_exporter, check_pinned, exporter_values
 from fdt_ranges import reserved_ranges
 from loader_abi import (
@@ -188,6 +188,7 @@ def link(args: argparse.Namespace) -> None:
         args.disassembly.write_text(disassembly)
         problems = inspect_map(args.map.read_text(), args.sd, args.t1, args.t1r, args.t1v3)
         problems += inspect_disassembly(disassembly, args.sd, args.t1, args.t1r, args.t1v3)
+        problems += inspect_image(flat.read_bytes(), args.t1v3)
         if problems:
             raise SystemExit('D0 loader inspection failed:\n' + '\n'.join(problems))
         args.report.write_text('D0 loader inspection passed\n' + report() + '\n')

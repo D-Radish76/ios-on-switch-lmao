@@ -66,9 +66,13 @@ enum {
     D_T1V3_DIVISOR,
     D_T1V3_TIMING,
     D_T1V3_ELAPSED,
+    D_T1V3_PLLP_LOAD,
     D_T1V3_ID_STATUS,
 #endif
 };
+#ifdef SWITCH_DIAG_T1V3
+_Static_assert(D_T1V3_ID_STATUS < R_RECORD_WORDS, "T1 v3 results fit the probe record");
+#endif
 
 /* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
  * before it; the status lines run full width under both. */
@@ -464,6 +468,7 @@ static void report_t1v3(void)
     probe_record[D_T1V3_DIVISOR] = (uint64_t)result.divisor << 32 | result.divisor_after;
     probe_record[D_T1V3_TIMING] = (uint64_t)result.timing_0 << 32 | result.timing_1;
     probe_record[D_T1V3_ELAPSED] = (uint64_t)result.transaction[0].elapsed_us << 32 | result.transaction[1].elapsed_us;
+    probe_record[D_T1V3_PLLP_LOAD] = (uint64_t)result.pllp_base << 32 | result.load_after;
     probe_record[D_T1V3_ID_STATUS] = (uint64_t)result.have_id << 40 | (uint64_t)result.id << 32 | result.status_after;
 }
 #endif
@@ -548,7 +553,7 @@ void switch_diag_after_transition(void)
 #ifdef SWITCH_DIAG_T1
     put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1V3)
-    put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+    put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1R)
     put_text(21, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #else

@@ -116,6 +116,17 @@ DEVICE_IMMEDIATE = re.compile(r'\b(?:movk|movz|mov)\s+[wx]\d+, #0x([0-9a-f]{4}),
 WHOLE_IMMEDIATE = re.compile(r'\bmov\s+[wx]\d+, #0x([0-9a-f]{8})\b')
 
 
+# Every 32 bit word of the T1 v3 image that lies in the CAR or I2C1 page is one of these, once. They are the allowlist's
+# table (boot/diag/loader/t1v3_regs.c) as the linker laid it out, so an address added by any other file shows.
+T1V3_PAGES = ((0x60006000, 0x60007000), (0x7000C000, 0x7000D000))
+T1V3_ADDRESSES = frozenset(
+    {
+        0x60006004, 0x60006010, 0x60006124, 0x600060A0,
+        0x7000C000, 0x7000C004, 0x7000C00C, 0x7000C01C, 0x7000C068, 0x7000C06C, 0x7000C08C, 0x7000C094, 0x7000C098,
+    }
+)  # fmt: skip
+
+
 def inspect_map(text: str, sd: bool = False, t1: bool = False, t1r: bool = False, t1v3: bool = False) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
@@ -258,6 +269,25 @@ def inspect_t1r(code: dict[str, list[str]]) -> list[str]:
                 problems.append(f'{name}: a store that is not a stack save: {line}')
             if name != T1R_GATE and STORE.match(line):
                 problems.append(f'{name}: holds a store: {line}')
+    return problems
+
+
+def inspect_image(flat: bytes, t1v3: bool = False) -> list[str]:
+    """Return what is wrong with the linked flat image: for T1 v3, the register addresses it holds as data."""
+    if not t1v3:
+        return []
+    found = [
+        word
+        for offset in range(0, len(flat) - 3, 4)
+        if any(low <= (word := int.from_bytes(flat[offset : offset + 4], 'little')) < high for low, high in T1V3_PAGES)
+    ]
+    problems = [
+        f'T1 v3 image holds the address {word:#x}, which is not listed' for word in sorted(set(found) - T1V3_ADDRESSES)
+    ]
+    problems += [f'T1 v3 image lacks the listed address {word:#x}' for word in sorted(T1V3_ADDRESSES - set(found))]
+    problems += [
+        f'T1 v3 image holds {word:#x} {found.count(word)} times' for word in sorted(set(found)) if found.count(word) > 1
+    ]
     return problems
 
 
