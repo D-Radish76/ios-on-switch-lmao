@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the D0 loader's binary may contain, read from its link map and its disassembly.
 
-    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r | --t1v3]
+    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r | --t1v3 | --t1t]
 
 Exits nonzero, naming every violation, when the link pulled in the normal loader's kernel path, when code writes a CPU
 system register that WRITES does not list, or when an instruction outside the reviewed set is present. WRITES is the
@@ -105,6 +105,12 @@ T1R_GATE = 'switch_t1r_access'
 T1R_RAW = 'switch_t1r_read32'
 T1R_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t1r_read32>')
 T1R_ADDRESS_HOLDERS = ('switch_t1r_address', 'switch_t1r_may_read', 'switch_t1r_hekate_source', 'switch_t1r_read32')
+# T1-T (boot/diag/loader/t1t*.c) is T1-R's shape for two controllers: one load, one caller, no store on an address path.
+T1T_SYMBOLS = ('switch_t1t_run', 'switch_t1t_access', 'switch_t1t_read32', 'switch_t1t_may_read', 'switch_t1t_address')
+T1T_GATE = 'switch_t1t_access'
+T1T_RAW = 'switch_t1t_read32'
+T1T_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t1t_read32>')
+T1T_ADDRESS_HOLDERS = ('switch_t1t_address', 'switch_t1t_may_read', 'switch_t1t_read32')
 STORE = re.compile(r'^(?:str|stp|stur|stlr|stxr|stnp|st[1-4])[a-z]*\b')
 STACK_STORE = re.compile(r'\[(?:sp|x29)\b')
 COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
@@ -127,7 +133,20 @@ T1V3_ADDRESSES = frozenset(
 )  # fmt: skip
 
 
-def inspect_map(text: str, sd: bool = False, t1: bool = False, t1r: bool = False, t1v3: bool = False) -> list[str]:
+# T1-T's allowlist (boot/diag/loader/t1t_regs.c) as the linker laid it out: the CAR words, then I2C1 and I2C5 by offset.
+T1T_PAGES = ((0x60006000, 0x60007000), (0x7000C000, 0x7000E000))
+T1T_ADDRESSES = frozenset(
+    {
+        0x60006004, 0x60006008, 0x60006010, 0x60006014, 0x600060A0, 0x60006124, 0x60006128,
+        0x60006198, 0x600061B8, 0x600063C4, 0x6000665C,
+        *(base + offset for base in (0x7000C000, 0x7000D000) for offset in (0x00, 0x1C, 0x68, 0x6C, 0x8C, 0x94, 0x98)),
+    }
+)  # fmt: skip
+
+
+def inspect_map(  # noqa: PLR0913
+    text: str, sd: bool = False, *, t1: bool = False, t1r: bool = False, t1v3: bool = False, t1t: bool = False
+) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
     wanted = (
@@ -136,11 +155,19 @@ def inspect_map(text: str, sd: bool = False, t1: bool = False, t1r: bool = False
         *(T1_SYMBOLS if t1 else ()),
         *(T1R_SYMBOLS if t1r else ()),
         *(T1V3_SYMBOLS if t1v3 else ()),
+        *(T1T_SYMBOLS if t1t else ()),
     )
     problems += [f'the link lacks {name}' for name in wanted if name not in text]
     problems += [f'the link has {name} outside T1' for name in T1_SYMBOLS if not t1 and name in text]
     problems += [f'the link has {name} outside T1-R' for name in T1R_SYMBOLS if not t1r and name in text]
     problems += [f'the link has {name} outside T1 v3' for name in T1V3_SYMBOLS if not t1v3 and name in text]
+    problems += [f'the link has {name} outside T1-T' for name in T1T_SYMBOLS if not t1t and name in text]
+    if t1t:
+        problems += [
+            f'T1-T links {name}'
+            for name in ('switch_t1t_write', 'switch_t1t_may_write', 'switch_t1_', 'switch_t1r_', 'switch_t1v3_')
+            if name in text
+        ]
     if t1r:
         problems += [f'T1-R links {name}' for name in ('switch_t1r_write', 'switch_t1_') if name in text]
     if t1v3:
@@ -252,47 +279,60 @@ def inspect_t1(code: dict[str, list[str]], prefix: str = 'switch_t1_') -> list[s
     return problems
 
 
-def inspect_t1r(code: dict[str, list[str]]) -> list[str]:
-    """Return what is wrong with T1-R's device reads: one load, one caller, and no store on any address path."""
+def inspect_read_only(
+    code: dict[str, list[str]], gate: str, raw: str, call: re.Pattern[str], holders: tuple[str, ...]
+) -> list[str]:
+    """Return what is wrong with a stage's device reads: one load, one caller, and no store on any address path."""
     problems = []
-    read32 = code.get(T1R_RAW)
+    read32 = code.get(raw)
     if read32 is None or not READ32_BODY.match('\n'.join(read32)):
-        problems.append(f'{T1R_RAW} is not a single load and a return')
-    for name, body in code.items():
-        if name != T1R_GATE:
-            problems += [f'{name}: calls {T1R_RAW} outside {T1R_GATE}' for line in body if T1R_CALL.search(line)]
-    if not any(T1R_CALL.search(line) for line in code.get(T1R_GATE, [])):
-        problems.append(f'{T1R_GATE} does not reach the raw read')
-    for name in (T1R_GATE, *T1R_ADDRESS_HOLDERS):
-        for line in code.get(name, []):
+        problems.append(f'{raw} is not a single load and a return')
+    for function, body in code.items():
+        if function != gate:
+            problems += [f'{function}: calls {raw} outside {gate}' for line in body if call.search(line)]
+    if not any(call.search(line) for line in code.get(gate, [])):
+        problems.append(f'{gate} does not reach the raw read')
+    for function in (gate, *holders):
+        for line in code.get(function, []):
             if STORE.match(line) and not STACK_STORE.search(line):
-                problems.append(f'{name}: a store that is not a stack save: {line}')
-            if name != T1R_GATE and STORE.match(line):
-                problems.append(f'{name}: holds a store: {line}')
+                problems.append(f'{function}: a store that is not a stack save: {line}')
+            if function != gate and STORE.match(line):
+                problems.append(f'{function}: holds a store: {line}')
     return problems
 
 
-def inspect_image(flat: bytes, t1v3: bool = False) -> list[str]:
-    """Return what is wrong with the linked flat image: for T1 v3, the register addresses it holds as data."""
-    if not t1v3:
+def inspect_t1r(code: dict[str, list[str]]) -> list[str]:
+    return inspect_read_only(code, T1R_GATE, T1R_RAW, T1R_CALL, T1R_ADDRESS_HOLDERS)
+
+
+def inspect_t1t(code: dict[str, list[str]]) -> list[str]:
+    return inspect_read_only(code, T1T_GATE, T1T_RAW, T1T_CALL, T1T_ADDRESS_HOLDERS)
+
+
+def inspect_image(flat: bytes, *, t1v3: bool = False, t1t: bool = False) -> list[str]:
+    """Return what is wrong with the linked flat image: the register addresses it holds as data, each once."""
+    if not (t1v3 or t1t):
         return []
+    name, pages, listed = ('T1 v3', T1V3_PAGES, T1V3_ADDRESSES) if t1v3 else ('T1-T', T1T_PAGES, T1T_ADDRESSES)
     found = [
         word
         for offset in range(0, len(flat) - 3, 4)
-        if any(low <= (word := int.from_bytes(flat[offset : offset + 4], 'little')) < high for low, high in T1V3_PAGES)
+        if any(low <= (word := int.from_bytes(flat[offset : offset + 4], 'little')) < high for low, high in pages)
     ]
     problems = [
-        f'T1 v3 image holds the address {word:#x}, which is not listed' for word in sorted(set(found) - T1V3_ADDRESSES)
+        f'{name} image holds the address {word:#x}, which is not listed' for word in sorted(set(found) - listed)
     ]
-    problems += [f'T1 v3 image lacks the listed address {word:#x}' for word in sorted(T1V3_ADDRESSES - set(found))]
+    problems += [f'{name} image lacks the listed address {word:#x}' for word in sorted(listed - set(found))]
     problems += [
-        f'T1 v3 image holds {word:#x} {found.count(word)} times' for word in sorted(set(found)) if found.count(word) > 1
+        f'{name} image holds {word:#x} {found.count(word)} times'
+        for word in sorted(set(found))
+        if found.count(word) > 1
     ]
     return problems
 
 
-def inspect_disassembly(
-    disassembly: str, sd: bool = False, t1: bool = False, t1r: bool = False, t1v3: bool = False
+def inspect_disassembly(  # noqa: C901, PLR0913
+    disassembly: str, sd: bool = False, *, t1: bool = False, t1r: bool = False, t1v3: bool = False, t1t: bool = False
 ) -> list[str]:
     code = functions(disassembly)
     writes, special, problems = count_instructions(code, sd)
@@ -315,6 +355,8 @@ def inspect_disassembly(
         problems += inspect_t1r(code)
     if t1v3:
         problems += inspect_t1(code, 'switch_t1v3_')
+    if t1t:
+        problems += inspect_t1t(code)
     return problems
 
 
@@ -334,10 +376,10 @@ def main() -> int:
     parser.add_argument('--t1', action='store_true', help='the T1 image: the I2C1 check is linked')
     parser.add_argument('--t1r', action='store_true', help='the T1-R image: the read-only clock check is linked')
     parser.add_argument('--t1v3', action='store_true', help='the T1 v3 image: the divisor test is linked')
+    parser.add_argument('--t1t', action='store_true', help='the T1-T image: the timing register reads are linked')
     args = parser.parse_args()
-    problems = inspect_map(args.map.read_text(), args.sd, args.t1, args.t1r, args.t1v3) + inspect_disassembly(
-        args.disassembly.read_text(), args.sd, args.t1, args.t1r, args.t1v3
-    )
+    flags = {'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t}
+    problems = inspect_map(args.map.read_text(), **flags) + inspect_disassembly(args.disassembly.read_text(), **flags)
     if args.report:
         args.report.write_text('\n'.join(problems or ['D0 loader inspection passed']) + '\n' + report() + '\n')
     if problems:

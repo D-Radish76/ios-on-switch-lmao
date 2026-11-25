@@ -186,9 +186,10 @@ def link(args: argparse.Namespace) -> None:
             [args.objdump, '-d', '--no-show-raw-insn', args.elf], check=True, capture_output=True, text=True
         ).stdout
         args.disassembly.write_text(disassembly)
-        problems = inspect_map(args.map.read_text(), args.sd, args.t1, args.t1r, args.t1v3)
-        problems += inspect_disassembly(disassembly, args.sd, args.t1, args.t1r, args.t1v3)
-        problems += inspect_image(flat.read_bytes(), args.t1v3)
+        flags = {'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t}
+        problems = inspect_map(args.map.read_text(), **flags)
+        problems += inspect_disassembly(disassembly, **flags)
+        problems += inspect_image(flat.read_bytes(), t1v3=args.t1v3, t1t=args.t1t)
         if problems:
             raise SystemExit('D0 loader inspection failed:\n' + '\n'.join(problems))
         args.report.write_text('D0 loader inspection passed\n' + report() + '\n')
@@ -229,6 +230,7 @@ def main() -> None:
     p.add_argument('--t1', action='store_true', help='the T1 loader: link and inspect the I2C1 check')
     p.add_argument('--t1r', action='store_true', help='the T1-R loader: link and inspect the read-only clock check')
     p.add_argument('--t1v3', action='store_true', help='the T1 v3 loader: link and inspect the divisor test')
+    p.add_argument('--t1t', action='store_true', help='the T1-T loader: link and inspect the timing register reads')
     p.add_argument('objects', nargs='+', type=Path)
     p = step.add_parser('build')
     for name in ('template', 'boards', 'loader', 'dtb', 'bl31', 'bl33', 'out'):

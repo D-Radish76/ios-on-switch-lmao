@@ -73,7 +73,7 @@ So neither expected value can be decided from what was read. The gate reads both
 reads, shows the words and stops with `061A` before the first write. Filling the pins is a reviewed change made after a read-only
 run has shown the words.
 
-#### Proposed read-only diagnostic (not implemented)
+#### Read-only diagnostic (implemented as T1-T, `ERISTA_T1T_DESIGN.md`)
 
 T1-T, an independent entry in the T1-R pattern: no store function linked, the inspection requires a single-load raw read with
 one caller, and the script adds nothing to D0's commands.

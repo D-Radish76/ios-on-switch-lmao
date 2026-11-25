@@ -286,6 +286,25 @@ py_test(
     ],
 )
 
+# T1-T's read-only inspection, a real link through it, what its sources may name and the recorded hashes of every
+# diagnostic image. Both T1 tests read boot/BUILD.bazel, which //boot:all_sources leaves out.
+py_test(
+    name = "diag_t1t_test",
+    size = "medium",
+    srcs = ["diag_t1t_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+    ],
+)
+
 # T1 v3's inspection (an allowlisted write gate), a real link through it, what its sources may name and the recorded
 # hashes of every other diagnostic image.
 py_test(
@@ -294,6 +313,7 @@ py_test(
     srcs = ["diag_t1v3_test.py"],
     data = [
         "//boot:all_sources",
+        "//boot:build_file",
         "//boot:diag/erista-diag-image-hashes.txt",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],

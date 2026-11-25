@@ -41,11 +41,11 @@ LOADER_C = (ROOT / 'boot/loader/loader.c').read_text()
 TEMPLATE = (ROOT / 'boot/diag/loader/u-boot-script.txt').read_text()
 BL33 = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
 DTB = (ROOT / 'bazel/pinned/firmware/erista-sku0.dtb').read_bytes()
-# t1_access.c, t1r_access.c and t1v3_access.c hold the raw accesses of T1, T1-R and T1 v3, with their own tests.
+# The *_access.c files hold the raw accesses of T1, T1-R, T1 v3 and T1-T, each with its own tests.
 SOURCES = sorted(
     p
     for p in (ROOT / 'boot/diag/loader').glob('*.[chS]')
-    if p.name not in ('t1_access.c', 't1r_access.c', 't1v3_access.c')
+    if p.name not in ('t1_access.c', 't1r_access.c', 't1v3_access.c', 't1t_access.c')
 )
 
 COMMANDS = {'setenv', 'test', 'echoe', 'base', 'itest.l', 'fdt', 'cp.b', 'bootm', 'sleep', 'reset', 'true'}

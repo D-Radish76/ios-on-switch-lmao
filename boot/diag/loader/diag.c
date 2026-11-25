@@ -23,8 +23,12 @@
 #ifdef SWITCH_DIAG_T1V3
 #include "t1v3_report.h"
 #endif
+#ifdef SWITCH_DIAG_T1T
+#include "t1t_report.h"
+#endif
 
-#if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3)
+#if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3) || \
+    defined(SWITCH_DIAG_T1T)
 #define SWITCH_DIAG_SINGLE_CHECK 1
 #endif
 
@@ -69,7 +73,19 @@ enum {
     D_T1V3_PLLP_LOAD,
     D_T1V3_ID_STATUS,
 #endif
+#ifdef SWITCH_DIAG_T1T
+    D_T1T_STOP_READS,
+    D_T1T_CLOCKS_L,
+    D_T1T_CLOCKS_H,
+    D_T1T_SOURCE_I2C1_I2C5,
+    D_T1T_PLLP_BASE,
+    D_T1T_I2C1_TIMING,
+    D_T1T_I2C5_TIMING,
+#endif
 };
+#ifdef SWITCH_DIAG_T1T
+_Static_assert(D_T1T_I2C5_TIMING < R_RECORD_WORDS, "T1-T results fit the probe record");
+#endif
 #ifdef SWITCH_DIAG_T1V3
 _Static_assert(D_T1V3_ID_STATUS < R_RECORD_WORDS, "T1 v3 results fit the probe record");
 #endif
@@ -453,6 +469,26 @@ static void report_t1r(void)
 }
 #endif
 
+#ifdef SWITCH_DIAG_T1T
+static void report_t1t(void)
+{
+    struct switch_t1t_result result;
+    switch_t1t_run_on_hardware(&result);
+    struct switch_t1t_line lines[SWITCH_T1T_LINES];
+    switch_t1t_lines(&result, lines);
+    for (unsigned i = 0; i < SWITCH_T1T_LINES; ++i)
+        if (lines[i].text.length)
+            put(LEFT, 9 + i, &lines[i].text, lines[i].bad ? DISPLAY_RED : DISPLAY_WHITE);
+    probe_record[D_T1T_STOP_READS] = (uint64_t)result.stop << 32 | result.reads;
+    probe_record[D_T1T_CLOCKS_L] = (uint64_t)result.rst_devices_l << 32 | result.clk_out_enb_l;
+    probe_record[D_T1T_CLOCKS_H] = (uint64_t)result.rst_devices_h << 32 | result.clk_out_enb_h;
+    probe_record[D_T1T_SOURCE_I2C1_I2C5] = (uint64_t)result.source[0] << 32 | result.source[4];
+    probe_record[D_T1T_PLLP_BASE] = result.pllp_base;
+    probe_record[D_T1T_I2C1_TIMING] = (uint64_t)result.block[0].word[T1T_TIMING_0] << 32 | result.block[0].word[T1T_TIMING_1];
+    probe_record[D_T1T_I2C5_TIMING] = (uint64_t)result.block[1].word[T1T_TIMING_0] << 32 | result.block[1].word[T1T_TIMING_1];
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1V3
 static void report_t1v3(void)
 {
@@ -503,6 +539,8 @@ void switch_diag_after_transition(void)
     put_text(0, "LOAD DIAG T1. I2C1 AND CAR READS. TMP451 POINTER WRITES ONLY. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1V3)
     put_text(0, "LOAD DIAG T1V3. I2C1 DIVISOR WRITE AND ONE TMP451 ID READ. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_T1T)
+    put_text(0, "LOAD DIAG T1T. CAR AND I2C1/I2C5 REGISTER READS ONLY. NO I2C TRANSFER. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1R)
     put_text(0, "LOAD DIAG T1R. CAR AND I2C1 READS ONLY. NO I2C TRANSFER. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_SD)
@@ -530,6 +568,11 @@ void switch_diag_after_transition(void)
             report_t1v3();
         else
             put_text(9, "NOT AN ERISTA. NO T1V3 REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_T1T)
+        if (known && board->t210b01 == 0)
+            report_t1t();
+        else
+            put_text(9, "NOT AN ERISTA. NO T1T REGISTER TOUCHED", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_T1R)
         if (known && board->t210b01 == 0)
             report_t1r();
@@ -554,6 +597,8 @@ void switch_diag_after_transition(void)
     put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1V3)
     put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_T1T)
+    put_text(26, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1R)
     put_text(21, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #else

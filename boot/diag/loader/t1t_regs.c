@@ -1,0 +1,43 @@
+#include "t1t.h"
+
+#define CAR  0x60006000u
+#define I2C1 0x7000c000u
+#define I2C5 0x7000d000u
+
+static const uint32_t table[T1T_REG_COUNT] = {
+    [T1T_CAR_RST_DEVICES_L] = CAR + 0x004,
+    [T1T_CAR_RST_DEVICES_H] = CAR + 0x008,
+    [T1T_CAR_CLK_OUT_ENB_L] = CAR + 0x010,
+    [T1T_CAR_CLK_OUT_ENB_H] = CAR + 0x014,
+    [T1T_CAR_SOURCE_I2C1] = CAR + 0x124,
+    [T1T_CAR_SOURCE_I2C2] = CAR + 0x198,
+    [T1T_CAR_SOURCE_I2C3] = CAR + 0x1b8,
+    [T1T_CAR_SOURCE_I2C4] = CAR + 0x3c4,
+    [T1T_CAR_SOURCE_I2C5] = CAR + 0x128,
+    [T1T_CAR_SOURCE_I2C6] = CAR + 0x65c,
+    [T1T_CAR_PLLP_BASE] = CAR + 0x0a0,
+    [SWITCH_T1T_I2C_REG(0, T1T_CNFG)] = I2C1 + 0x00,
+    [SWITCH_T1T_I2C_REG(0, T1T_STATUS)] = I2C1 + 0x1c,
+    [SWITCH_T1T_I2C_REG(0, T1T_INT_STATUS)] = I2C1 + 0x68,
+    [SWITCH_T1T_I2C_REG(0, T1T_CLK_DIVISOR)] = I2C1 + 0x6c,
+    [SWITCH_T1T_I2C_REG(0, T1T_CONFIG_LOAD)] = I2C1 + 0x8c,
+    [SWITCH_T1T_I2C_REG(0, T1T_TIMING_0)] = I2C1 + 0x94,
+    [SWITCH_T1T_I2C_REG(0, T1T_TIMING_1)] = I2C1 + 0x98,
+    [SWITCH_T1T_I2C_REG(1, T1T_CNFG)] = I2C5 + 0x00,
+    [SWITCH_T1T_I2C_REG(1, T1T_STATUS)] = I2C5 + 0x1c,
+    [SWITCH_T1T_I2C_REG(1, T1T_INT_STATUS)] = I2C5 + 0x68,
+    [SWITCH_T1T_I2C_REG(1, T1T_CLK_DIVISOR)] = I2C5 + 0x6c,
+    [SWITCH_T1T_I2C_REG(1, T1T_CONFIG_LOAD)] = I2C5 + 0x8c,
+    [SWITCH_T1T_I2C_REG(1, T1T_TIMING_0)] = I2C5 + 0x94,
+    [SWITCH_T1T_I2C_REG(1, T1T_TIMING_1)] = I2C5 + 0x98,
+};
+
+uint32_t switch_t1t_address(unsigned reg)
+{
+    return reg < T1T_REG_COUNT ? table[reg] : 0;
+}
+
+int switch_t1t_may_read(unsigned reg)
+{
+    return reg < T1T_REG_COUNT;
+}
