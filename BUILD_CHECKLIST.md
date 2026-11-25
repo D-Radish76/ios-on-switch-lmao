@@ -41,6 +41,34 @@ Linux has no Bazel execution platform, no GoogleTest and no `lz4`. The results b
 The stand-in is a small header that mimics `TEST`, `EXPECT_*` and `ASSERT_*`. A pass with it says the logic is right. It
 does not say the test builds with the real GoogleTest, so the Mac run below is still needed.
 
+## Fetching what Bazel times out on
+
+On the first `bazel build //:boot --config=ios17` two downloads failed on the Mac: the LLVM 23.1.4 archive (`Read timed
+out`, which Bazel 9.3.1 does not retry, bazelbuild/bazel#32132) and the IPSW's `os` member (`Multiple entries with same key`:
+the retry after a dropped connection adds a second `Range` header to ours). Fetch both with a resumable `curl`, then
+store them in the repository cache under their pinned sha256. Bazel finds them there and does not download. The
+checks stay: nothing is stored unless its sha256 matches. Run from the repository root.
+
+```sh
+# IPSW 21H461, about 6.8 GB. All eight pinned members are cut out of it, 8 MiB at a time.
+curl -L -C - --retry 30 --retry-delay 5 --retry-all-errors -o ~/Downloads/21H461.ipsw \
+  "$(python3 -c "ns={}; exec(open('ipsw/pins.bzl').read(), ns); print(ns['IPSWS']['21H461']['url'])")"
+python3 tools/seed_cache/seed_cache.py ipsw --pins ipsw/pins.bzl --kind 21H461 --ipsw ~/Downloads/21H461.ipsw
+
+# LLVM 23.1.4. The url and sha256 are LLVM_RELEASE in bazel/llvm/llvm.bzl.
+curl -L -C - --retry 30 --retry-delay 5 --retry-all-errors -o ~/Downloads/llvm.tar.xz \
+  https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/LLVM-23.1.4-macOS-ARM64.tar.xz
+python3 tools/seed_cache/seed_cache.py file \
+  --sha256 5d3179db39adeca5b17a34d82708fe976bc60e055b05fe557878fb3fb64d39ef ~/Downloads/llvm.tar.xz
+```
+
+Both print `stored` per entry and exit 1 on a `MISMATCH`. Do the same for `24B119` before an ios27 build. The cache is
+`--repository_cache` in `.bazelrc`; pass `--cache DIR` to `seed_cache.py` if you changed it.
+
+Done on the Mac for 21H461 and LLVM: sha256 matched, entries stored, the build then ran past both. The tool in this
+repository is the same procedure with its own test (`//tools/seed_cache:test_seed_cache`); the version run on the Mac was
+a hand written one with the same 8 MiB steps, so run this one once and check it prints `stored` eight times.
+
 ## Before you start
 
 - Bazelisk, not a plain Bazel: `.bazelversion` pins 9.3.1.
@@ -67,10 +95,10 @@ failed test its `test.log` under `bazel-testlogs`. A pass needs no log.
 2. The tests this work added, with the real GoogleTest:
 
    ```sh
-   bazel test //kits/SwitchBoard/test:all //boot/loader/test:all //tools/package/test:all //tools/mc_carveout:all
+   bazel test //kits/SwitchBoard/test:all //boot/loader/test:all //tools/package/test:all //tools/mc_carveout:all //tools/seed_cache:all
    ```
 
-   Expect `switch_board_test` (21), `board_args_test` (3), `boot_script_board_test` (11), `native_oled_adt_board_test` (4), `diag_boot_test` (12) and `test_dump` (7) to pass, and
+   Expect `switch_board_test` (21), `board_args_test` (3), `boot_script_board_test` (11), `native_oled_adt_board_test` (4), `diag_boot_test` (12), `test_seed_cache` (4) and `test_dump` (7) to pass, and
    `bl33_stage_test` to run for the first time (needs `lz4` on the Mac). If `boot_script_board_test` cannot find
    `native_oled_adt`, the new dependency in `tools/package/test/BUILD.bazel` is wrong.
 
@@ -88,6 +116,13 @@ failed test its `test.log` under `bazel-testlogs`. A pass needs no log.
    `drivers/NativeKeyStoreEvents/AKSDeviceKey.cpp` (new header dependencies `kits/SwitchBoard` and `kits/SwitchCAR`), and
    `osfmk/arm64/cpu.c` in both trees (`<switch/board.h>`, built with XNU's own warning flags). A `static const` table in a
    header can trip `-Wunused-const-variable` in XNU's flags. Release must show no new diagnostics.
+
+   First Mac run of step 3 (commit `c790f50e4`) failed in three places, now changed: `SwitchPMIC.cpp` could not find
+   `kits/SwitchBoard/SwitchBoardKernel.h` (`kits/SwitchBoard` was missing from its `hdr_deps` in
+   `drivers/SwitchPower/BUILD.bazel`), and the bootstrap's `ellekit` and `Sileo` builds (`BootstrapSources`) were refused
+   because the rule marks them no-sandbox and `.bazelrc` allowed only `darwin-sandbox`. Only that mnemonic now has
+   `--strategy=BootstrapSources=remote,local`. Re-run step 3 and report the next error. The bootstrap builds now run
+   outside the sandbox, so a failure there is no longer a sandbox message.
 
 4. The whole suite:
 
