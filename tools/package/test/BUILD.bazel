@@ -64,6 +64,7 @@ py_test(
     data = [
         "//bazel/pinned:firmware/bl31.bin",
         "//bazel/pinned:firmware/bl33.bin",
+        "//boot:diag/erista-first-run.log",
         "//boot:diag/u-boot-diag-script.txt",
         "//boot:loader/loader.c",
         "//kits/SwitchBoard:SwitchBoard.h",

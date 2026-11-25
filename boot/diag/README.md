@@ -137,7 +137,7 @@ compared with it):
 4. `launch_l4t` (`bootloader/l4t/l4t.c:940-1170`) copies every key of the ini section into U-Boot's environment block (at
    `0xA9FC0000`, flagged by the magic `0xA9FBFFFC`), plus `autoboot`, `autoboot_list` and `loader_rev`. It then needs, or
    stops with a red message: Minerva (`Minerva missing`), `switchroot/ios-diag/bl31.bin` and `bl33.bin`, and on the Erista
-   `bootloader/sys/l4t/sc7entry.bin`, `bpmpfw.bin` and `sc7exit.bin`. It trains DRAM to 800 MHz, writes no voltage
+   `bootloader/sys/l4t/sc7entry.bin`, `bpmpfw.bin` and `sc7exit.bin`. It trains DRAM to 800 MHz and returns it to 204 MHz in `hw_deinit`, writes no voltage
    (no `ram_oc` keys), sets carveouts, runs `hw_deinit(true)` (display kept, no extra deinit) and starts BPMP-FW, which
    starts BL31, which starts U-Boot at `0xAA000000`.
 5. U-Boot's `bootcmd` runs `distro_bootcmd` on `mmc1` only, imports the environment above, and sources the script from its

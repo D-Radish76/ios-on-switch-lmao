@@ -45,14 +45,14 @@ T210B01 specific handling in the BL31 path (upstream TF-A, and `plat_setup.c` of
 What hekate does differently per chip before it starts BL31:
 
 - Erista needs `bootloader/sys/l4t/` to hold `sc7entry`, `bpmpfw.bin` and `sc7exit`, and needs Minerva. Without Minerva hekate stops with "Minerva missing". Mariko loads `bpmpfw_b01.bin` and `mtc_tbl_b01.bin`. The existing Switchroot Linux install should provide the Erista set; this is not checked on the card.
-- DRAM: Erista trains the MTC table with Minerva, sets 800 MHz and hands the table to BL31 (`emc_table_base`). Mariko puts the tables into the BPMP-FW DTB and starts at 1866 or 2133 MHz through ARC. DRAM voltage is written only with `ram_oc` keys, which `ios.ini` does not set.
+- DRAM: Erista trains the MTC table with Minerva, trains 800 MHz, then hekate's `hw_deinit` runs `minerva_deinit` and DRAM is back at 204 MHz when BL31 and U-Boot start. The table goes to BL31 (`emc_table_base`). Mariko puts the tables into the BPMP-FW DTB and starts at 1866 or 2133 MHz through ARC. DRAM voltage is written only with `ram_oc` keys, which `ios.ini` does not set.
 - Erista patches the SC7-Exit firmware with the console's RSA modulus read from eMMC (read only). Mariko uses `pkg1_warmboot_config`.
 - Carveouts use one layout. Only the LP0 scratch registers that save them differ.
 - Both chips get `PMC_SCRATCH201 = BIT(1)`, which marks MAX77621 or MAX77812 as the CPU PMIC.
 
 Where this repo assumes T210B01 (all fail safe or are untested on Erista):
 
-- `emc.c` raises EMC only after a BPMP ping and a table match, so with no BPMP it should leave DRAM at 800 MHz. It checks VDD_CORE against the T210B01 table, which does not apply to Erista.
+- `emc.c` raises EMC only after a BPMP ping and a table match, so with no BPMP it should leave DRAM at 204 MHz, where hekate leaves it. It checks VDD_CORE against the T210B01 table, which does not apply to Erista.
 - `TegraBPMP.c` returns `-ENODEV` without a mailbox.
 - `TegraDFLL` returns `-ENODEV` unless the chip is T210B01 A01, before any clock or rail change. The CPU then stays at whatever clock BL31 leaves, which costs speed but no safety.
 - `SwitchThermal.cpp` and `TegraGM20B/platform.c` probe MAX77812 at I2C5 0x31 or 0x33. Erista has MAX77621 at 0x1B, so those reads should NACK and stop before any write. Not run.
@@ -105,3 +105,5 @@ Mac, commit fb0b61ef6: `//tools/package/test:all` 7 of 7 pass, diagnostic packag
 Mac, commit 24136381: `//tools/package/test:all` 7 of 7 pass, `diag_boot_test` passes. Card hashes of `libsys_minerva.bso`, `libsys_lp0.bso`, `bpmpfw.bin`, `sc7entry.bin` and `sc7exit.bin` equal those of the hekate 6.5.5 release zip. `strings | grep -iE 'therm|temp|tmon|throt|fan'` on the card's `bpmpfw.bin` printed nothing. The wait before reset is now 15 s, set with `--dwell` (`boot/diag/README.md`, "Is the wait needed"). Erista stays `boot 0`; no iPadOS boot.
 
 First Erista diagnostic run (commit c6931169, hekate 6.5.5, Nyx `More configs`): `t210b01=0 sku=0`, `status=READY console=OK`, `DONE: all 27 registers read`, 15 s wait, `reset` landed in hekate's main menu on its own, no freeze or loop, about 21 s on video. This confirms `reset` goes to hekate on this console with this BL31. Register values are not in the repository yet; comparing them with `native_gate` is next. Temperature protection is still unverified. Erista stays `boot 0`.
+
+First run compare, Erista: all 25 `native_gate` MC registers equal the OLED values (25 same, 0 DIFFERENT, 0 NOT READ). HIDREV `0x00022117` (T210, major 1), FUSE_RESERVED_ODM4 `0x00000204`. Saved as `boot/diag/erista-first-run.log`, with the 25 rows written from the table (the run reported them equal), not typed from the video. `native_gate` writes nothing, so no MC write is needed. Whether the loader sees the same at its own moment, every gate classified, the loader diagnostic design and the order of work to the first XNU start: `ERISTA_LOADER_DIAG.md`. Erista stays `boot 0`.

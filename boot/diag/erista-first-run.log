@@ -1,0 +1,31 @@
+# First diagnostic run on a physical Erista (t210b01=0, sku=0), commit c6931169, hekate 6.5.5.
+# The two identity values are as reported. The 25 memory controller rows are the ones the run reported as equal to
+# native_gate's table (25 same, 0 DIFFERENT, 0 NOT READ): written here from that table, not typed from the video. If the
+# video's own lines are typed in later, replace this file with them.
+70000804: 00022117
+7000f9d8: 00000204
+70019050: 00001000
+70019670: 00000000
+70019674: 00000000
+700199d4: 00000000
+700199a0: fff00000
+700199a4: 00000000
+700199a8: 00000000
+70019648: 00000000
+7001964c: 00000000
+70019978: 00000000
+70019c0c: ffe00000
+70019c10: 00000000
+70019c14: 00000008
+70019c5c: ffd00000
+70019c60: 00000000
+70019c64: 00000002
+70019cac: ffd40000
+70019cb0: 00000000
+70019cb4: 00000006
+70019cfc: 00000000
+70019d00: 00000000
+70019d04: 00000000
+70019d4c: 00000000
+70019d50: 00000000
+70019d54: 00000000

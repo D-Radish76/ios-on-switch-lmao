@@ -52,9 +52,8 @@ how far Linux's view differs from the loader's there.
 
 What the dump cannot do: Linux reads the registers late in the boot, the loader reads them early, and nothing guarantees
 the carveouts are the same at both moments. Several equal Linux dumps do not turn the Linux values into the loader's.
-`native_gate` gets Erista values only from the loader's own reading, which needs `boot 1` and a reviewed boot test of this
-project, so that step stays on hold with the rest of the console work. Until then the dump only shows where the Erista's
-carveouts probably differ from the OLED's.
+Update: U-Boot's script read all 25 on an Erista and they equal the OLED's (`ERISTA_RESEARCH.md`, section 13). The loader's own
+moment is still unread, and a read only loader diagnostic can read it without `boot 1` (`ERISTA_LOADER_DIAG.md`), so the dump is not needed.
 
 Register names for the 25 addresses are not mapped yet (Linux `tegra210` MC and hekate's
 `mc.h` are the sources).
@@ -184,10 +183,11 @@ Each feature bit needs its own review for the HAC-001 before it is set.
 
 ## Order of work
 
+Order to the first XNU start, with the loader diagnostic first: `ERISTA_LOADER_DIAG.md`.
+
 Without the console:
 
-1. Take the Linux dump (`tools/mc_carveout`) as a reference. The `native_gate` values wait for the loader's own reading.
-2. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
+1. LCD `TegraPanel` and backlight; then lift the `sc7Display()` panel gate for the LCD only.
 
 Needs the console, held back:
 

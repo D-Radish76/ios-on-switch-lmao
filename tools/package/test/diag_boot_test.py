@@ -347,6 +347,27 @@ class DiagPackage(unittest.TestCase):
             self.assertEqual(Path(out, 'switchroot/ios-diag/bl31.bin').read_bytes(), BL31.read_bytes())
 
 
+class EristaFirstRun(unittest.TestCase):
+    log = Path('boot/diag/erista-first-run.log').read_text()
+
+    def test_every_register_matches_the_oled_table(self):
+        lines = compare(self.log, LOADER)
+        self.assertEqual(len(lines), 25)
+        self.assertTrue(all(line.endswith('same') for line in lines), lines)
+
+    def test_it_has_the_two_identity_registers_of_an_erista(self):
+        self.assertIn('70000804: 00022117', self.log)
+        self.assertIn('7000f9d8: 00000204', self.log)
+        hidrev = 0x00022117
+        self.assertEqual((hidrev >> 8) & 0xFF, 0x21)  # Tegra210
+        self.assertEqual((hidrev >> 4) & 0xF, 1)  # not a T210B01
+        self.assertEqual((0x204 >> 16) & 0xF, 0)  # ODM4 type bits: ignored on a T210
+
+    def test_it_has_exactly_the_registers_the_script_reads(self):
+        found = re.findall(r'^([0-9a-f]{8}):', self.log, re.MULTILINE)
+        self.assertEqual([int(a, 16) for a in found], read_addresses(LOADER))
+
+
 class Compare(unittest.TestCase):
     def test_what_was_read_against_the_oled_values(self):
         lines = compare(LOG, LOADER)

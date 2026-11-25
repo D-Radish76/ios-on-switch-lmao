@@ -61,6 +61,16 @@ TEST(SwitchBoard, TheEristaIsKnownButDoesNotBootAndHasNoFeatures)
     EXPECT_EQ(board->features, 0u);
 }
 
+TEST(SwitchBoard, TheRegistersReadOnAnEristaNameTheEristaRow)
+{
+    // HIDREV and FUSE_RESERVED_ODM4 as the first diagnostic run read them on a physical Erista (boot/diag/erista-first-run.log).
+    const switch_board *board = identify(0x00022117, 0x00000204);
+    ASSERT_STREQ(board->name, "erista");
+    EXPECT_EQ(board->t210b01, 0);
+    EXPECT_EQ(board->sku, 0);
+    EXPECT_EQ(board->boot, 0);
+}
+
 TEST(SwitchBoard, OtherSkusAndChipsAreUnknown)
 {
     for (unsigned type : {0u, 1u, 2u, 3u, 5u, 15u}) {

@@ -33,8 +33,9 @@ passes). The diagnostic package built there: `bl31.bin` 45 KB, `bl33.bin` 455 KB
 
 First diagnostic run on an Erista, commit `c6931169` (package built on the Mac, card in an experiment 32 GB FAT32 SD, hekate 6.5.5,
 Nyx `More configs`): `t210b01=0 sku=0`, `status=READY console=OK`, `DONE: all 27 registers read`, a 15 second wait, `reset`, and
-hekate's main menu came back by itself. About 21 seconds on video, no freeze, no loop. The register values still have to be typed
-in from the video and compared (`diag_boot.py compare`). Nothing else was started: `boot` stays 0 and iPadOS did not boot.
+hekate's main menu came back by itself. About 21 seconds on video, no freeze, no loop. `diag_boot.py compare` on the Erista's values: 25 same, 0 DIFFERENT, 0 NOT READ, kept as `boot/diag/erista-first-run.log` (rows written
+from the table, see its header) and checked by `diag_boot_test`; a `switch_board_test` case takes the measured HIDREV and ODM4 to the `erista` row
+(run here with the stand-in gtest only: run `bazel test //kits/SwitchBoard/test:all //tools/package/test:all`). Nothing else was started: `boot` stays 0 and iPadOS did not boot.
 
 Not run yet: the ios27 and release builds, the step 1 style checks, `//tools/mc_carveout:all`, `bazel test //...`, and
 the emulator checks. The per target counts were not part of the report.

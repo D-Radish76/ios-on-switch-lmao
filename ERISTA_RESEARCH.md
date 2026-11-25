@@ -156,7 +156,7 @@ not in the workspace, only its binary, so its init is described by what we obser
 
 | Stage | Writes | Evidence | For the Erista |
 | --- | --- | --- | --- |
-| hekate, before launch | display and panel init, SD at SDR104 (it reads bl33 that way), minerva trains the DRAM table and sets 800 MHz, PMC scratch (panel id, BL31 params), BL31 and BPMP firmware setup | `l4t.c:735-805`, `:1105-1146`, `boot/README.md` | the same as every Switchroot Linux boot of that console. Inferred: that boot works on yours |
+| hekate, before launch | display and panel init, SD at SDR104 (it reads bl33 that way), minerva trains the DRAM table (800 MHz is only set during `launch_l4t`: `hw_deinit` returns DRAM to 204 MHz before BL31, `bdk/mem/minerva.c:152`), PMC scratch (panel id, BL31 params), BL31 and BPMP firmware setup | `l4t.c:735-805`, `:1105-1146`, `boot/README.md` | the same as every Switchroot Linux boot of that console. Inferred: that boot works on yours |
 | hekate DRAM voltage | `max7762x_regulator_set_voltage` only if `ram_oc_vdd2` or `ram_oc_vddq` is set | `l4t.c:182-187`, `:782-785` | neither ini sets them, and a test checks the diagnostic's ini has no `ram_oc` key |
 | ATF (bl31.bin) | secure monitor setup | pinned file, same hash as the Erista's own (earlier BL31 comparison) | unchanged |
 | U-Boot init | its own SD, clock and console setup | binary only | not audited: no source. It is the Switchroot U-Boot every Switchroot boot uses |
@@ -251,3 +251,10 @@ for the Erista are still unwritten and `boot` is still 0.
 Next: type the 27 lines from the video into a text file and run `diag_boot.py compare LOG --loader-src boot/loader/loader.c`.
 A `DIFFERENT` row is a finding, not a fault: the OLED values are the T210B01 ones. No memory or voltage setting changes
 until each row has an explanation from a source.
+
+## 13. MC comparison
+
+All 25 registers `native_gate` compares were equal to its OLED values on the Erista (`boot/diag/erista-first-run.log`,
+checked by `diag_boot_test.py`). They were read at U-Boot's script, not the loader's. Why the two moments are expected to
+agree, what each loader gate means for an Erista and the loader diagnostic that closes the gap: `ERISTA_LOADER_DIAG.md`.
+Linux's dump (`tools/mc_carveout`) is no longer needed as a stand-in.
