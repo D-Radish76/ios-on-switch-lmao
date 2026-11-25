@@ -229,3 +229,12 @@ The memory layout is not what blocks it: the loader's span `0xA0000000..0xA00151
 framebuffer writes and the exit work on an Erista. The risks that remain are the ones in the run table of
 `boot/diag/loader/RUN_CHECKLIST.md`. Thermal exposure is the loader's few seconds plus the 15 s wait with the fan off,
 about the same as the two earlier diagnostic runs, attended. The run waits for review.
+
+## D0 result on the Erista
+
+First run (2026-11-25): the loader reached EL1, read 25 MC registers equal to the OLED's values, read the 6 GIC words,
+walked the DTB (172032 bytes, 3 reservations, 2 banks, no range of the loader in them: `ALL RANGES FREE`) and returned to
+hekate through the reset path. As reported; values pending a transcript. Open: whether the U-Boot-time and loader-time MC
+rows match (they are equal to the OLED's in both, so equal to each other if both runs are as reported), the GIC words
+against the normal loader's expectations, and the three reservations. A pass here is not a proof of thermal safety or of
+the memory outside the listed ranges.

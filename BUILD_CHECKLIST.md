@@ -221,3 +221,12 @@ its own inspection, and the SHA-256 values of the package files match those revi
 changed since `e2c03a58`; the later change to `diag_loader.py` (`check_destination` against the DTB's reservations) can
 only refuse a build. Mac checks still owed: `diag_boot.py adopt`, `bazel test //...`, the ios27 and release builds and
 the emulator checks. Run steps for the hardware run: `boot/diag/loader/RUN_CHECKLIST.md`.
+
+## D0 on the Erista (2026-11-25)
+
+Run once, attended, from the reviewed card (hashes matched). Reported: `ERISTA`, `T210B01=0`, `SKU=0`, `BOOT=0`; EL1 state PASS;
+`CNTFRQ=19200000`; MC registers 25 read, 0 different from the OLED; GIC 6 words read; FDT total 172032, reservations 3,
+walk code 0, `ALL RANGES FREE`, nodes 3, banks 2; hekate came back by itself. Not yet recorded: the register values, the
+GIC words and the reservations, which need the photograph or a typed transcript (`boot/diag/erista-d0-run.log`, to be
+added). Not shown by this run: thermal protection, memory outside the FDT's listed ranges. Next: review of the D1 design
+only. D1, D2 and XNU are not started.
