@@ -30,6 +30,12 @@ static int counter_advances(void)
 
 void switch_diag_exit(switch_diag_say_fn say)
 {
+    uint64_t current_el;
+    __asm__ volatile("mrs %0, CurrentEL" : "=r"(current_el));
+    if (current_el != 4) {
+        say("EXIT CALLED OUTSIDE EL1. NO TIMER OR RESET. HOLD THE POWER BUTTON", 1);
+        probe_halt();
+    }
     const uint64_t ticks = switch_diag_wait_ticks(frequency(), SWITCH_DIAG_WAIT_SECONDS);
     if (!ticks || !counter_advances()) {
         say("COUNTER FREQUENCY OR COUNT NOT AS EXPECTED. NO RESET. HOLD THE POWER BUTTON", 1);

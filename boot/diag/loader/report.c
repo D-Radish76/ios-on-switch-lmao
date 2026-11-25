@@ -13,6 +13,13 @@ void switch_diag_line_add(struct switch_diag_line *line, const char *text)
         put(line, *text);
 }
 
+void switch_diag_line_clip(struct switch_diag_line *line, unsigned length)
+{
+    if (line->length > length)
+        line->length = length;
+    line->text[line->length] = 0;
+}
+
 void switch_diag_line_start(struct switch_diag_line *line, const char *text)
 {
     line->length = 0;

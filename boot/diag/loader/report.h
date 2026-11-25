@@ -11,6 +11,8 @@ struct switch_diag_line {
 };
 
 void switch_diag_line_start(struct switch_diag_line *line, const char *text);
+/* Cut the line to at most length characters. */
+void switch_diag_line_clip(struct switch_diag_line *line, unsigned length);
 void switch_diag_line_add(struct switch_diag_line *line, const char *text);
 void switch_diag_line_hex(struct switch_diag_line *line, uint64_t value, unsigned digits);
 void switch_diag_line_decimal(struct switch_diag_line *line, uint64_t value);

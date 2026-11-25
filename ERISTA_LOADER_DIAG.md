@@ -77,10 +77,12 @@ MC registers against the OLED values (`SAME` or `DIFFERENT` with the expected va
 memory walk over the loader image, SD reference page, staged window capacity, kernel destination and boot-args page. Then 15 s
 on the CPU counter and PSCI `SYSTEM_RESET`.
 
-Preconditions are checked before the reads that depend on them: FDT pointer, header and reservation block, then the framebuffer
-(inside DRAM, clear of the image, covered by an FDT reservation) before anything is drawn; EL state and board before the MC and GIC
-reads. A failed FDT or framebuffer check draws nothing, so there is nothing to read; U-Boot's screen is gone by then. The record
-words 48 to 54 in `probe_record` keep the codes for a debugger.
+Preconditions are checked before the work that depends on them. FDT pointer, header, reservation block and framebuffer (inside
+DRAM, clear of the image, covered by an FDT reservation) are checked at EL2, before the EL change: if one fails the loader parks
+there, draws nothing and never changes EL; U-Boot's own progress lines are then the only thing on screen. After the EL change, a
+failed EL1 state skips every device read, HIDREV and ODM4 included; an unknown board skips the MC and GIC reads; a failed FDT check
+skips the memory walk. The record words 48 to 54 in `probe_record` keep the codes for a debugger. `bootm loados` writes
+`0xA0000000` before any loader code runs; only the build can check that span (`check_destination`), see the README.
 
 Hardware writes: framebuffer RAM, the loader's own RAM, and the CPU system registers listed in `boot/diag/loader/README.md`.
 None to a peripheral and none to the MC block.

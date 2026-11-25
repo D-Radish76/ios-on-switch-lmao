@@ -23,29 +23,61 @@ U-Boot runs the normal script's checks up to `bootm prep`, then `bootm go` enter
 
 1. Validates the FDT pointer (the page the script copied the DTB to, inside DRAM, clear of the loader's image), the FDT
    header and the reservation block, and then the framebuffer: whole inside DRAM, clear of the image and covered by one
-   FDT reservation. Without all of that it draws nothing and reads nothing else.
-2. Checks the EL2 entry state, makes the normal loader's EL2 to EL1 change, and checks the EL1 state.
-3. Reads HIDREV and FUSE_RESERVED_ODM4 and names the board row. An unknown chip skips the register reads below.
+   FDT reservation. If any of that fails, or the EL2 entry state is wrong, it stops at EL2 before changing anything: no
+   EL change, nothing drawn, no timer, no reset, parked in `wfe`. The screen then shows only U-Boot's progress lines, so a
+   screen that ends at `HANDOFF TO THE LOADER` and never clears means this stop. Hold the power button.
+2. Makes the normal loader's EL2 to EL1 change, clears the screen and checks the EL1 state.
+3. Only when the EL1 state passes: reads HIDREV and FUSE_RESERVED_ODM4 and names the board row. An unknown chip skips
+   the register reads below. A failed EL1 state reads no device register at all and says so.
 4. Reads the 25 memory controller registers and the six GIC words `native_gate` reads, and prints each against the OLED
    value. All reads go through `switch_diag_read32`, one load. The memory controller is never written.
 5. Reads ISAR0, the entry stack pointer and runs the normal loader's FDT memory walk over the loader image, the SD
    reference page, the staged-window capacity, the kernel destination and the boot-args page.
 6. Waits 15 s and calls PSCI `SYSTEM_RESET`.
 
-Skips: a failed FDT or framebuffer check draws nothing and reads nothing; a failed EL1 state or an unknown board skips the
-MC and GIC reads; a failed FDT check skips the memory walk.
+U-Boot shows its progress on the screen (`BOARD OK`, `FRAMEBUFFER OK`, `DTB COPIED AND FRAMEBUFFER RESERVED`, `LOADER
+WRITTEN TO 0xA0000000`, `HANDOFF`). The normal script sends output to the serial console to keep the screen dark until
+the loader draws; here the loader clears the screen anyway, and the first diagnostic run showed vidconsole works on the
+Erista.
+
+## Where the loader lands
+
+`bootm loados` writes the loader to `0xA0000000` before any loader code runs, so only U-Boot's script and the build can
+check the destination. U-Boot's hush cannot list the live FDT's reservations. What is checked: at build time
+(`check_destination`) the loader's span is inside DRAM and clear of `bl33.bin`, the DTB copy, the framebuffer, the
+boot-args page and the SD reference page, and ends before `0xA001EF00`. What is not: the Erista's own reservations.
+The evidence there is that all 25 MC carveout registers read equal to the OLED's, hekate places `bl33.bin` the same way,
+and the loader's FDT walk over this span reports an overlap on the screen afterwards, too late to prevent a write.
 
 ## The exit
 
 The wait is the CPU counter (`CNTPCT_EL0`), not a peripheral timer. The core sleeps in `wfe`; the generic timer's event
 stream wakes it every 3.4 ms to compare against the deadline.
 
-Before waiting, `CNTFRQ_EL0` must be exactly 19200000 and the counter must advance within 1000 reads. If not, the screen
-says so and the core parks in `wfe` with all exceptions masked. Nothing resets, because the wait cannot be bounded. The
-same park follows an EL2 entry check that fails, and a reset call that returns.
+| Where | What runs |
+| --- | --- |
+| Entry check or FDT or framebuffer check fails at EL2 | park; no timer, no `smc`, no register but the masks |
+| Exception at EL2 | report on screen when drawable, then park |
+| Exception at EL1 | report, then the 15 s wait and reset |
+| `switch_diag_exit` called at any EL but EL1 | says so and parks (checked in the code) |
+| `CNTFRQ_EL0` not 19200000, or the count does not advance in 1000 reads | says so and parks; nothing can bound the wait |
+| PSCI call returns | prints the return value and parks |
 
-Unverified on hardware: PSCI `SYSTEM_RESET` from the loader at EL1 (U-Boot made the call from EL2 and it worked), and the
-event stream waking `wfe`. If either fails the screen stays; hold the power button.
+A second exception while handling one parks at once (the entry's guard).
+
+Limits of the wait, not removable from here: the loop is `wfe` until `CNTPCT_EL0` passes the deadline. If the counter stops
+after the check, or the event stream never fires on this core, `wfe` does not return, the reset never comes and the screen
+stays. Any other event (`sev` from another core) only wakes the loop to compare again. In both cases hold the power button.
+The core is idle, not spinning, so this is the quiet failure. Unverified on hardware: PSCI `SYSTEM_RESET` from the
+loader at EL1 (U-Boot made the call from EL2 and it worked), and the event stream waking `wfe`.
+
+## Screen
+
+1280 x 720 as `display_text` draws it, 12 px per character, rows 20 px apart from y = 12. General lines are in the left
+column (16 to 720 px, 58 characters), the registers in the right (720 px, rows 0 to 30), status lines run full width from
+row 31 to 34. `put` clips every line to its column, drops rows past 34, and static asserts check the last row ends
+inside 720 px and the longest register line inside 1280 px. `display_pixel` also refuses any pixel outside the screen,
+and the framebuffer span was validated before the first store.
 
 ## CPU state it changes
 

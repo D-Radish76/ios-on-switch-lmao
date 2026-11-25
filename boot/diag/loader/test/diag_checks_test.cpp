@@ -200,6 +200,19 @@ TEST(DiagReport, ALineNeverPassesWhatDisplayTextDraws)
     EXPECT_EQ(SWITCH_DIAG_LINE_MAX, std::strlen(line.text));
 }
 
+TEST(DiagReport, AClippedLineStopsWhereTheColumnEnds)
+{
+    switch_diag_line line;
+    switch_diag_line_start(&line, "ABCDEFGH");
+    switch_diag_line_clip(&line, 3);
+    EXPECT_STREQ("ABC", line.text);
+    EXPECT_EQ(3u, line.length);
+    switch_diag_line_clip(&line, 10);
+    EXPECT_STREQ("ABC", line.text);
+    switch_diag_line_clip(&line, 0);
+    EXPECT_STREQ("", line.text);
+}
+
 TEST(DiagTables, TwentyFiveRegistersAndSixGicWords)
 {
     EXPECT_EQ(25u, SWITCH_DIAG_MC_COUNT);

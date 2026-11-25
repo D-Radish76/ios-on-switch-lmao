@@ -22,7 +22,7 @@ from bl33 import bl33_patch
 from boot_script import boards, script_image
 from diag_boot import DWELL, STEP, diag_env_edits, dwell_steps
 from diag_loader_inspect import inspect_disassembly, inspect_map, report
-from loader_abi import BL33_BASE, DTB_SLOT, LOADER_SLOT, SCRIPT_SLOT, STAGE_HEADER
+from loader_abi import BL33_BASE, BOOT_ARGS_PAGE, DTB_SLOT, LOADER_SLOT, SCRIPT_SLOT, SD_REFERENCE, STAGE_HEADER
 from loader_link import validate_elf
 from uimage import LOAD, Header, legacy_image
 
@@ -41,6 +41,9 @@ INI = '\n'.join(
     ]
 )
 MAX_IMAGE_END = 0xA001EF00
+DRAM = (0x80000000, 0xFFD00000)
+FDT_COPY = (0x8D000000, 0x8D000000 + 0x30000)
+FRAMEBUFFER = (0xF5A00000, 0xF5A00000 + 0x400000)
 
 
 def board_gate(header: str, wanted: str) -> str:
@@ -98,6 +101,29 @@ def diag_loader_bl33(patched_u_boot: bytes, script: str, loader: bytes, dtb: byt
     return bytes(image)
 
 
+def check_destination(loader_bytes: int, bl33_bytes: int) -> None:
+    """Refuse an image whose `bootm loados` would write over something this package itself places.
+
+    U-Boot's script cannot list the live FDT's reservations, so the part of the check that can be made is made
+    here, from the addresses the package fixes. The loader's own FDT walk reports the rest, after the fact.
+    """
+    load = (LOAD, LOAD + loader_bytes)
+    if not (DRAM[0] <= load[0] and load[1] <= DRAM[1]):
+        raise SystemExit(f'the loader at {load[0]:#x} is outside DRAM')
+    claimed = {
+        'bl33.bin': (BL33_BASE, BL33_BASE + bl33_bytes),
+        'the DTB copy': FDT_COPY,
+        'the framebuffer': FRAMEBUFFER,
+        'the boot arguments page': (BOOT_ARGS_PAGE, BOOT_ARGS_PAGE + 0x1000),
+        'the SD reference page': (SD_REFERENCE, SD_REFERENCE + 0x1000),
+    }
+    for name, (start, end) in claimed.items():
+        if load[0] < end and start < load[1]:
+            raise SystemExit(f'bootm loados would write {load[0]:#x}..{load[1]:#x} over {name} ({start:#x}..{end:#x})')
+    if load[1] > MAX_IMAGE_END:
+        raise SystemExit(f'the loader reaches {load[1]:#x}, past {MAX_IMAGE_END:#x}')
+
+
 def link(args: argparse.Namespace) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         flat = Path(scratch) / 'loader.bin'
@@ -133,7 +159,10 @@ def build(args: argparse.Namespace) -> None:
     switchroot.mkdir(parents=True, exist_ok=True)
     (args.out / 'bootloader' / 'ini').mkdir(parents=True, exist_ok=True)
     (switchroot / 'bl31.bin').write_bytes(args.bl31.read_bytes())
-    (switchroot / 'bl33.bin').write_bytes(diag_loader_bl33(u_boot, script, args.loader.read_bytes(), dtb))
+    loader = args.loader.read_bytes()
+    image = diag_loader_bl33(u_boot, script, loader, dtb)
+    check_destination(len(loader), len(image))
+    (switchroot / 'bl33.bin').write_bytes(image)
     (switchroot / 'script.txt').write_text(script)
     (args.out / 'bootloader' / 'ini' / f'{ENTRY}.ini').write_text(INI)
 

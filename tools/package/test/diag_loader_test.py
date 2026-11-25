@@ -17,7 +17,7 @@ from typing import ClassVar
 from bl33 import bl33_patch
 from boot_script import boards
 from diag_boot import DWELL, carveout_table, diag_env_edits
-from diag_loader import INI, board_gate, build, diag_loader_bl33, diag_script
+from diag_loader import INI, board_gate, build, check_destination, diag_loader_bl33, diag_script
 from diag_loader_inspect import FORBIDDEN_SYMBOLS, SPECIAL, WRITES, inspect_disassembly, inspect_map
 from loader_abi import (
     BL33_BASE,
@@ -202,6 +202,32 @@ class Image(unittest.TestCase):
         self.assertIn('boot_prefixes=/switchroot/ios-diag-loader/', INI)
         self.assertNotIn('switchroot/ios/', INI)
         self.assertIn('bootwait=0', INI)
+
+
+class Destination(unittest.TestCase):
+    def test_the_reviewed_sizes_pass(self) -> None:
+        check_destination(86544, 954622)
+
+    def test_a_loader_that_grows_into_something_the_package_places_is_refused(self) -> None:
+        for size in (0x1F000, BL33_BASE - 0xA0000000 + 1, 0x4A000000):
+            with self.assertRaises(SystemExit):
+                check_destination(size, 954622)
+
+
+class Console(unittest.TestCase):
+    def test_progress_stays_on_the_screen(self) -> None:
+        text = script()
+        self.assertNotIn('serial', text)
+        self.assertIn('setenv stdout vidconsole && setenv stderr vidconsole', text)
+        for step in ('BOARD OK', 'FRAMEBUFFER OK', 'DTB COPIED', 'LOADER WRITTEN', 'HANDOFF'):
+            self.assertIn(step, text)
+        self.assertLess(text.index('BOARD OK'), text.index('FRAMEBUFFER OK'))
+        self.assertLess(text.index('LOADER WRITTEN'), text.index('HANDOFF'))
+
+    def test_a_console_that_cannot_be_set_runs_nothing_else(self) -> None:
+        text = script()
+        self.assertIn('setenv handoff_status CONSOLE_FAILED', text)
+        self.assertIn('if test "${handoff_status}" = "WRONG_BOARD"; then', text)
 
 
 class Tables(unittest.TestCase):

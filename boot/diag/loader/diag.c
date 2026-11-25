@@ -26,9 +26,22 @@ enum {
     D_WALK_RANGE,
 };
 
+/* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
+ * before it; the status lines run full width under both. */
+#define SCREEN_WIDTH     1280u
+#define SCREEN_HEIGHT    720u
+#define GLYPH_WIDTH      12u
+#define GLYPH_HEIGHT     14u
+#define ROW_HEIGHT       20u
+#define TOP              12u
 #define LEFT             16u
 #define RIGHT            720u
 #define FIRST_STATUS_ROW 31u
+#define LAST_ROW         34u
+
+_Static_assert(TOP + LAST_ROW * ROW_HEIGHT + GLYPH_HEIGHT <= SCREEN_HEIGHT, "the last row is on the screen");
+_Static_assert(FIRST_STATUS_ROW >= SWITCH_DIAG_MC_COUNT + SWITCH_DIAG_GIC_COUNT, "status lines clear the registers");
+_Static_assert(RIGHT + 36 * GLYPH_WIDTH <= SCREEN_WIDTH, "the longest register line fits");
 
 static struct {
     int screen;
@@ -51,10 +64,14 @@ __attribute__((noinline)) uint32_t switch_diag_read32(uint32_t address)
     return *(const volatile uint32_t *)(uintptr_t)address;
 }
 
-static void put(unsigned column, unsigned row, const struct switch_diag_line *line, uint32_t color)
+static void put(unsigned column, unsigned row, struct switch_diag_line *line, uint32_t color)
 {
-    if (diag.screen)
-        display_text(column, 12 + row * 20, line->text, color);
+    if (!diag.screen || row > LAST_ROW)
+        return;
+    switch_diag_line_clip(line, (SCREEN_WIDTH - column) / GLYPH_WIDTH);
+    if (column == LEFT && row < FIRST_STATUS_ROW)
+        switch_diag_line_clip(line, (RIGHT - LEFT) / GLYPH_WIDTH);
+    display_text(column, TOP + row * ROW_HEIGHT, line->text, color);
 }
 
 static void put_text(unsigned row, const char *text, uint32_t color)
@@ -66,7 +83,7 @@ static void put_text(unsigned row, const char *text, uint32_t color)
 
 static void say(const char *text, int bad)
 {
-    put_text(diag.status_row++, text, bad ? DISPLAY_RED : DISPLAY_WHITE);
+    put_text(diag.status_row < LAST_ROW ? diag.status_row++ : LAST_ROW, text, bad ? DISPLAY_RED : DISPLAY_WHITE);
 }
 
 static void check_fdt_and_screen(void)
@@ -111,6 +128,10 @@ int probe_before_transition(void)
     const int code =
         switch_diag_entry_state(r[R_ENTRY_EL], r[R_ENTRY_SCTLR], r[R_X1], r[R_X2], r[R_X3], r[R_MIDR], r[R_CNTFRQ]);
     r[R_FAILURE] = (uint64_t)code;
+    if (!diag.screen) {
+        r[R_STAGE] = 0xfd;
+        probe_halt();
+    }
     if (code) {
         begin_screen();
         struct switch_diag_line line;
@@ -153,8 +174,7 @@ static void report_el1(const struct switch_diag_el1 *el1, int el_ok)
     switch_diag_line_add(&line, " CNTVOFF=");
     switch_diag_line_hex(&line, el1->cntvoff, 1);
     put(LEFT, 4, &line, DISPLAY_WHITE);
-    put_text(5, el_ok ? "EL1 STATE PASS" : "EL1 STATE FAILED. MC AND GIC READS SKIPPED",
-             el_ok ? DISPLAY_GREEN : DISPLAY_RED);
+    put_text(5, el_ok ? "EL1 STATE PASS" : "EL1 STATE FAILED. NO DEVICE READS", el_ok ? DISPLAY_GREEN : DISPLAY_RED);
 }
 
 static void report_board(const struct switch_board *board, uint32_t hidrev, uint32_t odm4)
@@ -271,22 +291,24 @@ void switch_diag_after_transition(void)
     const int el_ok = !switch_diag_el1_state(&el1);
     begin_screen();
     put_text(0, "LOAD DIAG D0. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
-    if (diag.screen) {
+    report_el1(&el1, el_ok);
+    report_cpu();
+    if (el_ok) {
         const uint32_t hidrev = switch_diag_read32(0x70000804), odm4 = switch_diag_read32(0x7000f9d8);
         const struct switch_board *board = switch_board_detect(hidrev, odm4);
         const int known = board->t210b01 != 0xff;
         r[D_BOARD] = known ? (uint64_t)board->t210b01 << 8 | board->sku : UINT64_MAX;
         report_board(board, hidrev, odm4);
-        report_el1(&el1, el_ok);
-        report_cpu();
-        if (el_ok && known)
+        if (known)
             report_memory_controller();
         else
-            put_text(8, "MC AND GIC READS SKIPPED", DISPLAY_RED);
-        report_fdt();
-        put_text(14, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD", DISPLAY_WHITE);
-        put_text(15, "PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+            put_text(8, "UNKNOWN BOARD. MC AND GIC READS SKIPPED", DISPLAY_RED);
+    } else {
+        put_text(1, "NO DEVICE REGISTER WAS READ", DISPLAY_RED);
     }
+    report_fdt();
+    put_text(14, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD", DISPLAY_WHITE);
+    put_text(15, "PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
     r[R_STAGE] = 0xd0;
     switch_diag_exit(say);
 }
@@ -295,10 +317,12 @@ void probe_show_exception(uint64_t el, uint64_t esr, uint64_t far, uint64_t pc)
 {
     probe_record[R_STAGE] = 0xee;
     if (diag.screen) {
-        hex_line(LEFT, 17, "EXCEPTION AT EL ", el, 1, "", DISPLAY_RED);
+        hex_line(LEFT, 17, "EXCEPTION AT EL ", el >> 2, 1, "", DISPLAY_RED);
         hex_line(LEFT, 18, "ESR ", esr, 8, "", DISPLAY_RED);
         hex_line(LEFT, 19, "FAR ", far, 16, "", DISPLAY_RED);
         hex_line(LEFT, 20, "PC ", pc, 16, "", DISPLAY_RED);
     }
+    if (el != 4)
+        probe_halt();
     switch_diag_exit(say);
 }
