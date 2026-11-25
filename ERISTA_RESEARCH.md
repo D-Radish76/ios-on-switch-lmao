@@ -225,3 +225,6 @@ Addendum, checked against hekate `8e1392d` (the bootloader build, not Nyx)
   say is armed at handoff.
 - Consequence: a launch from hekate guarantees no fan duty, no temperature reading and no CPU rate limit for the code
   that follows. For the diagnostic that means a short run by hand (`boot/diag/README.md`).
+- Launched from Nyx (`More configs`), the fan is already off before the diagnostic starts: `_launch_hos` runs `hw_deinit(false)` in
+  the Nyx build, which has `fan_set_duty(0)` and `tmp451_end()` (`nyx/nyx_gui/frontend/gui.c:903-914`, `bdk/soc/hw_init.c:481-490`).
+  The path and the first run conditions are in `boot/diag/README.md`.

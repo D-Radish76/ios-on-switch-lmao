@@ -1,6 +1,6 @@
 # Read only memory controller diagnostic, sourced from its slot in this build's bl33.bin (tools/package/diag_boot.py).
 # It reads the registers native_gate (boot/loader/loader.c) compares, prints them on the screen and stops. It carries no
-# loader, kernel or exporter and never leaves this script. diag_boot_test.py lists the commands it may use.
+# loader, kernel or exporter. Its only exit is the reset after two minutes, which ends in hekate, never in a kernel. diag_boot_test.py lists the commands it may use.
 setenv diag_status WRONG_BOARD
 setenv diag_reads 0
 if setenv stdout vidconsole; then
@@ -26,7 +26,12 @@ if test "${diag_status}" = "READY"; then
 else
     echo REFUSED: nothing was read, status=${diag_status} console=${diag_console}
 fi
-echo Hold the power button until the console is off.
+echo Photograph the screen now. It resets to hekate in 2 minutes. Or hold the power button.
+for left in 90 60 30 0; do
+    sleep 30
+    echo resetting to hekate in ${left} s
+done
+reset
 while true; do
     sleep 1
 done

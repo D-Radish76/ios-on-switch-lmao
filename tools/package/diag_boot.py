@@ -21,8 +21,8 @@ IDENTITY_REGISTERS = (0x70000804, 0x7000F9D8)  # HIDREV and FUSE_RESERVED_ODM4: 
 # What U-Boot does when its script does not run, in the diagnostic's image only:
 #   * extlinux is not looked for at all, whatever hekate's environment says or fails to say, so no kernel is booted from
 #     the SD card's FAT.
-#   * distro_bootcmd ends in `reset` after ten seconds, which would send the console back to hekate to be launched
-#     again; it stops on a screen that says so.
+#   * distro_bootcmd ends in `reset` after ten seconds, which would send the console back to hekate in a loop with
+#     nothing on the screen; it says so, waits two minutes and resets once.
 DIAG_ENV_EDITS = {
     (
         b'scan_dev_for_extlinux=if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}extlinux/extlinux.conf; '
@@ -33,7 +33,8 @@ DIAG_ENV_EDITS = {
         b'echoe Failed to load boot device or script!;echoe Rebooting in 10s..;sleep 10; reset;'
     ): (
         b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;setenv stdout vidconsole;'
-        b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Hold the power button;while true; do sleep 1; done;'
+        b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Resetting to hekate in 2 minutes;sleep 120;reset;'
+        b'while true; do sleep 1; done;'
     ),
 }
 ENTRY = 'ios-diag'

@@ -30,7 +30,8 @@ to read before you copy anything). Copy the two folders onto the SD card's FAT. 
 3. The screen lists the board (`t210b01`, `sku`) and then one `address: value` line per register. Photograph it.
    `DONE: all 27 registers read` means every `md.l` returned success and was counted. `INCOMPLETE` names the register that
    failed (`status=READ_FAILED_<address>`) and the count so far, in hex.
-4. Power off when `DONE`, `INCOMPLETE` or `REFUSED` shows. The script never exits, and waits with `sleep 1`.
+4. Photograph the screen when `DONE`, `INCOMPLETE` or `REFUSED` shows. After two minutes the script runs `reset`, which
+   is meant to land in hekate's menu (inferred, see below). Hold the power button instead if you want it off sooner.
 5. Type the lines into a text file and run `diag_boot.py compare LOG --loader-src boot/loader/loader.c` to see each
    value next to the OLED's. That table is not a threshold for the Erista: send the raw lines.
 
@@ -69,7 +70,8 @@ What each run should show
 | Temperature and fan | by hand | the back is not hot and the fan is heard or felt within the first minute. Nothing here reads a sensor | hot back, or no fan: power off at once. Keep the run under 2 minutes |
 
 Stop at once, by holding the power button until the console is off: a black screen, a stalled line, heat, or any line
-the script does not print. Do not retry in the same sitting. The script never leaves its loop and has no path to iPadOS.
+the script does not print. Do not retry in the same sitting. The script has no path to iPadOS: its only exit is the
+`reset` after the two minute wait, and a `reset` that does nothing leaves it in a `sleep 1` loop.
 
 ## When something is not as expected
 
@@ -79,7 +81,7 @@ boot:
 
 | What goes wrong | What U-Boot does here |
 | --- | --- |
-| The SD card does not initialize in U-Boot | `mmc dev 1` fails, nothing is scanned, `distro_bootcmd` falls to its end: the screen says `DIAGNOSTIC DID NOT RUN, NO BOOT` and it waits. Not seen on hardware |
+| The SD card does not initialize in U-Boot | `mmc dev 1` fails, nothing is scanned, `distro_bootcmd` falls to its end: the screen says `DIAGNOSTIC DID NOT RUN, NO BOOT`, waits two minutes and resets once. Not seen on hardware |
 | The script fails to run or errors out | `SCRIPT FAILED: continuing...`, then the same end. Boot targets are `mmc1` only, so the eMMC is not tried |
 | hekate's environment is not imported | the default `scan_dev_for_extlinux` is replaced by `true` in this image, so no `extlinux.conf` is read from the SD card, whatever the prefix |
 | `md.l` fails | the failure is counted out: `INCOMPLETE`, no more reads. A bus fault is not a failure `md.l` returns: it stops U-Boot, and the line count stops there |
@@ -107,7 +109,7 @@ guarantees nothing about the temperature before that point either. `ERISTA_RESEA
 
 Risks that are still open, none of them testable without the console:
 
-- The edited `distro_bootcmd` ends in a `while` loop inside an environment variable. The script uses the same loop and the
+- The edited `distro_bootcmd` ends in `sleep 120;reset;` and a `while` loop inside an environment variable. The script uses the same loop and the
   same parser, but this exact line has not run in U-Boot. If it does not parse, the end of a failed run may be a plain
   prompt-less hang, not the message.
 - `setenv stdout vidconsole` is what decides `console=OK`. It says U-Boot accepted the device, not that the panel shows
@@ -120,3 +122,57 @@ Risks that are still open, none of them testable without the console:
 - hekate's `autoboot` and any other entry on the card are outside this package.
 - A bus fault in `md.l` stops U-Boot with no message the script controls. The last line on the screen is then the last
   register that worked.
+
+## Path from hekate 6.5.5 to this U-Boot
+
+Read in hekate 6.5.5 (`BLVERSION` 6.5.5 in its Makefile, checked out locally; the 6.5.5 binaries on the card were not
+compared with it):
+
+1. Nyx, `More configs`, `iOS Diag` calls `_launch_hos` (`nyx/nyx_gui/frontend/gui.c:903`). It sets autoboot to this entry's
+   position, runs `hw_deinit(false)` and jumps into hekate's bootloader.
+2. Nyx is built with `BDK_HW_EXTRA_DEINIT`, so that `hw_deinit` runs `fan_set_duty(0)`: the 5 V fan rail is disabled and
+   the pin parked (`bdk/thermal/fan.c`), then the TMP451 is shut down (`bdk/soc/hw_init.c:481-490`). **The fan is off from here on.**
+3. hekate's bootloader (`bootloader/main.c:741-973`) reads `bootloader/hekate_ipl.ini`, finds the entry from the position
+   Nyx set, and calls `launch_l4t`. `Auto Boot OFF` does not matter for this path: Nyx overrides it.
+4. `launch_l4t` (`bootloader/l4t/l4t.c:940-1170`) copies every key of the ini section into U-Boot's environment block (at
+   `0xA9FC0000`, flagged by the magic `0xA9FBFFFC`), plus `autoboot`, `autoboot_list` and `loader_rev`. It then needs, or
+   stops with a red message: Minerva (`Minerva missing`), `switchroot/ios-diag/bl31.bin` and `bl33.bin`, and on the Erista
+   `bootloader/sys/l4t/sc7entry.bin`, `bpmpfw.bin` and `sc7exit.bin`. It trains DRAM to 800 MHz, writes no voltage
+   (no `ram_oc` keys), sets carveouts, runs `hw_deinit(true)` (display kept, no extra deinit) and starts BPMP-FW, which
+   starts BL31, which starts U-Boot at `0xAA000000`.
+5. U-Boot's `bootcmd` runs `distro_bootcmd` on `mmc1` only, imports the environment above, and sources the script from its
+   slot in `bl33.bin`.
+
+On the card before the run, check that those five files exist and are the ones the Switchroot Linux install on this console
+uses. `bpmpfw.bin` is not in this repository and was not inspected.
+
+## Temperature and the hardware's own protection
+
+- Fan: off during the whole run when launched from Nyx (step 2), confirmed in source, not measured.
+- Temperature: nothing reads it. hekate's bootloader does not touch the TMP451 after Nyx shuts it down.
+- Hardware trip: no hekate code configures `SOC_THERM`. Whether the SoC's own thermal trip is armed, and whether the
+  card's `bpmpfw.bin` throttles or powers off on heat (BPMP firmware does on NVIDIA's own boards), is **not known**. To
+  see whether that firmware names thermal handling at all, on a computer: `strings bootloader/sys/l4t/bpmpfw.bin | grep -i
+  -E 'therm|temp|tmon|throt'`. Strings there suggest it, they do not prove it.
+- The diagnostic keeps one CPU core busy in `sleep` for most of the run, with no fan.
+
+## Conditions for the first run
+
+All of these, or no run:
+
+1. The battery is full and the console is unplugged from the charger and the dock. The room is cool, the console lies on a
+   hard surface with its vents free, and it is cool to the touch when starting.
+2. Someone stays with it for the whole run, a phone camera ready for the screen, and a way to re-launch hekate afterwards
+   (the payload injector or whatever started it this time).
+3. The five files of step 4 exist, the `ios-diag` files match the hashes taken, and `switchroot/ios/` is not on the card or is
+   not launched.
+4. Do not touch other entries. No Joy-Con, USB device or dock during the run.
+5. Total time from `iOS Diag` to power off: under 4 minutes. If the back is warm to the hand at any point, hold the power
+   button.
+6. One run per sitting. After the run, let it cool for ten minutes and read the photograph before any second run.
+7. Stop, and do not retry, on anything in "Stop" above.
+
+Recovery. Hold the power button until the console is off (the documented forced shutdown is about 12 seconds; not tried
+here). Nothing in this diagnostic writes to the SD card, the eMMC or the fuses, so the card and the console are as they were:
+hekate starts again from whatever injects it. The power button also ends a run in the countdown. If the console is off and
+will not start, that is not something this diagnostic is known to cause; say so before trying anything else.

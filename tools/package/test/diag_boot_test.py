@@ -31,7 +31,7 @@ TEMPLATE = Path('boot/diag/u-boot-diag-script.txt').read_text()
 BL33 = Path('bazel/pinned/firmware/bl33.bin').read_bytes()
 BL31 = Path('bazel/pinned/firmware/bl31.bin')
 
-COMMANDS = {'setenv', 'setexpr', 'test', 'echo', 'md.l', 'sleep', 'true'}
+COMMANDS = {'setenv', 'setexpr', 'test', 'echo', 'md.l', 'sleep', 'true', 'reset'}
 STRUCTURE = {'if', 'then', 'else', 'fi', 'while', 'do', 'done'}
 READABLE = [0x70000804, 0x7000F9D8, *range(0x70019000, 0x70019E00, 4)]
 MC_WINDOW = range(0x70019000, 0x70019E00)
@@ -46,7 +46,7 @@ def commands(script: str) -> list[list[str]]:
     found = []
     for raw in script.splitlines():
         line = raw.strip()
-        if not line or line.startswith('#'):
+        if not line or line.startswith(('#', 'for ')):
             continue
         for part in re.split(r';\s*|\s+then$|\s+do$', line):
             tokens = part.split()
@@ -68,7 +68,7 @@ class DiagScript(unittest.TestCase):
         used = {t[0] for t in commands(self.script)}
         for forbidden in ('mw', 'cp', 'cmp', 'load', 'source', 'run', 'bootm', 'booti', 'bootz', 'go', 'fatwrite'):
             self.assertNotIn(forbidden, used)
-        for forbidden in ('reset', 'fdt'):
+        for forbidden in ('fdt',):
             self.assertNotIn(forbidden, used)
         self.assertNotRegex(self.script, r'\$\(|`|\bbootm\b|LOADER|EXPORTER')
 
@@ -94,9 +94,20 @@ class DiagScript(unittest.TestCase):
         self.assertEqual(len(carveout_table(LOADER)), 25)
         self.assertEqual(reads[:2], [0x70000804, 0x7000F9D8])
 
-    def test_it_ends_in_a_loop_it_never_leaves(self):
-        tail = [line.strip() for line in self.script.splitlines() if line.strip()][-3:]
-        self.assertEqual(tail, ['while true; do', 'sleep 1', 'done'])
+    def test_it_ends_in_a_reset_after_a_bounded_wait_and_then_a_loop(self):
+        lines = [line.strip() for line in self.script.splitlines() if line.strip()]
+        self.assertEqual(lines[-3:], ['while true; do', 'sleep 1', 'done'])
+
+    def test_reset_is_used_once_and_only_after_the_wait(self):
+        lines = [line.strip() for line in self.script.splitlines() if line.strip() and not line.startswith('#')]
+        self.assertEqual(lines.count('reset'), 1)
+        wait = lines.index('for left in 90 60 30 0; do')
+        self.assertEqual(
+            lines[wait : wait + 5],
+            ['for left in 90 60 30 0; do', 'sleep 30', 'echo resetting to hekate in ${left} s', 'done', 'reset'],
+        )
+        self.assertNotIn('reset', [t[0] for t in commands('\n'.join(lines[:wait]))])
+        self.assertEqual(90 + 30, 120)
 
     def test_every_table_row_is_let_through_and_none_is_enabled_by_it(self):
         rows = boards(HEADER)
@@ -151,7 +162,7 @@ class Hush:
             line = raw.strip()
             if not line or line.startswith('#'):
                 continue
-            if line.startswith('while'):
+            if line.startswith(('while', 'for ')):
                 break
             running = all(now for now, _ in stack)
             if line.startswith('if '):
@@ -223,8 +234,9 @@ class DiagFallback(unittest.TestCase):
     def test_extlinux_is_never_run_and_the_failure_path_never_resets(self):
         env = self.entries(diag_u_boot(BL33))
         self.assertEqual(env['scan_dev_for_extlinux'], 'scan_dev_for_extlinux=true')
-        self.assertNotIn('reset', env['distro_bootcmd'])
-        self.assertTrue(env['distro_bootcmd'].endswith('while true; do sleep 1; done;'))
+        self.assertEqual(env['distro_bootcmd'].count('reset'), 1)
+        self.assertIn('sleep 120;reset;while true; do sleep 1; done;', env['distro_bootcmd'])
+        self.assertNotIn('Rebooting in 10s', env['distro_bootcmd'])
         self.assertEqual(env['boot_targets'], 'boot_targets=mmc1')
         self.assertNotIn('bootcmd_mmc0', env)
 
@@ -239,7 +251,7 @@ class DiagFallback(unittest.TestCase):
     def test_the_normal_image_is_not_changed_by_it(self):
         normal = bl33_patch(BL33)
         self.assertIn(b'run boot_extlinux', normal)
-        self.assertIn(b'reset;', normal)
+        self.assertIn(b'Rebooting in 10s', normal)
         self.assertNotEqual(normal, diag_u_boot(BL33))
         self.assertEqual(len(normal), len(diag_u_boot(BL33)))
 
