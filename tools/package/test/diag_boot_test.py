@@ -8,9 +8,10 @@ import re
 import tempfile
 import unittest
 from argparse import Namespace
+from collections.abc import Callable
 from pathlib import Path
 
-from bl33 import bl33_patch
+from bl33 import ENV_EDITS, bl33_patch
 from boot_script import boards
 from diag_boot import (
     IDENTITY_REGISTERS,
@@ -19,6 +20,7 @@ from diag_boot import (
     compare,
     diag_bl33,
     diag_script,
+    diag_u_boot,
     read_addresses,
 )
 from loader_abi import BL33_BASE, DTB_SLOT, EXPORTER_SLOT, LOADER_SLOT, SCRIPT_SLOT, STAGE_HEADER
@@ -29,7 +31,7 @@ TEMPLATE = Path('boot/diag/u-boot-diag-script.txt').read_text()
 BL33 = Path('bazel/pinned/firmware/bl33.bin').read_bytes()
 BL31 = Path('bazel/pinned/firmware/bl31.bin')
 
-COMMANDS = {'setenv', 'test', 'echo', 'md.l', 'sleep', 'true'}
+COMMANDS = {'setenv', 'setexpr', 'test', 'echo', 'md.l', 'sleep', 'true'}
 STRUCTURE = {'if', 'then', 'else', 'fi', 'while', 'do', 'done'}
 READABLE = [0x70000804, 0x7000F9D8, *range(0x70019000, 0x70019E00, 4)]
 MC_WINDOW = range(0x70019000, 0x70019E00)
@@ -107,11 +109,151 @@ class DiagScript(unittest.TestCase):
             diag_script(TEMPLATE.replace('@READS@', ''), HEADER, LOADER)
 
 
+class Hush:
+    """The few commands the script uses, run the way U-Boot's hush would, up to the script's final loop."""
+
+    def __init__(self, variables: dict, md_l: Callable[[int], bool]) -> None:
+        self.env, self.out, self.reads, self.md_l = dict(variables), [], [], md_l
+
+    def expand(self, text: str) -> str:
+        return re.sub(r'\$\{(\w+)\}', lambda m: self.env.get(m.group(1), ''), text)
+
+    def test(self, rest: list[str]) -> bool:
+        clauses, current = [], []
+        for token in rest:
+            if token == '-a':
+                clauses.append(current)
+                current = []
+            else:
+                current.append(token)
+        return all(len(c) == 3 and c[1] == '=' and c[0] == c[2] for c in [*clauses, current])
+
+    def simple(self, line: str) -> bool:
+        name, *rest = self.expand(line).replace('"', '').split()
+        if name == 'setenv':
+            self.env[rest[0]] = ' '.join(rest[1:])
+        elif name == 'setexpr':
+            self.env[rest[0]] = f'{int(rest[1], 16) + int(rest[3], 16):x}'
+        elif name == 'echo':
+            self.out.append(' '.join(rest))
+        elif name == 'md.l':
+            self.reads.append(int(rest[0], 16))
+            return self.md_l(int(rest[0], 16))
+        elif name == 'test':
+            return self.test(rest)
+        else:
+            raise AssertionError(line)
+        return True
+
+    def run(self, script: str) -> 'Hush':
+        stack = []  # (condition now, condition as first tested)
+        for raw in script.splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            if line.startswith('while'):
+                break
+            running = all(now for now, _ in stack)
+            if line.startswith('if '):
+                condition = running and self.simple(line[3:].removesuffix('; then'))
+                stack.append((condition, condition))
+            elif line == 'else':
+                stack[-1] = (not stack[-1][1], stack[-1][1])
+            elif line == 'fi':
+                stack.pop()
+            elif running:
+                self.simple(line)
+        return self
+
+
+def run_script(script: str, variables: dict, md_l: Callable[[int], bool] = lambda _: True) -> Hush:
+    return Hush(variables, md_l).run(script)
+
+
+ERISTA = {'t210b01': '0', 'sku': '0'}
+TOTAL = 2 + 25
+
+
+class DiagRun(unittest.TestCase):
+    script = diag_script(TEMPLATE, HEADER, LOADER)
+
+    def test_all_reads_ok_says_done_with_the_full_count(self):
+        ran = run_script(self.script, ERISTA)
+        self.assertEqual(len(ran.reads), TOTAL)
+        self.assertEqual(ran.env['diag_reads'], f'{TOTAL:x}')
+        self.assertIn(f'DONE: all {TOTAL} registers read', ran.out)
+
+    def test_a_failed_read_stops_the_reads_and_never_says_done(self):
+        failing = read_addresses(LOADER)[5]
+        ran = run_script(self.script, ERISTA, lambda address: address != failing)
+        self.assertEqual(ran.reads, read_addresses(LOADER)[:6])
+        self.assertEqual(ran.env['diag_reads'], '5')
+        self.assertEqual(ran.env['diag_status'], f'READ_FAILED_{failing:08x}')
+        self.assertFalse(any(line.startswith('DONE') for line in ran.out))
+        self.assertTrue(any(line.startswith('INCOMPLETE') for line in ran.out))
+
+    def test_a_console_that_failed_reads_nothing(self):
+        script = self.script.replace('if setenv stdout vidconsole; then', 'if test "1" = "2"; then')
+        ran = run_script(script, ERISTA)
+        self.assertEqual(ran.env['diag_console'], 'FAILED')
+        self.assertEqual(ran.reads, [])
+        self.assertTrue(any(line.startswith('REFUSED') for line in ran.out))
+
+    def test_a_board_not_in_the_table_reads_nothing(self):
+        ran = run_script(self.script, {'t210b01': '1', 'sku': '9'})
+        self.assertEqual(ran.reads, [])
+        self.assertTrue(any(line.startswith('REFUSED') for line in ran.out))
+
+    def test_no_setexpr_reads_memory(self):
+        for tokens in commands(self.script):
+            if tokens[0] == 'setexpr':
+                self.assertEqual(len(tokens), 5, tokens)
+                self.assertEqual(tokens[0:2], ['setexpr', 'diag_reads'])
+                self.assertFalse(any('*' in t for t in tokens))
+
+
+class DiagFallback(unittest.TestCase):
+    """What U-Boot does when the SD card, the script or hekate's environment is not as expected."""
+
+    def entries(self, image: bytes) -> dict[str, str]:
+        start = image.index(b'\0bootcmd=') + 1
+        block = image[start : image.index(b'\0\0', start)]
+        return {e.split(b'=', 1)[0].decode(): e.decode() for e in block.split(b'\0') if b'=' in e}
+
+    def test_extlinux_is_never_run_and_the_failure_path_never_resets(self):
+        env = self.entries(diag_u_boot(BL33))
+        self.assertEqual(env['scan_dev_for_extlinux'], 'scan_dev_for_extlinux=true')
+        self.assertNotIn('reset', env['distro_bootcmd'])
+        self.assertTrue(env['distro_bootcmd'].endswith('while true; do sleep 1; done;'))
+        self.assertEqual(env['boot_targets'], 'boot_targets=mmc1')
+        self.assertNotIn('bootcmd_mmc0', env)
+
+    def test_the_script_slot_is_the_only_script_source(self):
+        env = self.entries(diag_u_boot(BL33))
+        self.assertEqual(
+            env['scan_dev_for_scripts'],
+            f'scan_dev_for_scripts=source {SCRIPT_SLOT[0]:#x}; echoe SCRIPT FAILED: continuing...',
+        )
+        self.assertNotIn('boot_a_script', env)
+
+    def test_the_normal_image_is_not_changed_by_it(self):
+        normal = bl33_patch(BL33)
+        self.assertIn(b'run boot_extlinux', normal)
+        self.assertIn(b'reset;', normal)
+        self.assertNotEqual(normal, diag_u_boot(BL33))
+        self.assertEqual(len(normal), len(diag_u_boot(BL33)))
+
+    def test_an_edit_for_an_entry_that_is_not_there_stops_the_build(self):
+        with self.assertRaises(SystemExit):
+            bl33_patch(BL33, {b'nothing_like_this=1': b'x=1'})
+        self.assertNotIn(b'nothing_like_this=1', ENV_EDITS)
+
+
 class DiagImage(unittest.TestCase):
     def test_u_boot_then_the_script_and_nothing_else(self):
         script = diag_script(TEMPLATE, HEADER, LOADER)
-        image = diag_bl33(bl33_patch(BL33), script)
-        patched = bl33_patch(BL33)
+        image = diag_bl33(diag_u_boot(BL33), script)
+        patched = diag_u_boot(BL33)
         slot = SCRIPT_SLOT[0] - BL33_BASE
         self.assertEqual(image[: len(patched)], patched)
         self.assertEqual(image[len(patched) : slot], bytes(slot - len(patched)))

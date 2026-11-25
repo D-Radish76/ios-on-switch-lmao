@@ -61,16 +61,20 @@ ENV_DROPS = (
 )
 
 
-def bl33_patch(bl33: bytes) -> bytes:
-    """Switchroot's U-Boot with its default environment as ENV_EDITS / ENV_DROPS say; every other byte unchanged."""
+def bl33_patch(bl33: bytes, extra_edits: dict[bytes, bytes] | None = None) -> bytes:
+    """Switchroot's U-Boot with its default environment as ENV_EDITS / ENV_DROPS say; every other byte unchanged.
+
+    extra_edits are further whole-entry rewrites of the original environment, for an image that is not the normal one.
+    """
+    edits = {**ENV_EDITS, **(extra_edits or {})}
     if bl33.count(ENV_START) != 1:
         raise SystemExit('bl33.bin: U-Boot default environment not found exactly once')
     start = bl33.index(ENV_START) + 1
     end = bl33.index(b'\0\0', start) + 1  # the empty string that ends it
     entries = bl33[start : end - 1].split(b'\0')
-    if any(entries.count(key) != 1 for key in (*ENV_EDITS, *ENV_DROPS)):
+    if any(entries.count(key) != 1 for key in (*edits, *ENV_DROPS)):
         raise SystemExit('bl33.bin: U-Boot default environment is not the one this patch was written for')
-    entries = [ENV_EDITS.get(e, e) for e in entries if e not in ENV_DROPS]
+    entries = [edits.get(e, e) for e in entries if e not in ENV_DROPS]
     block = b'\0'.join(entries) + b'\0\0'
     if len(block) > end + 1 - start:
         raise SystemExit('bl33.bin: patched U-Boot environment does not fit')

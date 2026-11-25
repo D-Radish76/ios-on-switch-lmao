@@ -18,6 +18,24 @@ from boot_script import boards, script_image
 from loader_abi import BL33_BASE, SCRIPT_SLOT
 
 IDENTITY_REGISTERS = (0x70000804, 0x7000F9D8)  # HIDREV and FUSE_RESERVED_ODM4: what native_gate's board detection reads
+# What U-Boot does when its script does not run, in the diagnostic's image only:
+#   * extlinux is not looked for at all, whatever hekate's environment says or fails to say, so no kernel is booted from
+#     the SD card's FAT.
+#   * distro_bootcmd ends in `reset` after ten seconds, which would send the console back to hekate to be launched
+#     again; it stops on a screen that says so.
+DIAG_ENV_EDITS = {
+    (
+        b'scan_dev_for_extlinux=if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}extlinux/extlinux.conf; '
+        b'then echo Found ${prefix}extlinux/extlinux.conf; run boot_extlinux; echoe SCRIPT FAILED: continuing...; fi'
+    ): b'scan_dev_for_extlinux=true',
+    (
+        b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;'
+        b'echoe Failed to load boot device or script!;echoe Rebooting in 10s..;sleep 10; reset;'
+    ): (
+        b'distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done;setenv stdout vidconsole;'
+        b'echo DIAGNOSTIC DID NOT RUN, NO BOOT. Hold the power button;while true; do sleep 1; done;'
+    ),
+}
 ENTRY = 'ios-diag'
 INI = '\n'.join(
     [
@@ -62,15 +80,43 @@ def board_check(header: str) -> str:
     return '\n'.join(lines)
 
 
+def read_step(address: int) -> str:
+    """One read that is only tried while every earlier one worked, and counted only if md.l reports success.
+
+    md.l reports a bad argument, not a bus fault: a fault stops U-Boot itself, so the count never reaches its total.
+    """
+    return '\n'.join(
+        [
+            '    if test "${diag_status}" = "READY"; then',
+            f'        if md.l {address:#010x} 1; then',
+            '            setexpr diag_reads ${diag_reads} + 1',
+            '        else',
+            f'            setenv diag_status READ_FAILED_{address:08x}',
+            '        fi',
+            '    fi',
+        ]
+    )
+
+
 def diag_script(template: str, header: str, loader_src: str) -> str:
-    reads = '\n'.join(f'    md.l {a:#010x} 1' for a in read_addresses(loader_src))
+    addresses = read_addresses(loader_src)
+    reads = '\n'.join(read_step(a) for a in addresses)
     for marker in ('@BOARD_CHECK@', '@READS@'):
         if template.count(marker) != 1:
             raise SystemExit(f'the diagnostic template needs {marker} exactly once')
-    text = template.replace('@BOARD_CHECK@', board_check(header)).replace('@READS@', reads)
+    text = (
+        template.replace('@BOARD_CHECK@', board_check(header))
+        .replace('@READS@', reads)
+        .replace('@COUNT@', str(len(addresses)))
+        .replace('@COUNT_HEX@', f'{len(addresses):x}')
+    )
     if re.search(r'@[A-Z_0-9]+@', text):
         raise SystemExit('the diagnostic template has a value this tool does not fill')
     return text
+
+
+def diag_u_boot(bl33: bytes) -> bytes:
+    return bl33_patch(bl33, DIAG_ENV_EDITS)
 
 
 def diag_bl33(patched_u_boot: bytes, script: str) -> bytes:
@@ -90,7 +136,7 @@ def diag_bl33(patched_u_boot: bytes, script: str) -> bytes:
 def build(args: argparse.Namespace) -> None:
     loader_src = args.loader_src.read_text()
     script = diag_script(args.template.read_text(), args.boards.read_text(), loader_src)
-    u_boot = bl33_patch(args.bl33.read_bytes())
+    u_boot = diag_u_boot(args.bl33.read_bytes())
     switchroot = args.out / 'switchroot' / ENTRY
     switchroot.mkdir(parents=True, exist_ok=True)
     (args.out / 'bootloader' / 'ini').mkdir(parents=True, exist_ok=True)

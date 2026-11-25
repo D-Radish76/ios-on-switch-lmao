@@ -217,3 +217,11 @@ Conditions I suggest for the first boots (a recommendation, not a measurement)
    it gets.
 4. After a first boot works, the first thing to add is a read only temperature display (TMP451 on I2C1, reads only,
    no fan write), before THERMAL itself.
+
+Addendum, checked against hekate `8e1392d` (the bootloader build, not Nyx)
+- `bootloader/main.c` and `l4t/l4t.c` contain no `fan_set_duty`, `tmp451_*` or `soc_therm` use. `fan_set_duty` appears in
+  `bdk/soc/hw_init.c:487` under `BDK_HW_EXTRA_DEINIT` only. The Nyx GUI reads the TMP451 (`gui.c:1376`, `:2533`).
+- No source in hekate programs `SOC_THERM` trip points. The hardware trip is therefore not something this project can
+  say is armed at handoff.
+- Consequence: a launch from hekate guarantees no fan duty, no temperature reading and no CPU rate limit for the code
+  that follows. For the diagnostic that means a short run by hand (`boot/diag/README.md`).

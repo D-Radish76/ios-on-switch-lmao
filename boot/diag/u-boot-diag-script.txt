@@ -2,22 +2,29 @@
 # It reads the registers native_gate (boot/loader/loader.c) compares, prints them on the screen and stops. It carries no
 # loader, kernel or exporter and never leaves this script. diag_boot_test.py lists the commands it may use.
 setenv diag_status WRONG_BOARD
+setenv diag_reads 0
 if setenv stdout vidconsole; then
     setenv diag_console OK
 else
     setenv diag_console FAILED
 fi
 
+if test "${diag_console}" = "OK"; then
 @BOARD_CHECK@
+fi
 
 echo DIAGNOSTIC: READ ONLY, NO BOOT
 echo board t210b01=${t210b01} sku=${sku} status=${diag_status} console=${diag_console}
 if test "${diag_status}" = "READY"; then
     echo each line is an address then its value. If it stops, the last line shown is the last register read
 @READS@
-    echo DONE
+    if test "${diag_reads}" = "@COUNT_HEX@"; then
+        echo DONE: all @COUNT@ registers read
+    else
+        echo INCOMPLETE: ${diag_reads} of @COUNT_HEX@ read (hex), status=${diag_status}
+    fi
 else
-    echo REFUSED: not a board in the table
+    echo REFUSED: nothing was read, status=${diag_status} console=${diag_console}
 fi
 echo Hold the power button until the console is off.
 while true; do
