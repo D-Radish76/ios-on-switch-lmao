@@ -25,10 +25,11 @@ divisor field 3). The loader read `SRC_I2C1 = 0x00000003`: the divisor is hekate
 | `DIV` (`CLK_DIVISOR`) | `00050001` | `00050001` (`i2c_init`) | yes |
 | Pads SCL, SDA | `00000040` | input enable only (`pinmux_config_i2c`) | yes |
 
-Nothing else in the hekate tree writes `CLK_SOURCE_I2C1`. The pinned `bl31.bin` has no CAR address literal. The pinned
-`bl33.bin` has the CAR base once (its clock driver) and the Tegra I2C driver, but its control FDT disables I2C1, so a probe of
-I2C1 by U-Boot is not expected; this was not run or read as code. So something after hekate's `hw_init` changed the source
-field and left the divisor alone. Which one is not known.
+Nothing else in the hekate tree writes `CLK_SOURCE_I2C1`, and hekate's `hw_deinit` and l4t launch code never touch I2C1's
+clock. The pinned U-Boot's control FDT disables I2C1 (`i2c@7000c000` status `disabled`) and enables only I2C5 at 400 kHz.
+The investigation of the writer is in `ERISTA_T1R_DESIGN.md`; it corrects an earlier statement here that BL31 had no CAR
+address literal (the search used the wrong encoding) and does not find a writer. Something after hekate's `hw_init` changed
+the source field and left the divisor alone. Which one is not known.
 
 What this would mean for the bus, if source 0 is PLLP_OUT0 at 408 MHz (an assumption: from Linux's mux order, not from a TRM
 read here, and the PLLP rate at that moment is not measured). hekate's own comment gives the clock as
