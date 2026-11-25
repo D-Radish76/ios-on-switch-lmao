@@ -45,9 +45,11 @@ Confirmed from `bl33.bin` (linked at 0xaa000000):
 - The three scan hits with a periph number (`0x36`, `0x43`, `0x2f`) are not clock calls: 0xaa012ff0 takes a character
   (0x43 is `C`) and 0xaa01c9b8 is a device lookup by uclass id.
 
-Inferred: only I2C5 is enabled in the FDT (400 kHz, clock id 0x2f) and its source field is never written by U-Boot, so
-U-Boot is not the writer of `00000003` on I2C1 or I2C5. P1 reads it before any I2C5 probe could matter, and P2 and P3 do
-not differ from P1, so a probe in between left no trace in the field.
+Inferred: only I2C5 is enabled in the FDT (400 kHz, clock id 0x2f). The setters keep the source bits, so a U-Boot write
+cannot turn `C0000000` into `00000003` by itself, but I2C5 differs from hekate's word in its divider too (0 became 3), and
+a divider write is what the setters do. The two buses do not behave alike: I2C1 kept hekate's divider (3) and lost the
+source bits, I2C5 changed divider and source. P1, P2 and P3 read the same word, and whether U-Boot probed I2C5 before P1
+is not shown. So U-Boot is not shown to be the writer, and is not excluded either.
 
 Unverified: whether I2C1 could be reconfigured while disabled (the driver does not run for a disabled node, which is
 how U-Boot's driver model works, not something read here), the unnamed code between the setter and its callers, and the
@@ -110,7 +112,7 @@ no payload exists and none is proposed for now.
 
 - The writer is still unidentified. Static reading finds none in BPMP-FW, BL31 or U-Boot, and none in hekate's deinit.
 - Whether the register could change by itself (a reset value of the divider, a default after `hw_deinit` clears
-  something) is not shown. The divider field kept hekate's value while the two source bits read 0.
+  something) is not shown. I2C1 kept hekate's divider and lost its source bits; I2C5 changed divider (0 to 3) and source. One cause for both is not shown.
 - `RST_L` bit 22 (T1 v2 `049102CA` against T1-R `04D102CA`) is still unresolved.
 
 `boot` stays 0. T1-R re-run, T1 v3, T2 to T4 and D1 hardware boot are on hold. No clock, firmware or payload change.
