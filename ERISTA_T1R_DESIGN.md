@@ -129,3 +129,5 @@ It is a guard, not a fix, and waits for T1-R's result.
 Implemented 2026-11-25 as approved: points P1, P2 and P3, the CAR, `CLK_SOURCE_I2C1..6`, PLLP and five I2C1 registers above,
 the 5 s pause. Hardware boot is on hold. `ERISTA_T1R_RUN.md` is the run sheet. Unverified and left as such: the PLLP frequency,
 the meaning of the source field on silicon (Linux only), who changed `CLK_SOURCE_I2C1`, and any SCL figure.
+
+First hardware run 2026-11-26: see `ERISTA_T1R_RESULT.md`. It adds BPMP-FW as a writer candidate that earlier notes missed.

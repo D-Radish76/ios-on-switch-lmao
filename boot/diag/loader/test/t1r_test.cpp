@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -29,6 +30,8 @@ struct Fake {
     uint32_t rst = 0, enb = 1u << 12;
     uint32_t source[6] = {0xc0000003, 0xc0000000, 0xc0000000, 0xc0000003, 0xc0000000, 0xc0000003};
     uint32_t i2c1_value = 0x11110000;
+    uint32_t pllp[3] = {0xaaaa0001, 0xaaaa0002, 0xaaaa0003};
+    std::map<unsigned, uint32_t> fixed;
     std::vector<unsigned> reads;
     unsigned i2c1_touches = 0;
 
@@ -43,12 +46,10 @@ struct Fake {
             return enb;
         if (reg >= T1R_CAR_SOURCE_I2C1 && reg <= T1R_CAR_SOURCE_I2C6)
             return source[reg - T1R_CAR_SOURCE_I2C1];
-        if (reg == T1R_CAR_PLLP_BASE)
-            return 0xaaaa0001;
-        if (reg == T1R_CAR_PLLP_OUTA)
-            return 0xaaaa0002;
-        if (reg == T1R_CAR_PLLP_OUTB)
-            return 0xaaaa0003;
+        if (reg >= T1R_CAR_PLLP_BASE && reg <= T1R_CAR_PLLP_OUTB)
+            return pllp[reg - T1R_CAR_PLLP_BASE];
+        if (fixed.count(reg))
+            return fixed[reg];
         return i2c1_value + reg;
     }
 };
@@ -244,4 +245,30 @@ TEST(T1RReport, EveryLineFitsTheScreen)
     switch_t1r_lines(&r, lines);
     for (const auto &line : lines)
         EXPECT_LE(line.text.length, 106u) << text(line);
+}
+
+TEST(T1RReport, TheRecordedErista20261126RunShowsAllSixBusesDifferent)
+{
+    Fake fake;
+    fake.rst = 0x04D102CA;
+    fake.enb = 0x9802D131;
+    const uint32_t seen[SWITCH_T1R_BUSES] = {3, 0, 0, 0, 3, 0};
+    for (unsigned bus = 0; bus < SWITCH_T1R_BUSES; ++bus)
+        fake.source[bus] = seen[bus];
+    fake.pllp[0] = 0x48115408;
+    fake.pllp[1] = 0x00000003;
+    fake.pllp[2] = 0x00030003;
+    fake.fixed = {{T1R_I2C1_CNFG, 0x2842}, {T1R_I2C1_STATUS, 0}, {T1R_I2C1_INT_STATUS, 0},
+                  {T1R_I2C1_CLK_DIVISOR, 0x50001}, {T1R_I2C1_CONFIG_LOAD, 4}};
+    const auto r = run(fake);
+    EXPECT_EQ(r.stop, 0);
+    const auto all = screen(r);
+    EXPECT_NE(all.find("CAR RST_L 04D102CA ENB_L 9802D131"), std::string::npos) << all;
+    EXPECT_NE(all.find("CLK_SOURCE_I2C1 00000003 FIELD 31:30 0 DIVIDER 0003. HEKATE WRITES C0000003. DIFFERENT"), std::string::npos) << all;
+    EXPECT_NE(all.find("CLK_SOURCE_I2C5 00000003 FIELD 31:30 0 DIVIDER 0003. HEKATE WRITES C0000000. DIFFERENT"), std::string::npos) << all;
+    EXPECT_NE(all.find("CLK_SOURCE_I2C6 00000000 FIELD 31:30 0 DIVIDER 0000. HEKATE WRITES C0000003. DIFFERENT"), std::string::npos) << all;
+    EXPECT_EQ(all.find("SAME"), std::string::npos) << all;
+    EXPECT_NE(all.find("PLLP BASE 48115408 OUTA 00000003 OUTB 00030003"), std::string::npos) << all;
+    EXPECT_NE(all.find("I2C1 CNFG 00002842 STATUS 00000000 INT 00000000 DIV 00050001 LOAD 00000004"), std::string::npos) << all;
+    EXPECT_NE(all.find("T1R COMPLETE CODE 0000"), std::string::npos) << all;
 }

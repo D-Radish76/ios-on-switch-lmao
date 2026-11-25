@@ -381,3 +381,11 @@ py_test(
     srcs = ["t1_run_test.py"],
     data = ["//boot:all_sources"],
 )
+
+# The first T1-R run on the Erista (boot/diag/erista-t1r-run.log), decoded.
+py_test(
+    name = "t1r_run_test",
+    size = "small",
+    srcs = ["t1r_run_test.py"],
+    data = ["//boot:all_sources"],
+)

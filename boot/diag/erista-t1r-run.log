@@ -1,0 +1,36 @@
+# T1-R (iOS Diag T1R, commit 51e48829f, Mac hashes in ERISTA_T1R_RUN.md) on a physical Erista (t210b01=0, sku=0), 2026-11-26, hekate 6.5.5, started from Nyx More configs.
+# Transcribed by the reviewer from three photographs (P1 and P2 on the U-Boot console, P3 on the loader screen), which were also read here.
+# The run completed, the loader reset and hekate came back by itself. Nyx then showed an SoC temperature of 38.7 C (operator report, not part of the values below).
+# The video is 25.73 s long and hekate was back after about 24 s (operator report).
+# Not transcribed: the HCR value of the EL1 line (not legible). The last digit of the PLLP word in the P1 and P2 photographs is not legible (the ASCII column shows only its high bytes); P3 prints it.
+# RST_L reads 04D102CA at all three points. T1 v2 recorded 049102CA in its own photograph; the difference is bit 22 (USBD in hekate's names). Whether one transcription is wrong or the state differs between runs is not settled.
+P1 BEFORE BOOTM START
+60006124 00000003
+60006128 00000003
+60006004 04D102CA
+60006010 9802D131
+600060A0 48115408
+P2 AFTER BOOTM PREP
+60006124 00000003
+60006128 00000003
+60006004 04D102CA
+60006010 9802D131
+600060A0 48115408
+P3 LOADER AT EL1
+HIDREV 00022117
+ODM4 00000204
+BOARD ERISTA T210B01=0 SKU=0 BOOT=0
+EL1 EL=4 SCTLR=30D00800 DAIF=3C0
+EL1 STATE PASS
+CAR RST_L 04D102CA ENB_L 9802D131
+I2C1 CLOCK ON OUT OF RESET
+CLK_SOURCE_I2C1 00000003 FIELD 31:30 0 DIVIDER 0003. HEKATE WRITES C0000003. DIFFERENT
+CLK_SOURCE_I2C2 00000000 FIELD 31:30 0 DIVIDER 0000. HEKATE WRITES C0000000. DIFFERENT
+CLK_SOURCE_I2C3 00000000 FIELD 31:30 0 DIVIDER 0000. HEKATE WRITES C0000000. DIFFERENT
+CLK_SOURCE_I2C4 00000000 FIELD 31:30 0 DIVIDER 0000. HEKATE WRITES C0000003. DIFFERENT
+CLK_SOURCE_I2C5 00000003 FIELD 31:30 0 DIVIDER 0003. HEKATE WRITES C0000000. DIFFERENT
+CLK_SOURCE_I2C6 00000000 FIELD 31:30 0 DIVIDER 0000. HEKATE WRITES C0000003. DIFFERENT
+PLLP BASE 48115408 OUTA 00000003 OUTB 00030003. RAW WORDS. NO FREQUENCY CLAIMED
+I2C1 CNFG 00002842 STATUS 00000000 INT 00000000 DIV 00050001 LOAD 00000004
+T1R COMPLETE CODE 0000. READ ONLY. NO I2C TRANSFER. NO REGISTER WRITE
+BOOT STAYS 0.
