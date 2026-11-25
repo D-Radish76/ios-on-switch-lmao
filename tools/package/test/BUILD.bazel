@@ -382,6 +382,15 @@ py_test(
     data = ["//boot:all_sources"],
 )
 
+# bpmpfw_scan.py on synthetic code, and the recorded scan of the Erista BPMP firmware (the firmware is not in the repository).
+py_test(
+    name = "bpmpfw_scan_test",
+    size = "small",
+    srcs = ["bpmpfw_scan_test.py"],
+    data = ["//boot:all_sources"],
+    deps = ["//tools/package:bpmpfw_scan"],
+)
+
 # The first T1-R run on the Erista (boot/diag/erista-t1r-run.log), decoded.
 py_test(
     name = "t1r_run_test",

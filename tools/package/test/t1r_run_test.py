@@ -96,5 +96,23 @@ class Decoded(unittest.TestCase):
         self.assertNotRegex(BODY, r'MHZ|KHZ')
 
 
+class Pllp(unittest.TestCase):
+    # Linux drivers/clk/tegra/clk-tegra210.c: pllp_nmp is divm 7:0, divn 17:10, divp from bit 20 (5 bits), and
+    # pll_p_freq_table holds { 38400000, 408000000, n 85, m 8, p 1 }. Source reading, not the reference manual.
+    BASE = 0x48115408
+
+    def test_the_fields_equal_the_linux_t210_row_for_a_38_4_mhz_input_and_408_mhz(self) -> None:
+        m, n, p = self.BASE & 0xFF, (self.BASE >> 10) & 0xFF, (self.BASE >> 20) & 0x1F
+        self.assertEqual((8, 85, 1), (m, n, p))
+        self.assertEqual(408_000_000, 38_400_000 // m * n)
+
+    def test_the_i2c_module_clock_would_be_21_times_hekates(self) -> None:
+        pllp, clk_m = 408_000_000, 19_200_000
+        hekate = clk_m // ((HEKATE[1] & 0xFFFF) + 1)
+        seen = pllp // ((source(1)[0] & 0xFFFF) + 1)
+        self.assertEqual((4_800_000, 102_000_000), (hekate, seen))
+        self.assertAlmostEqual(21.25, seen / hekate)
+
+
 if __name__ == '__main__':
     unittest.main()

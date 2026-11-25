@@ -164,6 +164,12 @@ py_binary(
     srcs = ["diag_loader_inspect.py"],
 )
 
+# Offline reader for the Erista BPMP firmware, which is never stored here (ERISTA_BPMPFW.md).
+py_binary(
+    name = "bpmpfw_scan",
+    srcs = ["bpmpfw_scan.py"],
+)
+
 # The read only memory diagnostic (boot/diag/memory): two hekate entries that print what U-Boot says about memory.
 py_binary(
     name = "diag_memory",

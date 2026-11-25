@@ -1,0 +1,92 @@
+# Output of tools/package/bpmpfw_scan.py on the hekate 6.5.5 release bpmpfw.bin (Erista), run 2026-11-26 against a copy the operator supplied.
+# Addresses are IRAM addresses after the entry code relocates the image; "call-rmw" is a call to a read-modify-write helper (clear bits, then set bits).
+# Only derived facts are kept here, not firmware bytes. A missing access is not proof of absence (see the scanner docstring).
+sha256 943463950880ae7892a1eb8d3a280b3f86083bca0164c663bf4126210be73ecb size 101780 header {'version': 33, 'memory_size': 130048, 'entry_offset': 256}
+4000608c str        PMC 7000e534 r2   
+40006090 str        PMC 7000e538 r3   
+4000683c str        CAR 60006440 r3   
+4000684c str        CAR 60006434 r3   
+40007380 streq      CAR 6000632c r3   
+40007384 streq      CAR 60006308 r3   
+40007398 ldr        CAR 60006014 r3   
+400073a4 ldrne      I2C 7000d000 r3   
+400073c4 str        I2C 7000d004 r1   
+400073c8 str        I2C 7000d00c r3   
+400073d0 str        I2C 7000d000 r3   
+400073d8 str        I2C 7000d08c r3   
+400073e0 ldr        I2C 7000d08c r3   
+400073f0 str        I2C 7000d000 r3   
+400073f8 ldr        I2C 7000d01c r0   
+40007424 ldr        CAR 60006014 r3   
+40007440 str        CAR 60006328 r4   
+40007448 str        CAR 60006308 r4   
+40007450 str        CAR 6000630c r4   
+40007af0 ldr        PMC 7000e438 r3   
+40007b10 ldr        PMC 7000e438 r0   
+40007b24 ldr        PMC 7000e438 r0   
+40007b3c ldr        PMC 7000e42c r0   
+40007b50 ldr        PMC 7000e430 r3   
+40007f10 ldr        PMC 7000e6c8 r4   
+40007f38 strne      PMC 7000e6c8 r3   
+40008174 str        PMC 7000e6c8 r3   
+4000846c str        CAR 60006284 r3   
+40008478 str        CAR 6000671c r3   
+400084b8 call-rmw   CAR 60006020 r0   clear 0000ffff set ?
+4000858c ldr        CAR 60006020 r12  
+400085ac call-rmw   CAR 60006020 r0   clear 0000ffff set 00000000
+4000861c str        CAR 6000671c r4   
+40008634 str        CAR 60006288 r3   
+400086b4 str        CAR 60006288 r2   
+400086f0 str        CAR 60006284 r2   
+400087f8 str        PMC 7000e430 r2   
+4000881c str        PMC 7000e434 r2   
+40008904 ldr        CAR 60006664 r5   
+40008908 ldr        CAR 6000619c r4   
+40008948 str        CAR 60006664 r3   
+40008950 str        CAR 6000619c r2   
+4000895c ldr        CAR 60006280 r3   
+40008974 strne      CAR 60006288 r3   
+40008980 str        CAR 6000632c r3   
+40008984 ldr        CAR 6000619c r3   
+400089a4 call-rmw   CAR 6000619c r0   clear 00080000 set 00000000
+40008a18 ldr        CAR 600060a4 r12  
+40008a1c ldr        CAR 600060a8 r3   
+40008a44 call-rmw   CAR 600060a4 r0   clear 00000002 set 00000000
+40008acc ldr        PMC 7000e498 r3   
+40008adc str        PMC 7000e498 r3   
+40008ae0 ldr        PMC 7000e480 r3   
+40008af4 str        PMC 7000e480 r3   
+40008af8 ldr        PMC 7000e484 r3   
+40008b08 str        PMC 7000e484 r2   
+40008b2c ldr        PMC 7000e450 r3   
+40008b34 str        PMC 7000e450 r3   
+40008b38 ldr        PMC 7000e420 r3   
+40008b40 str        PMC 7000e420 r3   
+40008b48 ldr        PMC 7000e420 r3   
+40008b50 ldr        PMC 7000e424 r3   
+40008b58 str        PMC 7000e424 r3   
+40008b90 call-rmw   CAR 6000619c r0   clear 00000000 set 00080000
+40008ba0 str        CAR 60006328 r3   
+40008bbc strne      CAR 60006284 r3   
+40008bfc str        CAR 60006664 r4   
+40008c00 str        CAR 6000619c r2   
+40008c40 call-rmw   CAR 600060a4 r0   clear 00000000 set ?
+40008c54 call-rmw   CAR 600060a8 r0   clear 00000000 set ?
+40008ce4 str        PMC 7000e538 r2   
+40008e0c strne      CAR 6000602c r2   
+40008ea4 ldr        CAR 60006644 r5   
+40008ea8 str        CAR 60006644 r4   
+40008eac ldr        CAR 60006028 r12  
+40008ed4 call-rmw   CAR 60006028 r0   clear 00007fff set 00000000
+40008ee4 call-rmw   CAR 600060a0 r0   clear c0000000 set 00000000
+40008ef4 call-rmw   PMC 7000e4f8 r0   clear 00000002 set 00000000
+4000900c call-rmw   CAR 600060ac r0   clear 00000000 set 00040000
+4000901c call-rmw   CAR 600060a0 r0   clear 80000000 set 40000000
+4000902c call-rmw   PMC 7000e4f8 r0   clear 00000000 set 00000002
+40009040 ldr        CAR 600060a0 r3   
+40009080 str        CAR 60006644 r12  
+40009084 call-rmw   CAR 60006028 r0   clear 00007fff set ?
+400090d8 ldr        CAR 6000602c r3   
+4000a204 ldr        PMC 7000e4a0 r0   
+4000c8cc ldr        PMC 7000e534 r12  
+4000c8d0 ldr        PMC 7000e538 r0   

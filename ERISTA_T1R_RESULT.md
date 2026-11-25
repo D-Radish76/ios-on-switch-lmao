@@ -46,7 +46,8 @@ What points at a writer that programs the clock sources:
 - T1 v2 read the PWM source as `C0000004`, hekate's own word, so not every hekate-written source register was overwritten.
   That reading is from T1 v2, not from this run.
 
-This is a pattern, not an identification.
+This is a pattern, not an identification. The firmware has since been read (`ERISTA_BPMPFW.md`): this build never addresses
+`CLK_SOURCE_I2C1` or `CLK_SOURCE_I2C5`, so it is not the writer by that reading, with the limits stated there.
 
 ## BL31 and U-Boot, by disassembly
 
@@ -64,10 +65,9 @@ A script follows constants within each function of the pinned images and resolve
 
 ## PLLP
 
-Per hekate's names, bit 30 (enable) and bit 27 (lock) of `PLLP_BASE` are set and bypass (31) is clear. Read with the Linux
-field layout (M 7:0, N 15:8, P from bit 20) the word gives M 8, N 84, P 1. That does not reproduce 408 MHz for any reference I
-can justify, so the layout or the assumption is wrong and no frequency is stated. Hekate's PWM table comment says HOS runs
-PLLP / 54 at 7.55 MHz, which implies 408 MHz in HOS; that is another program's state. `PLLP_OUTA/B` are not decoded.
+Superseded by `ERISTA_BPMPFW.md`: with the T210 field layout (N at bits 17:10) the word is M 8, N 85, P 1, the Linux row for
+a 38.4 MHz input and 408 MHz. The decode here first used N at bit 8 and was wrong. PLLP at 408 MHz is strongly supported,
+not confirmed against the manual.
 
 ## The NOACK hypothesis, again
 
