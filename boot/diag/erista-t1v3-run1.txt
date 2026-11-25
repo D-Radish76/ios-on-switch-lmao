@@ -1,0 +1,37 @@
+# T1 v3 first hardware run. Erista (T210B01=0, SKU 0, BOOT=0), hekate 6.5.5, started from Nyx "More configs".
+# Reported by the user 2026-11-26 08:37 JST from a photograph of the loader screen; the screen text agrees with the
+# transcription line for line. The photograph is not stored here. Screen: T1V3 COMPLETE CODE 0000, WRITES 11,
+# TRANSFERS 2 OF 2, TMP451 0X4C ID(FE) 55, DATA1 BEFORE READ FE, BOOT STAYS 0, countdown RESET IN 15 S shown.
+# Reported: after the countdown hekate came back by itself. Not reported: the Nyx temperature before or after.
+# Words are hexadecimal, 8 digits, except ID and DATA1_BEFORE_READ (2 digits). Keys ending in _US are decimal microseconds.
+# The times run from the go write to the first poll that saw BUSY (AT) and to the poll that saw it clear (CLEAR). They are
+# reference values of a polling loop, not an SCL measurement. One observation each.
+RST_L=049102CA
+ENB_L=9802D131
+SRC_I2C1=00000003
+PLLP_BASE=48115408
+BEFORE_CNFG=00002842
+BEFORE_STATUS=00000000
+BEFORE_INT=00000000
+BEFORE_DIV=00050001
+BEFORE_LOAD=00000004
+TIMING_0=00000204
+TIMING_1=04070404
+AFTER_LOAD=00000004
+AFTER_DIV=00FF0001
+AFTER_STATUS=00000000
+AFTER_INT=00000000
+LOAD_AFTER_25_FIRST=00000004
+LOAD_AFTER_25_SECOND=00000004
+WRITE_BUSY_AT_US=6
+WRITE_BUSY_CLEAR_US=433
+WRITE_AFTER_GO_CNFG=00002800
+WRITE_AFTER_GO_INT=00000000
+READ_BUSY_AT_US=5
+READ_BUSY_CLEAR_US=433
+READ_AFTER_GO_CNFG=00002840
+READ_AFTER_GO_INT=00000000
+ID=55
+DATA1_BEFORE_READ=FE
+FINAL_STATUS=00000000
+FINAL_INT=00000000

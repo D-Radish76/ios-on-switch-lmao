@@ -60,6 +60,8 @@ The pointer write is not a sensor setting. A TMP451 read needs the pointer set f
 
 ### T2: one conversion
 
+The current design is `ERISTA_T2_DESIGN.md` (2026-11-26), written after the T1 v3 run. The text below is the earlier draft.
+
 One-shot is the first choice (TI TMP451 datasheet):
 
 - Preconditions: config readback has SD (bit 6) set. If it does not, T2 stops without writing; clearing shutdown is a different, later decision.

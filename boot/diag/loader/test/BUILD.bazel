@@ -138,4 +138,13 @@ host_test(
     deps = [":t1v3"],
 )
 
-exports_files(["t1t_measured_test.cpp"])
+host_test(
+    name = "t1v3_hardware_test",
+    srcs = ["t1v3_hardware_test.cpp"],
+    deps = [":t1v3"],
+)
+
+exports_files([
+    "t1t_measured_test.cpp",
+    "t1v3_hardware_test.cpp",
+])
