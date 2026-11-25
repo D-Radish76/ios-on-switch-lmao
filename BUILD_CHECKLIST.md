@@ -235,3 +235,23 @@ rows with `erista-first-run.log`, the entry SP with `erista-memory-bdinfo.log`, 
 DTB. Linux: 11 passed; Bazel: not run yet. Still owed on the Mac: `diag_boot.py adopt` for the first diagnostic's own
 values, `bazel test //...`, ios27 and release builds, emulator checks. Next is a review of `ERISTA_D1_DESIGN.md` only.
 D1, D2 and XNU are not started.
+
+## D1-pre and D0-R (Mac, before any hardware run)
+
+```sh
+bazel test //tools/package/test:diag_sd_test //tools/package/test:exporter_audit_test //tools/package/test:diag_loader_test \
+  //tools/package/test:hush_lint_test //boot/diag/loader/test:all
+bazel build //boot:diag_loader //boot:diag_loader_r --config=ios17
+python3 tools/package/diag_sd.py build --frame boot/diag/sd/u-boot-script.txt \
+  --page1 boot/diag/sd/page-1-state.txt --page2 boot/diag/sd/page-2-info.txt \
+  --boards kits/SwitchBoard/SwitchBoard.h --bl31 bazel/pinned/firmware/bl31.bin \
+  --bl33 bazel/pinned/firmware/bl33.bin --out "$PWD/build/diag-sd"
+(cd build/diag-sd && find . -type f | sort | xargs shasum -a 256)
+shasum -a 256 bazel-bin/boot/diag_loader/package/switchroot/ios-diag-loader/*   # must equal the reviewed D0 values
+cat bazel-bin/boot/diag_loader_r/inspection.txt                                 # first line: D0 loader inspection passed
+```
+
+`//boot:diag_loader`'s hashes must not change: D0-R touches no D0 output. Put `llvm-objdump` with AArch64 support on PATH
+for `exporter_audit_test` and `diag_memory_test` (Xcode's, `xcrun --find llvm-objdump`), or they skip. Linux build hashes of
+D1-pre (first 16): `ios-diag-sd` bl33 `2a9e344fc6fd658a`, script `05ebf5c9f55826c8`; `ios-diag-sd-info` bl33
+`fc321009718a7c10`, script `b8e8e04ffde58167`. Not run on hardware.

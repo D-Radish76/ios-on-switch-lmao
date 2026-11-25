@@ -43,11 +43,39 @@ May not, and is only found by running:
 - The memory around `0xA7000000` (64 KiB of exporter and its 16 KiB stack) and `0xA001F000..0xA0020000` beyond the
   loader's range. Neither is in any list of occupied memory, and neither is proven free.
 
+## Exporter audit (pinned `exporter.uimg`, `7c33bbdc...`)
+
+From the source and from its machine code (`tools/package/exporter_audit.py`, run by `exporter_audit_test`):
+
+- RAM it writes: the image and its own stack, `0xA7000000..0xA7005E50` (24144 bytes; the 16 KiB stack is a `.private` array
+  inside the image and `saved_caller` sits beside it), and the record, `0xA001F400..0xA001F500`: first the magic word is
+  zeroed, bytes 4 to 255 follow, then the magic. The linker script asserts at most 64 KiB and no `.bss`.
+- Stack: its own, set by `_start` from `stack_top`; the caller's SP, LR and `x18` are saved and restored.
+- System instructions: three `dsb sy` and nothing else (no `msr`, `mrs`, `dc`, `ic`, `tlbi`, `svc`, `hvc`, `smc`, `eret`,
+  `wfe`). Register branches: 14 `blr`, all calls through the reader's callback pointer, which is loaded from a structure in
+  the image; no `br`.
+- Device addresses: none is formed except `0x700B0000`, which is stored in the record and compared against, never
+  dereferenced. The one other constant in that range is part of the CRC32 routine.
+- Indirect access: every read of U-Boot's objects goes through `copy_ram`, after `span()` has required 8 byte alignment and a
+  range inside `0xF0000000..0xFFD00000`, which is DRAM. A pointer taken from a U-Boot object that points at a peripheral is
+  refused. The measured Erista layout fits those bounds: `relocaddr 0xFFC87000`, the image's `0x68000` bytes end at
+  `0xFFCEF000`, below the TLB at `0xFFCF0000`; the heap `0xFF885000..0xFFC87000` sits just above `sp start`; and
+  `relocaddr - reloc off = 0x88110000` is the link address the exporter's offsets assume.
+- The record carries the card's CSD and CID (32 bytes at `0x40`), the RCA, and four U-Boot addresses (`mmc`, descriptor,
+  `gd`, relocation base). The CID holds the serial number. A record or a photograph of one is never published; a fixture
+  keeps the fields the checks need and masks the rest (`sd_requirements.mask`).
+
+What the audit does not show: that the object offsets hold on this fork of U-Boot on an Erista. The 277 instruction
+signatures against the pinned binary prove the code matches. Whether a live card's objects are where they say is only seen by
+running it.
+
 ## Steps, each reviewed before the next
 
-**D1-pre: display only, U-Boot only, no loader.** A hekate entry like `iOS Diag Memory`. It prints `devnum`,
-`mmc list` and `mmc info` for device 1, and runs `reset`. It writes nothing to RAM beyond U-Boot's own state. It answers the
-card mode and `devnum` questions before any exporter code runs. The command list is an allowlist with a test, as for D0-pre.
+**D1-pre (implemented, not run): display only, U-Boot only, no loader.** Two hekate entries, `boot/diag/sd/README.md`:
+`iOS Diag SD` (`devnum`, `mmc list`, `part list mmc 1`, the way the exporter step's `read mmc 1` reaches the card) and
+`iOS Diag SD Info` (`mmc dev 1`, `mmc info`; `mmc dev` starts the card again, so it is its own entry). `sd_requirements.py`
+judges the `mmc info` text against the exporter's conditions and says which it cannot show. The command list is an allowlist
+with a test.
 
 **D1: the D0 image plus the exporter and the SD reference.** Changes against D0:
 
@@ -77,55 +105,25 @@ Host, before any hardware run (Linux and Mac):
    unseen.
 5. Build, link inspection, hash comparison on the Mac, then `RUN_CHECKLIST.md` rewritten for D1.
 
-Hardware: one attended run with the D0 rules (60 s limit, power button, filmed), after D1-pre has shown a card in the mode
+Hardware: one attended, filmed run with the stage deadlines of the D1 checklist (written with the D1 build), after D1-pre has shown a card in the mode
 the exporter accepts. Success is the loader's printed record equal to what D1-pre's `mmc info` showed. Any refusal is
 reported and stops the work.
 
 ## Temperature
 
-### What is known
+Findings and sources: `ERISTA_THERMAL.md`. What changes the plan:
 
-- A launch from Nyx `More configs` runs `hw_deinit`, which stops the fan (PWM1 duty 0) and puts the TMP451 in shutdown.
-  In shutdown its registers keep the last value, so a read after Nyx shows the temperature when Nyx left, not the current
-  one (`ERISTA_RESEARCH.md`, `SwitchThermal.cpp`).
-- Nothing in hekate's bootloader build programs SOC_THERM's trips. BL31 turns the BPMP off, and the release's `bpmpfw.bin`
-  has no thermal strings. Whether the hardware's reset-time thermal trip is armed on an Erista is not known.
-- The drivers in this repository (`SwitchSocTherm.cpp`, `SwitchThermal.cpp`) are the T210B01 path: PLLX thermtrip at
-  96 C, CPU and GPU at 127 C, a PMC reset on the trip, the fan on PWM1 (`0x7000A010`) through pin LCD_GPIO2 with the 5 V
-  regulator on GPIO PA5. Their sensor set and calibration are for the OLED. hekate's `fan.c` and `regulator_5v.c` have
-  separate T210 and T210B01 branches; only the second was read. Do not reuse any of it on the Erista before the first
-  branch is read.
-- The pinned U-Boot has `i2c bus`, `i2c dev`, `i2c md`, `i2c probe`, `gpio` and `pwm` commands (strings in `bl33.bin`).
-  The TMP451's U-Boot bus number is not known.
+- The pinned U-Boot disables I2C1 and the PWM block in its control FDT. It has no bus to the TMP451 and no fan device, so
+  the earlier T1 ("`i2c md` on the TMP451, read only") is not available. Any TMP451 read needs an I2C controller
+  transaction, so it is a peripheral write step, and the value after Nyx's `hw_deinit` is stale (shutdown mode).
+- hekate's fan, 5 V and TMP451 code has separate Erista branches (tachometer pull-up, remote offset 0 degrees C, GPIO CC4);
+  this repository's driver is the Mariko path.
+- Whether the hardware thermtrip is armed at handoff is not known; it is treated as absent.
 
-### What the D0 and D1 runs expose
-
-Each is under a minute, with the fan off, with a person present. The earlier diagnostic runs (the first diagnostic, the
-memory pages, D0) were each 15 to 25 s. That says what happened, not that it was safe.
-
-### Plan, in order, each a separate review
-
-**T1: read the TMP451 without writing to it.** A display-only page in the D0-pre style:
-`i2c bus`, `i2c dev <bus>`, then `i2c md 4c 00 2` (local and remote degrees), `i2c md 4c 03 1` (config, bit 6 shows
-shutdown) and `i2c md 4c fe 1` (manufacturer ID `0x55`). No `i2c probe` (it writes to every address on the bus) and no
-`mw`, `mm`, `nm`. A pointer write that selects the register is part of every I2C read. Expected on a Nyx launch: shutdown
-set and a stale value. That is still useful: it is the temperature when D0 began, and it confirms the bus and address.
-Needs the bus number first: the first version prints `i2c bus` only.
-
-**T2: a live reading.** Clearing the shutdown bit (config register write) or a one-shot conversion is a write to the sensor.
-Small and the sensor's own, but a write on a bus shared with other devices: needs its own review and the bus identified by
-T1.
-
-**T3: fan.** A write sequence (clock, reset, pinmux, regulator, PWM) read from hekate's Erista branch, then a bounded test:
-fan on for 10 s, a person listening and looking. Not before T1 and T2, and not part of D1.
-
-**T4: a bound for any run longer than seconds:** a hardware trip or a watchdog. The SOC_THERM trip registers and the PMC
-reset bit are the candidates; their T210 reset values and calibration have to be read from the TRM or L4T's `soctherm.c`
-for T210 first. Until then the bound is a person at the console, the 60 s rule and a cool, hard surface.
-
-### Rule until T1 to T3 are done
-
-No run longer than D0's. No kernel. A thermal reading is never a reason to relax an abort condition.
+Plan, each step its own review: T1 (communication check by one TMP451 read, via a patched FDT or a loader driven I2C1
+transaction; stale value, never a temperature or a safety verdict), T2 (clear shutdown or one shot conversion), T3 (fan,
+from hekate's Erista branch), T4 (a bound for longer runs: SOC_THERM trip or a watchdog). None is implemented. D0-R and
+D1-pre run without any of them and are bounded by what they execute (stage deadlines in their checklists).
 
 ## Questions for the reviewer
 

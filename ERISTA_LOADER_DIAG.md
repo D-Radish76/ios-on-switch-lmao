@@ -107,7 +107,7 @@ Stages, each reviewed before the next:
 | Framebuffer | hekate's handoff drew the console on the Erista's panel | rotation and format properties; the backlight stays on hekate's setting (no PWM back end), the display driver gate `sc7Display` still panics for a non-OLED panel |
 | SD | U-Boot reads the Erista's card. The kernel's SD driver skips the 1.8 V switch on a T210 | the exporter and the SD reference on the Erista; UHS modes; the card reset and suspend paths write voltage |
 | PMIC | MAX77620 is on both boards | CPU rail is MAX77621 at I2C5 `0x1B`, the OLED's MAX77812 code returns on a failed read before writing (not run); charger limits for the HAC-001 battery |
-| Temperature | the TMP451 is on Tegra I2C controller 1 (`0x7000c000`, device `0x4c`, as hekate's `I2C_1` and U-Boot's `i2c5` alias say). Reading it takes controller register writes, so D0 does not; the U-Boot way is `i2c bus` and `i2c md 0x4c 0x01 1` once the bus number is known. Nothing reads or drives the fan or the TMP451. The kernel's watchdog service touches no hardware (`ERISTA_RESEARCH.md`, section 5), so a hung kernel is not bounded by anything | the TMP451's U-Boot bus number; a fan and temperature plan before a kernel runs for more than seconds |
+| Temperature | the TMP451 is on I2C1 (`0x7000c000`, device `0x4c`). The pinned U-Boot's control FDT disables that controller and the PWM block: its only I2C bus is I2C5 (the PMIC), so U-Boot cannot read the TMP451 or drive the fan as the image stands (`ERISTA_THERMAL.md`). Nothing reads or drives the fan or the TMP451. The kernel's watchdog service touches no hardware (`ERISTA_RESEARCH.md`, section 5), so a hung kernel is not bounded by anything | how to read the TMP451 at all; the Erista branches of hekate's fan and 5 V code; a fan and temperature plan before a kernel runs for more than seconds |
 
 ## Order of work to the first XNU start
 
@@ -251,7 +251,7 @@ The carveout rows decode to the layout bdinfo showed: secure firmware `FFE00000`
 GPU firmware `FFD00000` and 2 units (to `FFD40000`), GPU WPR `FFD40000` and 6 units (to `FFE00000`), TZDRAM base
 `FFF00000`. They end where bank 0 ends plus 3 MiB, as `memory_layout_test` already checks.
 
-GIC words, read as a GIC-400 (register layouts from the GICv2 specification, not fetched here). `native_gate` records these
+GIC words, read as a GIC-400. Checked against Linux (`include/linux/irqchip/arm-gic.h`, `drivers/irqchip/irq-gic.c`, master): the offsets `0x00`, `0x04`, `0x100` and `0xFC`; the `GICC_CTLR` bits (enable group 0 is bit 0, the four bypass disable bits are `0x1E0`, so `0x61` is bit 0, 5 and 6); the interrupt count (`(TYPER & 0x1F) + 1` times 32); and the GICv2 test `(IIDR & 0xFF0FFF) == 0x02043B`, which `0x0202143B` passes. The field widths of `GICD_TYPER` above bit 4 (CPU count, security extensions, lockable SPIs) and the product ID in `GICC_IIDR` bits 31 to 20 are from the GICv2 specification as remembered, and no copy of the specification was read for them. `native_gate` records these
 words and expects none, and the repository has no OLED values for them, so there is nothing to compare with except that the
 six addresses equal the normal loader's.
 

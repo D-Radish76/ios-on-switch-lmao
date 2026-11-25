@@ -56,5 +56,15 @@ CSD from D1's record; keep the typed, masked text only.
 
 ## Run
 
-Charged battery, console on a hard surface, attended, filmed. Each page is a few card commands and a 15 s wait. Hold the
-power button if the screen shows no new line for 20 s while a command is running, or the console is hot.
+Charged battery, console on a hard surface, attended, filmed, cool at the start, off between pages. No total limit; each
+stage has a deadline from what it runs.
+
+| Stage | Runs | Deadline |
+| --- | --- | --- |
+| Entry selected to the first U-Boot line | hekate, BL31, U-Boot | 20 s |
+| `mmc list`, `echo` | prints names | 2 s |
+| `part list mmc 1` (page 1) | card start if not up, one sector read | 15 s |
+| `mmc dev 1` and `mmc info` (page 2) | card restart, a few commands | 15 s |
+| Countdown to hekate's menu | 15 s count, reset | 25 s |
+
+Past a deadline, or if the console is hot: hold the power button and report the last line.
