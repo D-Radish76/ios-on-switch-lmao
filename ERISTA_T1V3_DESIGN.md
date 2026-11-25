@@ -73,7 +73,10 @@ So neither expected value can be decided from what was read. The gate reads both
 reads, shows the words and stops with `061A` before the first write. Filling the pins is a reviewed change made after a read-only
 run has shown the words.
 
-#### Read-only diagnostic (implemented as T1-T, `ERISTA_T1T_DESIGN.md`)
+#### Read-only diagnostic (implemented as T1-T, `ERISTA_T1T_DESIGN.md`; first run in `ERISTA_T1T_RESULT.md`)
+
+T1-T ran on 2026-11-26: both controllers read `TIMING_0` `00000204` and `TIMING_1` `04070404`. The pins stay empty until a review
+fills them; the candidates, the rate recomputed from the measured words and the open `CONFIG_LOAD` items are in the result file.
 
 T1-T, an independent entry in the T1-R pattern: no store function linked, the inspection requires a single-load raw read with
 one caller, and the script adds nothing to D0's commands.

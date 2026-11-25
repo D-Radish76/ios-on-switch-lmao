@@ -191,5 +191,7 @@ inspection skips and shows the result in one list.
 One run. Do not retry. After an abnormal end, power off, wait 10 s and follow the Nyx recovery check in `ERISTA_T1_RUN.md`
 section 6.
 
+The first run's words and analysis are in `ERISTA_T1T_RESULT.md`.
+
 Report the video, the selection-to-menu time, the Nyx status-bar value and a photograph of the loader screen sharp enough to
 read every digit. Transcribe the words from the photograph, not from this sheet.

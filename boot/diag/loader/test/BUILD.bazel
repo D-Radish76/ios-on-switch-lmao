@@ -125,3 +125,17 @@ host_test(
     srcs = ["t1t_test.cpp"],
     deps = [":t1t"],
 )
+
+host_test(
+    name = "t1t_measured_test",
+    srcs = ["t1t_measured_test.cpp"],
+    deps = [":t1t"],
+)
+
+host_test(
+    name = "t1v3_measured_test",
+    srcs = ["t1v3_measured_test.cpp"],
+    deps = [":t1v3"],
+)
+
+exports_files(["t1t_measured_test.cpp"])

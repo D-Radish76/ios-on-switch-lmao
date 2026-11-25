@@ -286,6 +286,16 @@ py_test(
     ],
 )
 
+# The recorded T1-T words, the decodings of the report and the rate model applied to them (ERISTA_T1T_RESULT.md).
+py_test(
+    name = "diag_t1t_measured_test",
+    srcs = ["diag_t1t_measured_test.py"],
+    data = [
+        "//boot:diag/erista-t1t-run1.txt",
+        "//boot/diag/loader/test:t1t_measured_test.cpp",
+    ],
+)
+
 # The device-window audit on synthetic disassembly and on a real T1-T link.
 py_test(
     name = "diag_mmio_audit_test",
