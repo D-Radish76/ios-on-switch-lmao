@@ -198,6 +198,13 @@ py_library(
 )
 
 py_library(
+    name = "exporter_audit",
+    srcs = ["exporter_audit.py"],
+    imports = ["."],
+    deps = [":bdinfo_audit"],
+)
+
+py_library(
     name = "d0_run",
     srcs = ["d0_run.py"],
     imports = ["."],
