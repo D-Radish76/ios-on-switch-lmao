@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the D0 loader's binary may contain, read from its link map and its disassembly.
 
-    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1]
+    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r]
 
 Exits nonzero, naming every violation, when the link pulled in the normal loader's kernel path, when code writes a CPU
 system register that WRITES does not list, or when an instruction outside the reviewed set is present. WRITES is the
@@ -88,6 +88,15 @@ T1_SYMBOLS = ('switch_t1_run', 'switch_t1_access', 'switch_t1_read32', 'switch_t
 T1_GATE = 'switch_t1_access'
 T1_WRITE32_BODY = re.compile(r'\A(?:mov\s+w(\d+), w0\s*\nstr\s+w1, \[x\1\]|str\s+w1, \[x0\])\s*\nret\s*\Z')
 T1_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <(switch_t1_read32|switch_t1_write32)>')
+# T1-R (boot/diag/loader/t1r*.c) only reads. It links no write counterpart of the raw read, and the code that forms or
+# passes a device address (the allowlist, the gate, the raw read) holds no store except the gate's own stack saves.
+T1R_SYMBOLS = ('switch_t1r_run', 'switch_t1r_access', 'switch_t1r_read32', 'switch_t1r_may_read', 'switch_t1r_address')
+T1R_GATE = 'switch_t1r_access'
+T1R_RAW = 'switch_t1r_read32'
+T1R_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t1r_read32>')
+T1R_ADDRESS_HOLDERS = ('switch_t1r_address', 'switch_t1r_may_read', 'switch_t1r_hekate_source', 'switch_t1r_read32')
+STORE = re.compile(r'^(?:str|stp|stur|stlr|stxr|stnp|st[1-4])[a-z]*\b')
+STACK_STORE = re.compile(r'\[(?:sp|x29)\b')
 COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
 # The one place a device register address is formed. It loads and returns.
 READ32_BODY = re.compile(r'\A(?:mov\s+w\d+, w0\s*\n)?ldr\s+w0, \[x\d+\]\s*\nret\s*\Z')
@@ -97,12 +106,20 @@ DEVICE_IMMEDIATE = re.compile(r'\b(?:movk|movz|mov)\s+[wx]\d+, #0x([0-9a-f]{4}),
 WHOLE_IMMEDIATE = re.compile(r'\bmov\s+[wx]\d+, #0x([0-9a-f]{8})\b')
 
 
-def inspect_map(text: str, sd: bool = False, t1: bool = False) -> list[str]:
+def inspect_map(text: str, sd: bool = False, t1: bool = False, t1r: bool = False) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
-    wanted = (*REQUIRED_SYMBOLS, *(SD_SYMBOLS if sd else ()), *(T1_SYMBOLS if t1 else ()))
+    wanted = (
+        *REQUIRED_SYMBOLS,
+        *(SD_SYMBOLS if sd else ()),
+        *(T1_SYMBOLS if t1 else ()),
+        *(T1R_SYMBOLS if t1r else ()),
+    )
     problems += [f'the link lacks {name}' for name in wanted if name not in text]
     problems += [f'the link has {name} outside T1' for name in T1_SYMBOLS if not t1 and name in text]
+    problems += [f'the link has {name} outside T1-R' for name in T1R_SYMBOLS if not t1r and name in text]
+    if t1r:
+        problems += [f'T1-R links {name}' for name in ('switch_t1r_write', 'switch_t1_') if name in text]
     return problems
 
 
@@ -206,7 +223,27 @@ def inspect_t1(code: dict[str, list[str]]) -> list[str]:
     return problems
 
 
-def inspect_disassembly(disassembly: str, sd: bool = False, t1: bool = False) -> list[str]:
+def inspect_t1r(code: dict[str, list[str]]) -> list[str]:
+    """Return what is wrong with T1-R's device reads: one load, one caller, and no store on any address path."""
+    problems = []
+    read32 = code.get(T1R_RAW)
+    if read32 is None or not READ32_BODY.match('\n'.join(read32)):
+        problems.append(f'{T1R_RAW} is not a single load and a return')
+    for name, body in code.items():
+        if name != T1R_GATE:
+            problems += [f'{name}: calls {T1R_RAW} outside {T1R_GATE}' for line in body if T1R_CALL.search(line)]
+    if not any(T1R_CALL.search(line) for line in code.get(T1R_GATE, [])):
+        problems.append(f'{T1R_GATE} does not reach the raw read')
+    for name in (T1R_GATE, *T1R_ADDRESS_HOLDERS):
+        for line in code.get(name, []):
+            if STORE.match(line) and not STACK_STORE.search(line):
+                problems.append(f'{name}: a store that is not a stack save: {line}')
+            if name != T1R_GATE and STORE.match(line):
+                problems.append(f'{name}: holds a store: {line}')
+    return problems
+
+
+def inspect_disassembly(disassembly: str, sd: bool = False, t1: bool = False, t1r: bool = False) -> list[str]:
     code = functions(disassembly)
     writes, special, problems = count_instructions(code, sd)
     for target, count in writes.items():
@@ -224,6 +261,8 @@ def inspect_disassembly(disassembly: str, sd: bool = False, t1: bool = False) ->
         problems.append('switch_diag_read32 is not a single load and a return')
     if t1:
         problems += inspect_t1(code)
+    if t1r:
+        problems += inspect_t1r(code)
     return problems
 
 
@@ -241,9 +280,10 @@ def main() -> int:
     parser.add_argument('--report', type=Path)
     parser.add_argument('--sd', action='store_true', help='the D1 image: the SD reference validator is linked')
     parser.add_argument('--t1', action='store_true', help='the T1 image: the I2C1 check is linked')
+    parser.add_argument('--t1r', action='store_true', help='the T1-R image: the read-only clock check is linked')
     args = parser.parse_args()
-    problems = inspect_map(args.map.read_text(), args.sd, args.t1) + inspect_disassembly(
-        args.disassembly.read_text(), args.sd, args.t1
+    problems = inspect_map(args.map.read_text(), args.sd, args.t1, args.t1r) + inspect_disassembly(
+        args.disassembly.read_text(), args.sd, args.t1, args.t1r
     )
     if args.report:
         args.report.write_text('\n'.join(problems or ['D0 loader inspection passed']) + '\n' + report() + '\n')

@@ -68,32 +68,37 @@ All reads. Plain read, one 32-bit load, no read-to-clear register in the list.
 
 | Register | Address | Read where | Condition | Side effect of a read |
 | --- | --- | --- | --- | --- |
-| `RST_DEVICES_L` | 0x60006004 | P1, P2, P3 | none (CAR is always accessible) | none known |
-| `CLK_OUT_ENB_L` | 0x60006010 | P1, P2, P3 | none | none known |
+| `RST_DEVICES_L` | 0x60006004 | P1, P2, P3 | none. CAR is expected to answer; a hung read cannot be ended by software | none known |
+| `CLK_OUT_ENB_L` | 0x60006010 | P1, P2, P3 | same | none known |
 | `CLK_SOURCE_I2C1` | 0x60006124 | P1, P2, P3 | none | none known |
 | `CLK_SOURCE_I2C5` | 0x60006128 | P1, P2, P3 | none | none known; U-Boot's own bus, for contrast |
 | `CLK_SOURCE_I2C2`, `I2C3`, `I2C4`, `I2C6` | 0x60006198, 0x600061B8, 0x600063C4, 0x6000665C | P3 | none | none known; which buses still carry hekate's value |
 | `PLLP_BASE`, `PLLP_OUTA`, `PLLP_OUTB` | 0x600060A0, 0x600060A4, 0x600060A8 | P1, P2 (BASE only), P3 | none (U-Boot reads 0xA0 itself) | none known. Raw words only, not decoded: the field layout has no source here. |
 | I2C1 `CNFG`, `STATUS`, `INT_STATUS`, `CLK_DIVISOR`, `CONFIG_LOAD` | 0x7000C000 + 0x00, 0x1C, 0x68, 0x6C, 0x8C | P3 | CAR says I2C1 clock on and out of reset, else skipped | none known (T1 v2 read the same five) |
-| I2C1 `INTERFACE_TIMING_0`, `_1` | 0x7000C094, 0x7000C098 | P3 | same | Linux offsets; reset values and read side effects not documented in any source read. Plain configuration registers. |
 
-Not read: `CMD_DATA1` and the FIFOs (a data read may pop a byte), `BUS_CLEAR_STATUS` (hekate reads it for no stated reason, so
+Not read: `INTERFACE_TIMING_0/1` (undocumented side effects; left out by the review), `CMD_DATA1` and the FIFOs (a data read may pop a byte), `BUS_CLEAR_STATUS` (hekate reads it for no stated reason, so
 a side effect is possible), any pad or GPIO. Not written: anything.
+
+The U-Boot script still contains the D0 script's RAM writes: `cp.b` of the DTB and the loader, `fdt rsvmem add`, `setenv`
+variables. They are RAM and environment writes, unchanged from D0. No device register is written: no `mw`, `mm`, `nm`, `i2c`,
+`saveenv` or storage command, and the only command added to D0's set is `md.l`.
 
 ### Forbidden
 
 I2C transfers of any kind (no address or data write, no `CONFIG_LOAD` write, no go), clock or divider writes, bus clear or FIFO
 flush, any TMP451 access or setting, fan, PWM, voltage. The loader has no MMIO store function at all: the inspection requires
-`switch_t1r_read32` to be a single load and rejects any other device store in the image. The U-Boot script may contain `md.l`
+`switch_t1r_read32` to be a single load with one caller (`switch_t1r_access`), allows only stack stores in the gate, and allows
+no store in the address and allowlist functions. Disassembly cannot exclude a store through a pointer elsewhere; it excludes
+any path from a table address to a store, and no function holds a store address derived from the table. The U-Boot script may contain `md.l`
 and the D0 commands, and no `mw`, `i2c`, `mm`, `nm`, `setenv` of a hardware value or `fdt` change beyond D0's.
 
 ### Screen
 
-CAR block: `RST_L`, `ENB_L`, each with the I2C1 and PWM bits spelled out. I2C table: six rows (I2C1 to I2C6), the raw word, the
-source field (bits 31:30) and the divisor field (bits 15:0), with the note "hekate writes C0000003 for I2C1, C0000000 for
-I2C5; mux 0 pll_p, 3 clk_m per Linux". PLLP words raw. I2C1 controller words and the two timing words, or a line saying why
-they were not read. No estimate of SCL on the screen: it needs PLLP's rate and the timing registers, which the raw words only
-suggest. The estimate stays in the review, with its assumption.
+Eleven lines at P3: `RST_L` and `ENB_L`; the I2C1 clock and reset state with the note "MUX FIELD: 0 PLL_P, 3 CLK_M (LINUX, NOT
+THE TRM)"; six rows `CLK_SOURCE_I2C<n>` with the raw word, source field (bits 31:30), divider (bits 15:0), the word hekate
+writes and SAME or DIFFERENT; the PLLP words raw with "NO FREQUENCY CLAIMED"; the five I2C1 words or a line saying the
+clock was off or the block in reset; the closing line (`T1R COMPLETE CODE 0000`, or `T1R STOPPED CODE 0601` if the allowlist
+refused a read). No SCL estimate on the screen.
 
 ### Reading the result
 
@@ -102,26 +107,25 @@ suggest. The estimate stays in the review, with its assumption.
 | I2C1 is `C0000003` at P1 and P2 but `00000003` at P3 | something between `bootm prep` and the loader's first read changed it (the hand-off or the entry code) |
 | `00000003` at P1 already | changed before the script: after hekate's `hw_init`, in BL31, or in U-Boot's start. Not separable from this chain. |
 | `00000003` at P1, P2 and P3, I2C5 changed to a pll_p value | U-Boot's I2C driver ran for I2C5 and the clock code set a source; I2C1's partial change is then still unexplained |
-| `C0000003` at all three | T1 v2's reading does not reproduce; compare the start path and repeat once |
+| `C0000003` at all three | T1 v2's reading does not reproduce. No automatic retry: wait for review. |
 | I2C2 to I2C6 hold hekate's values | the change is specific to I2C1 |
-| Timing registers not at 4 and 2 | the SCL estimate changes; recompute |
 
 ## Run limits
 
-Adds a 5 s pause and ten reads. Proposed total deadline 50 s from selecting the entry (T1's 45 s plus the pause), with the same
-stage deadlines and the same stop conditions and recovery check as `ERISTA_T1_RUN.md`. The real time of the T1 0507 run (from
-the video, selection to hekate's menu) should replace the estimate before this is set; it was not recorded. A hung read of an
-unclocked I2C1 register is guarded by the CAR check, as in T1; the CAR, PLLP and I2C1 reads in the U-Boot script cannot hang on
-the CAR (always clocked). The thermal position is unchanged from T1: no load added, fan off, temperature not measured.
+Adds a 5 s pause and ten `md.l` reads. The total of 50 s from selecting the entry (T1's 45 s plus the pause) is a provisional
+deadline for the person to act, not a thermal value. Stage deadlines, stop conditions and the recovery check are those of
+`ERISTA_T1_RUN.md`. The selection-to-menu time of the T1 0507 run was not recorded. The loader reads I2C1 registers only when
+the CAR words show the clock on and the block out of reset. A CAR, PLLP or I2C1 read is expected to complete, but nothing
+guarantees it, and a hung read cannot be ended by software: only the person and the power button end it. The thermal position
+is unchanged from T1: no load added, fan off, temperature not measured.
 
 ## T1 v3 (not designed here)
 
 Before any transfer, T1 v3 stops when `CLK_SOURCE_I2C1` is not hekate's `C0000003` (a new stop code), with the value on screen.
 It is a guard, not a fix, and waits for T1-R's result.
 
-## Review points
+## Status
 
-1. Whether P1 and P2 both are needed, or P1 alone with P3.
-2. Whether to read the two timing registers (undocumented side effects) or leave them for a second step.
-3. The pause length and the deadline, once the T1 run time is known.
-4. Whether `md.l` output is the right way to see P1 and P2, or the loader should receive them (a RAM write; not proposed).
+Implemented 2026-11-25 as approved: points P1, P2 and P3, the CAR, `CLK_SOURCE_I2C1..6`, PLLP and five I2C1 registers above,
+the 5 s pause. Hardware boot is on hold. `ERISTA_T1R_RUN.md` is the run sheet. Unverified and left as such: the PLLP frequency,
+the meaning of the source field on silicon (Linux only), who changed `CLK_SOURCE_I2C1`, and any SCL figure.

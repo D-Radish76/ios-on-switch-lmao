@@ -45,6 +45,8 @@ def _impl(ctx):
         args.add("--sd")
     if ctx.attr.t1:
         args.add("--t1")
+    if ctx.attr.t1r:
+        args.add("--t1r")
     args.add("--map", linkmap)
     args.add("--disassembly", dis)
     args.add("--report", report)
@@ -107,6 +109,7 @@ diag_loader_package = rule(
         "dwell": attr.int(default = 15),
         "sd": attr.bool(default = False, doc = "D1: the link carries the SD reference validator and the inspection allows it"),
         "t1": attr.bool(default = False, doc = "T1: the link carries the I2C1 check and the inspection holds it to its allowlist"),
+        "t1r": attr.bool(default = False, doc = "T1-R: the link carries the read-only clock check and the inspection holds it to read-only"),
         "exporter": attr.label(allow_single_file = True, doc = "D1: the pinned exporter.uimg, which gets the bl33.bin slot"),
         "sums": attr.label(allow_single_file = True, doc = "D1: bazel/pinned/SHA256SUMS, the pins the exporter and bl33.bin are checked against"),
         "defines": attr.string_list(doc = "extra compile flags for every source (D0-R's -DSWITCH_DIAG_RESERVATIONS=1)"),

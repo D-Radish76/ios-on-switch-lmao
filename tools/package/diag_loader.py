@@ -186,8 +186,8 @@ def link(args: argparse.Namespace) -> None:
             [args.objdump, '-d', '--no-show-raw-insn', args.elf], check=True, capture_output=True, text=True
         ).stdout
         args.disassembly.write_text(disassembly)
-        problems = inspect_map(args.map.read_text(), args.sd, args.t1)
-        problems += inspect_disassembly(disassembly, args.sd, args.t1)
+        problems = inspect_map(args.map.read_text(), args.sd, args.t1, args.t1r)
+        problems += inspect_disassembly(disassembly, args.sd, args.t1, args.t1r)
         if problems:
             raise SystemExit('D0 loader inspection failed:\n' + '\n'.join(problems))
         args.report.write_text('D0 loader inspection passed\n' + report() + '\n')
@@ -226,6 +226,7 @@ def main() -> None:
         p.add_argument('--' + name, required=True, type=Path)
     p.add_argument('--sd', action='store_true', help='the D1 loader: link and inspect the SD reference validator')
     p.add_argument('--t1', action='store_true', help='the T1 loader: link and inspect the I2C1 check')
+    p.add_argument('--t1r', action='store_true', help='the T1-R loader: link and inspect the read-only clock check')
     p.add_argument('objects', nargs='+', type=Path)
     p = step.add_parser('build')
     for name in ('template', 'boards', 'loader', 'dtb', 'bl31', 'bl33', 'out'):

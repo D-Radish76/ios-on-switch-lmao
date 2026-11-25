@@ -17,6 +17,13 @@
 #ifdef SWITCH_DIAG_T1
 #include "t1_report.h"
 #endif
+#ifdef SWITCH_DIAG_T1R
+#include "t1r_report.h"
+#endif
+
+#if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R)
+#define SWITCH_DIAG_SINGLE_CHECK 1
+#endif
 
 _Static_assert(SWITCH_DIAG_FB_PA == DISPLAY_BASE && SWITCH_DIAG_FB_BYTES == DISPLAY_BYTES,
                "the checked framebuffer is the one display.h draws on");
@@ -43,6 +50,12 @@ enum {
     D_T1_ID_CONFIG_RATE,
     D_T1_RAW,
     D_T1_CLOCKS,
+#endif
+#ifdef SWITCH_DIAG_T1R
+    D_T1R_CLOCKS,
+    D_T1R_SOURCE_I2C1_I2C5,
+    D_T1R_PLLP_BASE_OUTA,
+    D_T1R_PLLP_OUTB_I2C1,
 #endif
 };
 
@@ -89,7 +102,7 @@ static void put(unsigned column, unsigned row, struct switch_diag_line *line, ui
     if (!diag.screen || row > LAST_ROW)
         return;
     switch_diag_line_clip(line, (SCREEN_WIDTH - column) / GLYPH_WIDTH);
-#ifndef SWITCH_DIAG_T1
+#ifndef SWITCH_DIAG_SINGLE_CHECK
     if (column == LEFT && row < FIRST_STATUS_ROW)
         switch_diag_line_clip(line, (RIGHT - LEFT) / GLYPH_WIDTH);
 #endif
@@ -233,7 +246,7 @@ static void report_cpu(void)
              sp_ok ? DISPLAY_WHITE : DISPLAY_RED);
 }
 
-#ifndef SWITCH_DIAG_T1
+#ifndef SWITCH_DIAG_SINGLE_CHECK
 static void report_memory_controller(void)
 {
     unsigned different = 0;
@@ -343,7 +356,7 @@ static void report_sd(void)
 }
 #endif
 
-#ifndef SWITCH_DIAG_T1
+#ifndef SWITCH_DIAG_SINGLE_CHECK
 static void report_fdt(void)
 {
     struct switch_diag_line line;
@@ -408,6 +421,23 @@ static void report_fdt(void)
 
 #endif
 
+#ifdef SWITCH_DIAG_T1R
+static void report_t1r(void)
+{
+    struct switch_t1r_result result;
+    switch_t1r_run_on_hardware(&result);
+    struct switch_t1r_line lines[SWITCH_T1R_LINES];
+    switch_t1r_lines(&result, lines);
+    for (unsigned i = 0; i < SWITCH_T1R_LINES; ++i)
+        if (lines[i].text.length)
+            put(LEFT, 9 + i, &lines[i].text, lines[i].bad ? DISPLAY_RED : DISPLAY_WHITE);
+    probe_record[D_T1R_CLOCKS] = (uint64_t)result.rst_devices_l << 32 | result.clk_out_enb_l;
+    probe_record[D_T1R_SOURCE_I2C1_I2C5] = (uint64_t)result.source[0] << 32 | result.source[4];
+    probe_record[D_T1R_PLLP_BASE_OUTA] = (uint64_t)result.pllp_base << 32 | result.pllp_outa;
+    probe_record[D_T1R_PLLP_OUTB_I2C1] = (uint64_t)result.pllp_outb << 32 | (uint32_t)result.i2c1;
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1
 /* Rows 9 to 16, full width: T1 draws no register column. */
 static void report_t1(void)
@@ -436,6 +466,8 @@ void switch_diag_after_transition(void)
     begin_screen();
 #ifdef SWITCH_DIAG_T1
     put_text(0, "LOAD DIAG T1. I2C1 AND CAR READS. TMP451 POINTER WRITES ONLY. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_T1R)
+    put_text(0, "LOAD DIAG T1R. CAR AND I2C1 READS ONLY. NO I2C TRANSFER. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_SD)
     put_text(0, "LOAD DIAG D1. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_RESERVATIONS)
@@ -456,6 +488,11 @@ void switch_diag_after_transition(void)
             report_t1();
         else
             put_text(9, "NOT AN ERISTA. NO T1 REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_T1R)
+        if (known && board->t210b01 == 0)
+            report_t1r();
+        else
+            put_text(9, "NOT AN ERISTA. NO T1R REGISTER TOUCHED", DISPLAY_RED);
 #else
         if (known)
             report_memory_controller();
@@ -465,7 +502,7 @@ void switch_diag_after_transition(void)
     } else {
         put_text(1, "NO DEVICE REGISTER WAS READ", DISPLAY_RED);
     }
-#ifndef SWITCH_DIAG_T1
+#ifndef SWITCH_DIAG_SINGLE_CHECK
     report_fdt();
 #endif
 #ifdef SWITCH_DIAG_SD
@@ -473,6 +510,8 @@ void switch_diag_after_transition(void)
 #endif
 #ifdef SWITCH_DIAG_T1
     put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_T1R)
+    put_text(21, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #else
     put_text(14, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD", DISPLAY_WHITE);
     put_text(15, "PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);

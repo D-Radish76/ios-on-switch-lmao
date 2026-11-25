@@ -301,3 +301,12 @@ Commit `86346c224`: `bazel build //boot:diag_t1` completed (14 actions), the D0 
 | `ios-diag-t1.ini` | `c32c631a13ee5f02b3b7b76aa45b23d159f02c22c4ebb4017f4b0ae245576906` |
 
 Against v1 only `bl33.bin` changed. Not run on hardware; run steps and stop rules are in `ERISTA_T1.md`. `boot` stays 0.
+
+## T1-R (Mac, before any hardware run)
+
+```
+bazel test //boot/diag/loader/test:t1r_test //tools/package/test:diag_t1r_test //tools/package/test:diag_loader_test //tools/package/test:diag_t1_test
+bazel build //boot:diag_t1r
+```
+
+Then hash the package files as in `ERISTA_T1R_RUN.md` and rebuild the D0, D0-R, D1 and T1 v2 packages to confirm their hashes are unchanged. Not built on the Mac yet; not run on hardware. `boot` stays 0.

@@ -271,6 +271,21 @@ py_test(
     ],
 )
 
+# T1-R's inspection (a read-only gate), a real link through it, its U-Boot script's commands, and what its sources may name.
+py_test(
+    name = "diag_t1r_test",
+    size = "small",
+    srcs = ["diag_t1r_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+    ],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",
