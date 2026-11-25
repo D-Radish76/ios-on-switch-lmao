@@ -288,3 +288,16 @@ head -1 bazel-bin/boot/diag_loader_sd/inspection.txt                            
 `//boot:diag_loader` and `//boot:diag_loader_r` must not change. Linux checks: the tests above except the two Bazel-only
 ones (`bl33_stage_test` needs `lz4`; the C++ tests ran against a stand-in for GoogleTest), and the D1 loader links with
 Linux clang and lld and passes `diag_loader_inspect --sd`.
+
+## T1 v2 (Mac, before any hardware run)
+
+Commit `86346c224`: `bazel build //boot:diag_t1` completed (14 actions), the D0 loader inspection passed, and `bazel test //boot/diag/loader/test:t1_test //tools/package/test:diag_t1_test //tools/package/test:diag_loader_test` passes (reported by the user, 2026-11-25). Card files under `switchroot/ios-diag-t1/` and `bootloader/ini/`:
+
+| File | SHA-256 |
+| --- | --- |
+| `bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `bl33.bin` | `23ac56e88271afb49d09ed5684a8a223d5fb63f280a6d93c99f2b1d5cd5ac87f` |
+| `script.txt` | `f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef` |
+| `ios-diag-t1.ini` | `c32c631a13ee5f02b3b7b76aa45b23d159f02c22c4ebb4017f4b0ae245576906` |
+
+Against v1 only `bl33.bin` changed. Not run on hardware; run steps and stop rules are in `ERISTA_T1.md`. `boot` stays 0.

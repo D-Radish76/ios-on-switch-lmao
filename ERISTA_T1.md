@@ -82,27 +82,88 @@ Record the Mac's `bl33.bin` hash here and in `NOTES.md` before any run. D0, D0-R
 the tree before and after this change and are byte for byte equal (`//boot:diag_loader`, `diag_loader_r`, `diag_loader_sd`
 loader images).
 
-## What this does not show
+## Mac hashes, v2 (commit `86346c224`)
 
-- That the model matches the silicon. The controller model is written from hekate's driver, not from the TRM.
-- That a TMP451 byte is a temperature. T1 does not claim it.
-- That the pad levels are right; the pad words are read, not judged.
-- Anything about the fan, the PWM block, SOC_THERM or the watchdogs.
+| File on the card | SHA-256 |
+| --- | --- |
+| `switchroot/ios-diag-t1/bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `switchroot/ios-diag-t1/bl33.bin` | `23ac56e88271afb49d09ed5684a8a223d5fb63f280a6d93c99f2b1d5cd5ac87f` |
+| `switchroot/ios-diag-t1/script.txt` | `f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef` |
+| `bootloader/ini/ios-diag-t1.ini` | `c32c631a13ee5f02b3b7b76aa45b23d159f02c22c4ebb4017f4b0ae245576906` |
+
+`bl31.bin` is the pinned one and `script.txt` starts with the same eight characters (`f762d2a3`) as D0's: the script is D0's
+template, as intended.
 
 ## Before the first run (after review)
 
-- [ ] Experiment card, console cool, battery charged, charger out, hard surface. The D0 loader's checklist applies:
-      `boot/diag/loader/RUN_CHECKLIST.md`.
+- [ ] The card's four files match the table above. Any mismatch: do not run.
+- [ ] Experiment card, backed up; the other entries untouched. Battery 100 %, charger out, hard surface, vents clear, no
+      case, and the console cool to the touch before starting.
 - [ ] Started from Nyx "More configs", the path the earlier diagnostics used.
-- [ ] Mac hashes recorded and equal to the card's.
-- [ ] Photograph the screen. Hold the power button at the first sign of a stall.
+- [ ] Phone recording the screen from before `More configs` until hekate returns. You stay with the console, a hand near
+      the power button.
+
+## Expected screen
+
+U-Boot lines as D0 (`BOARD OK` through `HANDOFF TO THE LOADER`), then the loader's screen:
+
+| Row | Expected | Anything else |
+| --- | --- | --- |
+| EL1 and board | `EL1 STATE PASS`, `BOARD` Erista, `T210B01=0`, `SKU=0` | `NOT AN ERISTA` (050B) or `NO DEVICE REGISTER WAS READ`: no T1 register was touched |
+| CAR | `I2C1 CLOCK ON OUT OF RESET`; PWM clock on or off is recorded for T3 | clock off or in reset: stop 0501 or 0502, nothing of I2C1 touched |
+| I2C1 | `DIV 00050001`, `STATUS` with BUSY (0x100) clear; `CNFG`, `INT`, `LOAD` as hekate left them, no expectation | `DIV` different: stop 0504; BUSY set: stop 0503 |
+| Pads | `PAD SCL 00000040 SDA 00000040` (hekate writes input enable, 0x40) | other values are reported, not a stop |
+| TMP451 | `ID(FE) 55`, `CONFIG(03)` C0 on the Nyx path (80 or 00 if a plain menu or a reset sensor), `RATE(04)` 02 after Nyx's `tmp451_init` (08 is the power-on value) | a second value is a result to report, not a reason to retry |
+| Raw | two bytes labelled `NOT A TEMPERATURE` | |
+| Result | `T1 COMPLETE CODE 0000`, `TRANSFERS 10 OF 10` | `T1 STOPPED CODE 05xx` with its name |
+| End | `RESET IN 15 S`, then hekate | |
+
+## Stop criteria for the run
+
+Hold the power button until the console is off, then report the last line, in these cases:
+
+- the hashes did not match, the console is warm, or Nyx was not the start;
+- any stage passes its deadline (D0's table: 20 s to the first line, 10 s per step, 10 s to the loader, 20 s to the report,
+  25 s to hekate);
+- `COUNTER FREQUENCY OR COUNT NOT AS EXPECTED. NO RESET`, `PSCI SYSTEM_RESET RETURNED`, `EXIT CALLED OUTSIDE EL1` or an
+  exception screen;
+- the screen goes black or shows garbage, or the console feels hot.
+
+After any stop code 0503, 0505, 0506, 0507 or 0509, or any other abnormal end, power the console off completely (hold the
+button, wait ten seconds) before the next thing. The TMP451 is not powered down by the SoC reset, and hekate's next bus clear
+is the only recovery T1 relies on. No second T1 run until it is reviewed.
+
+## Longest T1-specific time
+
+T1's own code: the counter check up to 1,000,000 counter reads (well under 0.1 s), ten transfers of about 0.5 ms each when
+healthy, and on a failure one wait of at most 100 ms for `BUSY` or 1 ms for `CONFIG_LOAD`, after which the stage ends. If the
+counter stops after the check, the count limits end each loop after 1,000,000 device reads, which is about a second per
+loop on the assumption of one microsecond per read (not measured); the stage ends at the first failure, so the worst case is
+a few seconds. Around it, the D0 stage deadlines apply: 20 + 4 x 10 + 10 + 20 + 25 = 115 s as an upper figure by deadline,
+a stall with a person reacting for about 5 s and holding the button for 12 s about 132 s. The 15 s wait is part of it.
+
+## Temperature risk, again
+
+Nothing in T1 raises it: the script, the loader, the 15 s wait and the fan-off state are D0's, which has run on this console
+twice (D0 and D0-R, plus the D1-pre pages) and returned to hekate each time. T1 adds register reads and ten I2C transfers
+(milliseconds). No temperature is read, so the run is still bounded only by the person and the deadlines. The one new risk
+is on the way out: a transfer left unfinished could keep the TMP451 from answering hekate, and Nyx's fan loop then reads no
+temperature. That is why a failed run ends in a full power-off. Fan, PWM and rail are not touched.
+
+## What this does not show
+
+- That the model matches the silicon (the controller model is from hekate's driver, not the TRM).
+- That a TMP451 byte is a temperature. T1 does not claim it.
+- That the pad levels are right; the pad words are read, not judged.
+- Anything about the fan, the PWM block, SOC_THERM or the watchdogs.
+- That the 250 microsecond wait is long enough on this console, or that the 100 ms bound holds in silicon.
 
 ## Revisions
 
-| | Source commit | Linux loader image SHA-256 | Notes |
+| | Source commit | Mac `bl33.bin` SHA-256 | Notes |
 | --- | --- | --- | --- |
-| v1 | `15934b805` | `5a93738245f1...` (Linux build) | Reads TMP451 configuration and rate at 0x09 and 0x0A, the write addresses. Counter checked only at exit. No wait before the first `BUSY` poll. Mac results for v1 are history, not the current artifact. |
-| v2 | this commit | see `NOTES.md` | Read addresses 0x03 and 0x04; counter checked first; count limits on every poll; 250 microsecond wait; stop code 050C. Mac retest, rebuild and hash still to come. |
+| v1 | `15934b805` | not recorded in this repository | Reads TMP451 configuration and rate at 0x09 and 0x0A, the write addresses. Counter checked only at exit. No wait before the first `BUSY` poll. Mac results for v1 are history, not the current artifact. |
+| v2 | `86346c224` | `23ac56e88271afb49d09ed5684a8a223d5fb63f280a6d93c99f2b1d5cd5ac87f` | Read addresses 0x03 and 0x04; counter checked first; count limits on every poll; 250 microsecond wait; stop code 050C. Mac build, inspection and the three Bazel test targets pass (reported by the user). Against v1 only `bl33.bin` changed; `bl31.bin`, `script.txt` and the ini are equal. |
 
 `CONFIG_LOAD` stays 0x25, hekate's value: bit 0 (master load) is in Linux, bit 2 (timeout load) is defined there and unused,
 bit 5 has no definition in any source read and its meaning is unknown. It is kept because normal mode with this value is
@@ -113,7 +174,20 @@ not shown to recover it. hekate's next `i2c_init` bus clear is the expected reco
 
 ## End of the stage
 
-`exit.c` is shared with D0, D0-R and D1, so it is not changed here. Its waits: the 15 s loop ends by counter and is guarded by
-`counter_advances` before it starts, but sleeps in `wfe` and relies on the event stream (`CNTKCTL_EL1`) to wake; if no event
-arrives it waits forever. After a failed `PSCI` call or an exception the loader halts on purpose. These are the cases
-`RUN_CHECKLIST.md` covers with the power-button hold.
+`exit.c` is shared with D0, D0-R and D1, so it is not changed here. Its 15 s loop ends by counter and is guarded by
+`counter_advances` before it starts, but it sleeps in `wfe` and relies on the event stream (`CNTKCTL_EL1`) to wake; if no
+event arrives it waits forever. After a failed `PSCI` call or an exception the loader halts on purpose. Every stop code of T1
+still reaches this path: the report is drawn, then the wait and the reset. The power-button hold covers the cases where it
+does not.
+
+A register read that never returns stalls the CPU. Interrupts and SError are masked in the loader, so nothing ends it and no
+software timeout can. The only guard is the CAR check: I2C1 is read only when its clock is on and the block is out of reset.
+
+## Audit before the first run
+
+- Allowlist against the code: the raw read and write are one load and one store, called only from `switch_t1_access`, which is
+  called only from `io_read` and `io_write`. No device address is formed in code; all 13 register addresses sit in one 0x68 byte `.rodata`
+  table. The exhaustive host test and the exact transfer order test agree with the allowlist.
+- Counter stopped: 050C before any device access; if it stops later, the count limits end each loop.
+- Transfer failure: one attempt, then the stage ends, status is read, the report is drawn, the 15 s wait and the reset follow.
+- Screen values, codes and abort rules are in the sections above.
