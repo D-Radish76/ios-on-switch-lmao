@@ -84,8 +84,8 @@ boot:
 | hekate's environment is not imported | the default `scan_dev_for_extlinux` is replaced by `true` in this image, so no `extlinux.conf` is read from the SD card, whatever the prefix |
 | `md.l` fails | the failure is counted out: `INCOMPLETE`, no more reads. A bus fault is not a failure `md.l` returns: it stops U-Boot, and the line count stops there |
 
-Unchanged from stock: U-Boot's `reset` at the end of `distro_bootcmd` is gone only in this image. A `reset` or a power
-loss ends in hekate, whose own `autoboot` setting (`hekate_ipl.ini`, not part of this package) decides whether this
+The `reset` at the end of `distro_bootcmd` is removed in this image only. A reset from anything else, or a power loss,
+ends in hekate, whose own `autoboot` setting (`hekate_ipl.ini`, not part of this package) decides whether this
 entry starts again. Set it to 0 on the card you use.
 
 ## Temperature and fan
