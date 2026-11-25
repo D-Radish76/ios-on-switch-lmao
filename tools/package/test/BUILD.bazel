@@ -129,6 +129,22 @@ py_test(
     ],
 )
 
+# hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
+py_test(
+    name = "hush_lint_test",
+    size = "small",
+    srcs = ["hush_lint_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_boot",
+        "//tools/package:diag_memory",
+        "//tools/package:hush_lint",
+    ],
+)
+
 # fdt_ranges.py (the DTB's reserved memory): the pinned DTBs, and every malformed tree it must refuse.
 py_test(
     name = "fdt_ranges_test",

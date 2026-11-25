@@ -160,3 +160,13 @@ instruction. `diag_memory_test` repeats that audit when an AArch64 `llvm-objdump
 D0-pre can show U-Boot's own placement and DRAM banks. It cannot show BL31's or hekate's reservations, memory-controller
 carveouts or anything U-Boot does not track, so a bank with room at `0xA0000000` does not prove the range free.
 
+### D0-pre on the Erista
+
+- Page 2 (control FDT) ran: `/memory` is `0x80000000` + `0x180000000` (6 GiB, a fixed placeholder, now seen on the console),
+  `/reserved-memory` is absent, the reserve map is empty. This matches what was read from the pinned files.
+- Page 1 failed on a hush syntax error caused by an apostrophe in an unquoted `echo`. Fixed; `tools/package/hush_lint.py`
+  now checks every script's characters, quotes, `${` and blocks, and `hush_lint_test` runs it over all of them. Page 1 has to
+  run again before `bdinfo`'s output is known.
+- Both reset paths returned to hekate on the Erista: the script's own tail (page 2) and the image's fallback after a
+  failed script (page 1, `DIAGNOSTIC DID NOT RUN, NO BOOT`).
+

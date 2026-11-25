@@ -31,7 +31,7 @@ Charged battery, console on a table, attended: nothing here manages the fan or t
 then one entry; photograph the screen before the reset; repeat for the other. Hold the power button if a screen stays
 unchanged for 20 s.
 
-The pinned `bl33.bin`'s control FDT has no `/reserved-memory`, so page 2 should print a libfdt error for it.
+The pinned `bl33.bin`'s control FDT has no `/reserved-memory`, so page 2 prints `FDT_ERR_NOTFOUND` for it.
 
 ## Safety
 
@@ -58,4 +58,14 @@ The pinned `bl33.bin`'s control FDT has no `/reserved-memory`, so page 2 should 
 - That the DTB copy or the loader fits the live memory map: nothing is copied.
 - Whether the numbers equal those the loader sees after `bootm go`.
 
-`fdt print`, `bdinfo` and `reset` have not run on a console yet; the first screen decides whether they behave as read.
+## Erista run (2026-11-25)
+
+- Page 2 ran to `END OF THE CONTROL FDT`: `/memory` `reg = <0x00000000 0x80000000 0x00000001 0x80000000>` (the 6 GiB
+  placeholder), `/reserved-memory` `FDT_ERR_NOTFOUND`, empty reserve map. It returned to hekate by itself.
+- Page 1 failed: `Syntax error`, an unknown command with garbled text, `SCRIPT FAILED: continuing...`, then
+  `DIAGNOSTIC DID NOT RUN, NO BOOT`, and it returned to hekate by itself. The only difference from page 2 was an
+  apostrophe in `echo U-Boot's own view`, which hush reads as an unclosed quote. The rest of the script after it was not
+  parsed as written; why the unknown command printed garbage is not established.
+- The reset after a good run and the reset after a failed script are both seen on the Erista.
+- `bdinfo` has not been seen to run. The apostrophe is gone and `hush_lint_test` rejects it and every other character
+  these scripts must not hold; page 1 needs one more run.

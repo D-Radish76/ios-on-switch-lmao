@@ -175,6 +175,12 @@ py_binary(
 )
 
 py_library(
+    name = "hush_lint",
+    srcs = ["hush_lint.py"],
+    imports = ["."],
+)
+
+py_library(
     name = "bdinfo_audit",
     srcs = ["bdinfo_audit.py"],
     imports = ["."],

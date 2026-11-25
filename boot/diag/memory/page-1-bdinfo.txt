@@ -1,3 +1,3 @@
-    echo U-Boot's own view: DRAM banks, relocaddr, reloc off, irq_sp, sp start, TLB addr, fdt_blob
+    echo U-Boot memory layout: DRAM banks, relocaddr, reloc off, irq_sp, sp start, TLB addr, fdt_blob
     bdinfo
     echo END OF bdinfo

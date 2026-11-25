@@ -99,7 +99,8 @@ No boot test until code review and a Bazel build are done.
 - `iOS Diag Memory` and `iOS Diag Memory FDT` print `bdinfo` and the control FDT's memory nodes, then reset after 15 s.
 - Confirmed from the pinned `bl33.bin`'s machine code: `bdinfo` only reads `gd`/`bd` and prints. `fdt addr` with a size
   rewrites the blob (`fdt_open_into`), so the scripts use the address alone; a test forbids the other form.
-- `fdt` behaviour is read from upstream v2018.01/v2024.01 sources. Not shown on hardware: the commands' output, the reset.
+- `fdt` behaviour is read from upstream v2018.01/v2024.01 sources.
+- Erista run: page 2 worked (`/memory` = 6 GiB placeholder `0x80000000`+`0x180000000`, no `/reserved-memory`, empty reserve map). Page 1 hit a hush syntax error from an apostrophe in an `echo`; fixed and linted (`hush_lint.py`), not yet re-run. Both the script's reset and the failed-script fallback reset returned to hekate on the Erista.
 - `fdt_ranges.py` now refuses every malformed or unsupported DTB (header version, bounds, overlap, FDT_END, hierarchy,
   cells, ranges, 64 bit overflow); `fdt_ranges_test` covers each case.
 
