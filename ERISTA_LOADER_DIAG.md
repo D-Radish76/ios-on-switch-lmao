@@ -221,3 +221,11 @@ hekate's T210B01 path copies its MTC table to `0xA0000000` (`BPMPFW_B01_MTC_TABL
 holds below its stack top; the hekate DTB's size; that the loader's own execution does not touch memory outside its
 span (checked by inspection of the binary, not run).
 
+
+## Before the first D0 run
+
+The memory layout is not what blocks it: the loader's span `0xA0000000..0xA00151D0` overlaps no listed range and sits about
+1.5 GiB below U-Boot's stack top. What the first run is for is what no source shows: whether the EL2 to EL1 step, the
+framebuffer writes and the exit work on an Erista. The risks that remain are the ones in the run table of
+`boot/diag/loader/RUN_CHECKLIST.md`. Thermal exposure is the loader's few seconds plus the 15 s wait with the fan off,
+about the same as the two earlier diagnostic runs, attended. The run waits for review.

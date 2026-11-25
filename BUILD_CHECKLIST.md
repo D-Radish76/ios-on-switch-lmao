@@ -213,3 +213,11 @@ python3 tools/package/diag_memory.py build --frame boot/diag/memory/u-boot-scrip
 
 Measured result of page 1 on the Erista: `boot/diag/erista-memory-bdinfo.log` (read by `memory_layout_test`).
 
+
+## Mac verification, D0 (reported 2026-11-25)
+
+Reported by the user, not run here: the related Bazel tests all pass on the Mac, `//boot:diag_loader` builds and passes
+its own inspection, and the SHA-256 values of the package files match those reviewed. The D0 loader's inputs have not
+changed since `e2c03a58`; the later change to `diag_loader.py` (`check_destination` against the DTB's reservations) can
+only refuse a build. Mac checks still owed: `diag_boot.py adopt`, `bazel test //...`, the ios27 and release builds and
+the emulator checks. Run steps for the hardware run: `boot/diag/loader/RUN_CHECKLIST.md`.
