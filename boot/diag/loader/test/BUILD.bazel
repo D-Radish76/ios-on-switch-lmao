@@ -41,3 +41,24 @@ host_test(
     srcs = ["reservations_test.cpp"],
     deps = [":reservations"],
 )
+
+host_library(
+    name = "t1",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/loader/t1.c",
+        "//boot:diag/loader/t1.h",
+        "//boot:diag/loader/t1_gate.c",
+        "//boot:diag/loader/t1_regs.c",
+        "//boot:diag/loader/t1_report.c",
+        "//boot:diag/loader/t1_report.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t1_test",
+    srcs = ["t1_test.cpp"],
+    deps = [":t1"],
+)

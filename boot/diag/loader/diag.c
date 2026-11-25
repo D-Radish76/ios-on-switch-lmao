@@ -14,6 +14,9 @@
 #ifdef SWITCH_DIAG_SD
 #include "sd_report.h"
 #endif
+#ifdef SWITCH_DIAG_T1
+#include "t1_report.h"
+#endif
 
 _Static_assert(SWITCH_DIAG_FB_PA == DISPLAY_BASE && SWITCH_DIAG_FB_BYTES == DISPLAY_BYTES,
                "the checked framebuffer is the one display.h draws on");
@@ -33,6 +36,13 @@ enum {
 #ifdef SWITCH_DIAG_SD
     D_SD_REFERENCE_ERROR,
     D_SD_FLAGS,
+#endif
+#ifdef SWITCH_DIAG_T1
+    D_T1_STOP,
+    D_T1_TRANSFERS,
+    D_T1_ID_CONFIG_RATE,
+    D_T1_RAW,
+    D_T1_CLOCKS,
 #endif
 };
 
@@ -79,8 +89,10 @@ static void put(unsigned column, unsigned row, struct switch_diag_line *line, ui
     if (!diag.screen || row > LAST_ROW)
         return;
     switch_diag_line_clip(line, (SCREEN_WIDTH - column) / GLYPH_WIDTH);
+#ifndef SWITCH_DIAG_T1
     if (column == LEFT && row < FIRST_STATUS_ROW)
         switch_diag_line_clip(line, (RIGHT - LEFT) / GLYPH_WIDTH);
+#endif
     display_text(column, TOP + row * ROW_HEIGHT, line->text, color);
 }
 
@@ -221,6 +233,7 @@ static void report_cpu(void)
              sp_ok ? DISPLAY_WHITE : DISPLAY_RED);
 }
 
+#ifndef SWITCH_DIAG_T1
 static void report_memory_controller(void)
 {
     unsigned different = 0;
@@ -246,6 +259,8 @@ static void report_memory_controller(void)
     switch_diag_line_decimal(&line, different);
     put(LEFT, 8, &line, different ? DISPLAY_RED : DISPLAY_GREEN);
 }
+
+#endif
 
 #ifdef SWITCH_DIAG_RESERVATIONS
 /* Rows 16 to 30 of the left column: the banks and every reserved range as the walk saved them (reserve map entries
@@ -328,6 +343,7 @@ static void report_sd(void)
 }
 #endif
 
+#ifndef SWITCH_DIAG_T1
 static void report_fdt(void)
 {
     struct switch_diag_line line;
@@ -390,6 +406,27 @@ static void report_fdt(void)
 #endif
 }
 
+#endif
+
+#ifdef SWITCH_DIAG_T1
+/* Rows 9 to 16, full width: T1 draws no register column. */
+static void report_t1(void)
+{
+    struct switch_t1_result result;
+    switch_t1_run_on_hardware(&result);
+    struct switch_t1_line lines[SWITCH_T1_LINES];
+    switch_t1_lines(&result, lines);
+    for (unsigned i = 0; i < SWITCH_T1_LINES; ++i)
+        if (lines[i].text.length)
+            put(LEFT, 9 + i, &lines[i].text, lines[i].bad ? DISPLAY_RED : DISPLAY_WHITE);
+    probe_record[D_T1_STOP] = (uint64_t)result.stop;
+    probe_record[D_T1_TRANSFERS] = result.transfers;
+    probe_record[D_T1_ID_CONFIG_RATE] = (uint64_t)result.value[0] << 16 | (uint64_t)result.value[1] << 8 | result.value[2];
+    probe_record[D_T1_RAW] = (uint64_t)result.value[3] << 8 | result.value[4];
+    probe_record[D_T1_CLOCKS] = (uint64_t)result.rst_devices_l << 32 | result.clk_out_enb_l;
+}
+#endif
+
 void switch_diag_after_transition(void)
 {
     volatile uint64_t *r = probe_record;
@@ -397,7 +434,9 @@ void switch_diag_after_transition(void)
                                         r[R_HCR_AFTER], r[R_CNTHCTL_AFTER], r[R_CNTVOFF_AFTER]};
     const int el_ok = !switch_diag_el1_state(&el1);
     begin_screen();
-#ifdef SWITCH_DIAG_SD
+#ifdef SWITCH_DIAG_T1
+    put_text(0, "LOAD DIAG T1. I2C1 AND CAR READS. TMP451 POINTER WRITES ONLY. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_SD)
     put_text(0, "LOAD DIAG D1. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_RESERVATIONS)
     put_text(0, "LOAD DIAG D0-R. READ ONLY. NO KERNEL. NO BOOT", DISPLAY_GREEN);
@@ -412,19 +451,32 @@ void switch_diag_after_transition(void)
         const int known = board->t210b01 != 0xff;
         r[D_BOARD] = known ? (uint64_t)board->t210b01 << 8 | board->sku : UINT64_MAX;
         report_board(board, hidrev, odm4);
+#ifdef SWITCH_DIAG_T1
+        if (known && board->t210b01 == 0)
+            report_t1();
+        else
+            put_text(9, "NOT AN ERISTA. NO T1 REGISTER TOUCHED", DISPLAY_RED);
+#else
         if (known)
             report_memory_controller();
         else
             put_text(8, "UNKNOWN BOARD. MC AND GIC READS SKIPPED", DISPLAY_RED);
+#endif
     } else {
         put_text(1, "NO DEVICE REGISTER WAS READ", DISPLAY_RED);
     }
+#ifndef SWITCH_DIAG_T1
     report_fdt();
+#endif
 #ifdef SWITCH_DIAG_SD
     report_sd();
 #endif
+#ifdef SWITCH_DIAG_T1
+    put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#else
     put_text(14, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD", DISPLAY_WHITE);
     put_text(15, "PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#endif
     r[R_STAGE] = 0xd0;
     switch_diag_exit(say);
 }

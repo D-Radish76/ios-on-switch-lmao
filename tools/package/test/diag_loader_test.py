@@ -41,7 +41,8 @@ LOADER_C = (ROOT / 'boot/loader/loader.c').read_text()
 TEMPLATE = (ROOT / 'boot/diag/loader/u-boot-script.txt').read_text()
 BL33 = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
 DTB = (ROOT / 'bazel/pinned/firmware/erista-sku0.dtb').read_bytes()
-SOURCES = sorted((ROOT / 'boot/diag/loader').glob('*.[chS]'))
+# t1_access.c holds T1's two raw accesses; diag_t1_test.py holds it to its own rules.
+SOURCES = sorted(p for p in (ROOT / 'boot/diag/loader').glob('*.[chS]') if p.name != 't1_access.c')
 
 COMMANDS = {'setenv', 'test', 'echoe', 'base', 'itest.l', 'fdt', 'cp.b', 'bootm', 'sleep', 'reset', 'true'}
 STRUCTURE = {'if', 'then', 'else', 'fi', 'while', 'do', 'done'}

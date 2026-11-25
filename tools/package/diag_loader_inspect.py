@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the D0 loader's binary may contain, read from its link map and its disassembly.
 
-    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd]
+    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1]
 
 Exits nonzero, naming every violation, when the link pulled in the normal loader's kernel path, when code writes a CPU
 system register that WRITES does not list, or when an instruction outside the reviewed set is present. WRITES is the
@@ -81,6 +81,13 @@ SD_CONTROLLER_HOLDERS = ('validate_reference', 'switch_sd_card_reference_validat
 # and 0x52445349, the reference page's magic.
 SD_CONSTANTS = {0x76DC, 0x5244}
 SD_FUNCTIONS = ('switch_sd_crc32', *SD_CONTROLLER_HOLDERS)
+# T1 links the I2C1 check (boot/diag/loader/t1*.c). Its device accesses all run through switch_t1_access, whose
+# allowlist (t1_regs.c) refuses any register or value T1 does not list; the raw read and write are the only code that
+# uses an address.
+T1_SYMBOLS = ('switch_t1_run', 'switch_t1_access', 'switch_t1_read32', 'switch_t1_write32', 'switch_t1_may_write')
+T1_GATE = 'switch_t1_access'
+T1_WRITE32_BODY = re.compile(r'\A(?:mov\s+w(\d+), w0\s*\nstr\s+w1, \[x\1\]|str\s+w1, \[x0\])\s*\nret\s*\Z')
+T1_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <(switch_t1_read32|switch_t1_write32)>')
 COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
 # The one place a device register address is formed. It loads and returns.
 READ32_BODY = re.compile(r'\A(?:mov\s+w\d+, w0\s*\n)?ldr\s+w0, \[x\d+\]\s*\nret\s*\Z')
@@ -90,12 +97,12 @@ DEVICE_IMMEDIATE = re.compile(r'\b(?:movk|movz|mov)\s+[wx]\d+, #0x([0-9a-f]{4}),
 WHOLE_IMMEDIATE = re.compile(r'\bmov\s+[wx]\d+, #0x([0-9a-f]{8})\b')
 
 
-def inspect_map(text: str, sd: bool = False) -> list[str]:
+def inspect_map(text: str, sd: bool = False, t1: bool = False) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
-    problems += [
-        f'the link lacks {name}' for name in (*REQUIRED_SYMBOLS, *(SD_SYMBOLS if sd else ())) if name not in text
-    ]
+    wanted = (*REQUIRED_SYMBOLS, *(SD_SYMBOLS if sd else ()), *(T1_SYMBOLS if t1 else ()))
+    problems += [f'the link lacks {name}' for name in wanted if name not in text]
+    problems += [f'the link has {name} outside T1' for name in T1_SYMBOLS if not t1 and name in text]
     return problems
 
 
@@ -180,7 +187,26 @@ def count_instructions(
     return writes, special, problems
 
 
-def inspect_disassembly(disassembly: str, sd: bool = False) -> list[str]:
+def inspect_t1(code: dict[str, list[str]]) -> list[str]:
+    """Return what is wrong with T1's raw accesses: one instruction each, called only by switch_t1_access."""
+    problems = []
+    write32, read32 = code.get('switch_t1_write32'), code.get('switch_t1_read32')
+    if write32 is None or not T1_WRITE32_BODY.match('\n'.join(write32)):
+        problems.append('switch_t1_write32 is not a single store and a return')
+    if read32 is None or not READ32_BODY.match('\n'.join(read32)):
+        problems.append('switch_t1_read32 is not a single load and a return')
+    for name, body in code.items():
+        if name == T1_GATE:
+            continue
+        problems += [
+            f'{name}: calls {call.group(1)} outside {T1_GATE}' for line in body if (call := T1_CALL.search(line))
+        ]
+    if not any(T1_CALL.search(line) for line in code.get(T1_GATE, [])):
+        problems.append(f'{T1_GATE} does not reach the raw accesses')
+    return problems
+
+
+def inspect_disassembly(disassembly: str, sd: bool = False, t1: bool = False) -> list[str]:
     code = functions(disassembly)
     writes, special, problems = count_instructions(code, sd)
     for target, count in writes.items():
@@ -196,6 +222,8 @@ def inspect_disassembly(disassembly: str, sd: bool = False) -> list[str]:
     read32 = code.get('switch_diag_read32')
     if read32 is None or not READ32_BODY.match('\n'.join(read32)):
         problems.append('switch_diag_read32 is not a single load and a return')
+    if t1:
+        problems += inspect_t1(code)
     return problems
 
 
@@ -212,8 +240,11 @@ def main() -> int:
     parser.add_argument('--disassembly', required=True, type=Path)
     parser.add_argument('--report', type=Path)
     parser.add_argument('--sd', action='store_true', help='the D1 image: the SD reference validator is linked')
+    parser.add_argument('--t1', action='store_true', help='the T1 image: the I2C1 check is linked')
     args = parser.parse_args()
-    problems = inspect_map(args.map.read_text(), args.sd) + inspect_disassembly(args.disassembly.read_text(), args.sd)
+    problems = inspect_map(args.map.read_text(), args.sd, args.t1) + inspect_disassembly(
+        args.disassembly.read_text(), args.sd, args.t1
+    )
     if args.report:
         args.report.write_text('\n'.join(problems or ['D0 loader inspection passed']) + '\n' + report() + '\n')
     if problems:

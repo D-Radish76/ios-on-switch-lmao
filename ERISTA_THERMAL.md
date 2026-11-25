@@ -52,6 +52,8 @@ scale agreed (hekate's cap of 236 against the repository's 256).
 - The repository's limits (PLLX trip 96 C, CPU and GPU 127 C, PMC reset, shutdown at a diode reading of 92.5 C) were chosen for
   the OLED. They are not reviewed for the Erista and are not a reference for it.
 
+T1 to T4 are designed in `ERISTA_THERMAL_DESIGN.md`; T1 is implemented (`ERISTA_T1.md`).
+
 ## What is left open
 
 1. How to read the TMP451 at all: patched FDT or a controller driver in the loader, and what else sits on I2C1.
