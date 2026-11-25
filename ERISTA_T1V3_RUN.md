@@ -26,10 +26,19 @@ The `--t1v3` count must be 1 or more. The audit must end with `AUDIT PASSED` and
 T1 v3 list`. Its Linux output is `boot/diag/erista-t1v3-mmio-audit.txt`: only the two identity registers are formed in code, and
 `switch_t1v3_read32` and `switch_t1v3_write32` are called only by `switch_t1v3_access`.
 
-The hashes of `switchroot/ios-diag-t1v3/bl31.bin`, `bl33.bin`, `script.txt` and `bootloader/ini/ios-diag-t1v3.ini` come from the
-Mac build and are not known yet. Report them, review them, then use them in the check below. `bl31.bin` equals the other
-diagnostics'. The loader's flat image hash on the Linux host is `de7ea6af...16ea` (`tools/package/diag_images.py`, clang 18.1.3);
-the Bazel clang may give another value, so it is not a card check.
+The Mac build of commit `f8cc80dcc` gave these (reported by the user, 2026-11-26). They are the values to check on the card.
+
+| File | SHA-256 |
+| --- | --- |
+| `switchroot/ios-diag-t1v3/bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `switchroot/ios-diag-t1v3/bl33.bin` | `34f08be629e6757272735b97d20a71a6c4c41311dbc0c84a475b481bdbd89896` |
+| `switchroot/ios-diag-t1v3/script.txt` | `f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef` |
+| `bootloader/ini/ios-diag-t1v3.ini` | `64cc262c478256234adbc9780a173eb1e00933c702f7f91046b7972eb8ba821b` |
+
+`bl31.bin` and `script.txt` equal the other diagnostics'. Against the Mac build before the pins, only `bl33.bin` changed. On the
+Mac the 7 Bazel tests passed, `aquery` showed `--t1v3` once, the audit printed `AUDIT PASSED`, and the 24 files of the six other
+images matched the earlier Mac hashes. The loader's flat image hash on the Linux host is `de7ea6af...16ea`
+(`tools/package/diag_images.py`, clang 18.1.3); the Bazel clang may give another value, so it is not a card check.
 
 The six other images must not change. With the same compiler on both sides:
 
@@ -54,7 +63,17 @@ sync
 ls -la "$SD/switchroot/ios-diag-t1v3" "$SD/bootloader/ini"
 ```
 
-Then run `shasum -a 256 -c` against the four Mac hashes from section 1, eject, insert again and check a second time. Any
+```
+cd "$SD" && shasum -a 256 -c <<'SUMS'
+dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4  switchroot/ios-diag-t1v3/bl31.bin
+34f08be629e6757272735b97d20a71a6c4c41311dbc0c84a475b481bdbd89896  switchroot/ios-diag-t1v3/bl33.bin
+f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef  switchroot/ios-diag-t1v3/script.txt
+64cc262c478256234adbc9780a173eb1e00933c702f7f91046b7972eb8ba821b  bootloader/ini/ios-diag-t1v3.ini
+SUMS
+find "$SD" -name '._*' -path '*ios-diag-t1v3*'
+```
+
+All four print `OK` and `find` prints nothing. Eject (`diskutil eject "$SD"`), insert again and run the check a second time. Any
 `FAILED`, missing file or `._` file: do not run. Older entries stay on the card.
 
 ## 3. Before starting
@@ -89,7 +108,7 @@ Any miss stops with nothing written. The order is the order of the code.
 
 | Check | Stop |
 | --- | --- |
-| Not an Erista | `0611`, nothing touched |
+| Not an Erista | entry check in `diag.c`: the screen says `NOT AN ERISTA. NO T1V3 REGISTER TOUCHED`, the run never starts (`0611` is only the report name) |
 | Counter advances | `0612` |
 | I2C1 clock on, not in reset | `0601`, `0602` |
 | `CLK_SOURCE_I2C1` is `00000003` | `0603` |
@@ -123,7 +142,7 @@ Times are reference values, not an SCL measurement.
 | Screen | Meaning |
 | --- | --- |
 | `COMPLETE`, ID `55` | the TMP451 ACKed at the slower rate and returned its ID. Under the model SCL is about 49.8 kHz; the module clock is a model |
-| `0601` to `0609`, `0611`, `0613` to `0616`, `061B` before any write | a gate stopped. Report the code and the words shown |
+| `0601` to `0609`, `0612` to `0616`, `061B` before any write | a gate stopped. Report the code and the words shown |
 | `060D` NOACK | the device did not answer. It does not show a timing fault: if TIMING_1 counts module cycles, setup and hold at the slower divisor are about 21 times shorter in time than under hekate's 4.8 MHz source (unverified unit) |
 | `060B` | divisor readback differs. The divisor is not restored |
 | `060A`, `0617` | `CONFIG_LOAD` anomaly. No transfer started from it |
@@ -184,7 +203,33 @@ Done offline on 2026-11-26. No write path was changed.
 6. **One finding.** The name of stop `0607` reads "I2C1 TIMING_0 IS NOT 00000204" but the code also uses `0607` for a `TIMING_1`
    mismatch. The screen shows both words, so the cause is readable. The text is not changed here.
 
-## 10. After the run
+## 10. Final review before the run
+
+Done offline on 2026-11-26 against `t1v3.c`, `t1v3_regs.c` and the host tests. No device code was changed. Nothing here was run on
+hardware.
+
+| Item | Result |
+| --- | --- |
+| 11 writes | Address, value and order are the table in section 4. Host test `NormalRunWritesTheElevenReviewedWordsInOrder` and the new `T1v3Pins` tests compare the exact list. The allowlist holds five I2C1 registers and these values only |
+| Gates and stop codes | Section 5 is the code order: counter, the four CAR reads and their four checks, the seven I2C1 reads and their checks, three idle samples. Each stop is tested with zero writes |
+| `CONFIG_LOAD` after the divisor change | Bit 0 must clear within 1 ms (`060A`). Then the word must be `0` or `4`, else `0617` before any transfer. Before each go it must be exactly `4`. The divisor readback must be `00FF0001` (`060B`), `STATUS` BUSY clear (`060F`), `INT_STATUS` unchanged (`0614`) |
+| BUSY, NOACK, timeout | BUSY must rise within 1 ms of the go (`0618`) and clear within 100 ms (`060C`). NOACK bits are read after BUSY clears (`060D`). A NOACK on the pointer write ends the run before the read. Every poll also ends after 1,000,000 iterations |
+| No write after a stop | `put()` returns before the allowlist and the device once a stop code exists. A source test holds that order. Stops can only be raised after a load poll or a go, and the scenario table lists the write counts 2, 6, 7, 10 and 11 |
+| Recovery | section 8. No restore, no bus clear, no controller reset |
+| Temperature and time | the loader reads no temperature: it reads the TMP451 manufacturer ID, not a temperature register. The limit is the person's: Nyx value before and after, a 50 s deadline, power button on heat. The run itself is under a second plus the 15 s countdown (estimate) |
+| Card copy and check | section 2, with the Mac hashes above |
+
+Findings, none changed:
+
+- **The reset path and I2C1 are not known to be independent.** After a stop the divisor stays at `00FF0001` and the loader calls PSCI
+  `SYSTEM_RESET`. Whether BL31's reset path or anything that runs before hekate's `i2c_init` talks to I2C1 is not observed. If it
+  does, it runs at the slower rate. No evidence either way. Treat a hang after the countdown as a result and report it.
+- **A NOACK is ambiguous** (section 7): the `TIMING_1` unit is unknown, so no conclusion about timing follows.
+- **No on-device temperature stop exists.** The deadlines and the console's heat are the only brakes, and both are human.
+- **Other devices on I2C1** (charger, fuel gauge) see the slower bus only after write 2. No other master is known in the loader
+  window. That is a reading of code that was not run.
+
+## 11. After the run
 
 One run. Do not retry. After an abnormal end, power off, wait 10 s and follow the Nyx recovery check in `ERISTA_T1_RUN.md`
 section 6.
