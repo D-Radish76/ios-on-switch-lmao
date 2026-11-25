@@ -10,9 +10,9 @@ act, not a thermal limit.
 ## 1. Build and verify (Mac)
 
 ```
-bazel test //boot/diag/loader/test:t1t_test //tools/package/test:diag_t1t_test //tools/package/test:diag_t1v3_test //tools/package/test:diag_loader_test
-bazel build //boot:diag_t1t
-bazel aquery //boot:diag_t1t --output=text | grep -c -- '--t1t'
+bazel test //boot/diag/loader/test:t1t_test //tools/package/test:diag_t1t_test //tools/package/test:diag_t1v3_test //tools/package/test:diag_loader_test //tools/package/test:diag_mmio_audit_test --config=ios17
+bazel build //boot:diag_t1t --config=ios17
+bazel aquery //boot:diag_t1t --config=ios17 --output=text | grep -c -- '--t1t'
 PKG="$PWD/bazel-bin/boot/diag_t1t/package"
 (cd "$PKG" && find . -type f | sort | xargs shasum -a 256)
 ```
@@ -65,7 +65,7 @@ from the first U-Boot line.
 | `--t1t` check | `loader.bzl` passes `--t1t` for `t1t = True`. `diag_loader.py link` run without it fails; with it, it passes. |
 | Registers | 25 reads: 11 CAR, then 7 per controller. Table below. |
 | I2C5 gate | read only if `CLK_OUT_ENB_H` bit 15 is set and `RST_DEVICES_H` bit 15 is clear. Bit numbers match hekate `CLK_H_I2C5 = 15`. I2C1 uses L bit 12 (`CLK_L_I2C1 = 12`). A block is judged on its own bits only. |
-| Writes | none by construction. See section 7 for what the checks do not cover. |
+| Writes | none by construction. Audit in section 8, with what it cannot show. |
 | Screen | 16 lines at rows 9 to 24, footer at row 26, last row 34. Longest line 96 characters, 105 fit. |
 | Time | see section 6 |
 
@@ -129,15 +129,64 @@ Return to hekate: after the report the loader waits 15 s and calls PSCI `SYSTEM_
 way on 2026-11-26. For T1-T it is unverified until it happens. An exception ends the same way, since the exception screen
 also goes to the 15 s wait. Nothing was written, so nothing needs restoring.
 
-What the checks do not cover:
+What the checks do not cover is in section 8.
 
-- The inspection finds device addresses in the flat image and in `movz`/`movk` immediates, but it skips the `0x7000` page for
-  immediates, because the identity registers `70000804` and `7000f9d8` live there. A scan of this image found only those two.
-  A later change that built an I2C address from immediates would not be caught by the inspection.
-- Read side effects of the timing registers and of every I2C5 register are undocumented in the sources read. See
-  `ERISTA_T1T_DESIGN.md`.
+## 8. Address audit
 
-## 8. After the run
+`tools/package/diag_mmio_audit.py` reads the loader's disassembly and lists every instruction that forms an address in the
+device window `0x50000000` to `0x7fffffff`, where that register goes, and the path from an address to its access. It reads
+text only, so the Mac's `loader.dis` works as well as one built on Linux.
+
+```
+PYTHONPATH=tools/package python3 tools/package/diag_mmio_audit.py \
+  --disassembly bazel-bin/boot/diag_t1t/loader.dis \
+  --uboot-image bazel-bin/boot/diag_t1t/loader.uboot.bin --t1t
+```
+
+Exit status 0 and `AUDIT PASSED` mean the checks below held. The `--uboot-image` flag adds the flat-image check of the register
+address words. `loader.dis` is next to `loader.elf` in `bazel-bin/boot/diag_t1t/`. The build host's output is kept in
+`boot/diag/erista-t1t-mmio-audit.txt`; the Mac output should list the same addresses, and function offsets may differ.
+
+Result on the build host (clang 18.1.3, commit of this sheet), same image as `c81b53ad...14bc`:
+
+| Address formed | Instruction | Where it goes |
+| --- | --- | --- |
+| `0x70000804` | `mov` and `movk` in `switch_diag_after_transition` | `bl switch_diag_read32`, one `ldr` |
+| `0x7000f9d8` | same function | `bl switch_diag_read32`, one `ldr` |
+| `0x7fd00000` | `mov` in `loader_check_fdt_memory_ranges` | nothing: no load, store, copy or call uses it. It is the RAM size bound of the FDT check and is only compared. |
+
+No `0x6000` (CAR), `0x7000c...` or `0x7000d...` (I2C) address is formed by any instruction. The I2C and CAR addresses exist only
+as the 25 words of the static table in `t1t_regs.c`, which the flat-image check holds to the listed addresses, once each.
+
+What the audit establishes:
+
+1. Every window address built from `mov`, `movz`, `movk`, `add` with an immediate, or `adrp`, with its function and address.
+2. That none except the two identity registers reaches a load, a store, a register copy or a call. The two go to
+   `switch_diag_read32` and nowhere else.
+3. That `switch_t1t_read32` has one caller, `switch_t1t_access`, and that `switch_t1t_address` has one caller too.
+4. That the flat image holds only the listed register address words (T1-T list, each once).
+
+The path for T1-T's 25 reads is: static table word, `switch_t1t_address`, `switch_t1t_access`, `switch_t1t_read32`, one `ldr`.
+The audit checks each step is single and listed. It does not execute the path.
+
+What it cannot guarantee:
+
+- It follows registers in instruction order inside one function. A constant formed in one basic block and used in another,
+  or held across a call in a callee-saved register, can be missed.
+- A load or store through a pointer that is not a constant is counted, not bounded. The audit lists those functions (the
+  result writes, the screen, the FDT check). A pointer that happens to hold a window address at run time is invisible to it.
+  Today the only such pointer into a device is the argument of the two raw reads.
+- It sees code, not data. Addresses in the table or in a literal pool are covered only by the flat-image check, and that
+  check only knows the CAR and I2C pages.
+- It does not see arithmetic done by a function it does not model, a computed branch, or code that rewrites itself.
+- It says nothing about what the CPU, the exception handlers or the PSCI call do. Those are the reviewed `msr` and `smc`
+  instructions in `inspection.txt`.
+- It says nothing about read side effects. A read can still change device state.
+
+The same text inspection is what the Bazel link action already runs on the ELF. The audit adds the `0x7000` page that
+inspection skips and shows the result in one list.
+
+## 9. After the run
 
 One run. Do not retry. After an abnormal end, power off, wait 10 s and follow the Nyx recovery check in `ERISTA_T1_RUN.md`
 section 6.

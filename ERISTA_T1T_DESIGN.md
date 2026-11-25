@@ -57,8 +57,8 @@ value is a reset value, is safe, or is what a later boot stage would leave. The 
 ## Mac commands
 
 ```sh
-bazel test //boot/diag/loader/test:t1t_test //tools/package/test:diag_t1t_test //tools/package/test:diag_t1v3_test
-bazel build //boot:diag_t1t
+bazel test //boot/diag/loader/test:t1t_test //tools/package/test:diag_t1t_test //tools/package/test:diag_t1v3_test --config=ios17
+bazel build //boot:diag_t1t --config=ios17
 shasum -a 256 bazel-bin/boot/diag_t1t/package/switchroot/ios-diag-t1t/*
 ```
 

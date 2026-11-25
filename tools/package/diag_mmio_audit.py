@@ -1,0 +1,238 @@
+r"""List the device-window addresses a diagnostic loader forms in code and where each goes.
+
+Input is the loader's disassembly (llvm-objdump -d --no-show-raw-insn), `loader.dis` in the Bazel output:
+    diag_mmio_audit.py --disassembly bazel-bin/boot/diag_t1t/loader.dis \\
+        [--uboot-image bazel-bin/boot/diag_t1t/loader.uboot.bin --t1t]
+It reads text only, so the Mac file works as well as a Linux one. The exit status is 1 for a window address that reaches
+a load, a store, a copy or a call other than the identity register reads. What a linear scan cannot show is in
+ERISTA_T1T_RUN.md, section 8.
+"""
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from diag_loader_inspect import inspect_image
+
+WINDOW = (0x50000000, 0x80000000)
+ID_REGISTERS = (0x70000804, 0x7000F9D8)
+UIMAGE_MAGIC, UIMAGE_HEADER = 0x27051956, 64
+HEX = r'(-?0x[0-9a-f]+|-?\d+)'
+MEMORY = re.compile(r'^(ld|st)[a-z]*\s+[^\[]*\[(sp|x\d+)')
+MOVZ = re.compile(rf'^movz\s+[wx](\d+), #{HEX}(?:, lsl #(\d+))?$')
+MOVK = re.compile(rf'^movk\s+[wx](\d+), #{HEX}(?:, lsl #(\d+))?$')
+MOV_IMM = re.compile(rf'^mov\s+[wx](\d+), #{HEX}$')
+MOV_REG = re.compile(r'^mov\s+[wx](\d+), [wx](\d+)$')
+ADD_IMM = re.compile(rf'^add\s+[wx](\d+), [wx](\d+), #{HEX}$')
+ADRP = re.compile(r'^adrp?\s+x(\d+), 0x([0-9a-f]+)')
+CALL = re.compile(r'^(bl|b)\s+0x[0-9a-f]+ <([^>+]+)')
+DEST = re.compile(r'^[a-z0-9.]+\s+[wx](\d+),')
+NO_DEST = ('cmp', 'cmn', 'tst', 'ccmp', 'str', 'stp', 'stur', 'b.', 'cbz', 'cbnz', 'tbz', 'tbnz')
+
+
+def in_window(value: int) -> bool:
+    return WINDOW[0] <= value < WINDOW[1]
+
+
+def parse(disassembly: str) -> dict[str, list[tuple[str, str]]]:
+    found: dict[str, list[tuple[str, str]]] = {}
+    current = None
+    for line in disassembly.splitlines():
+        if header := re.match(r'^[0-9a-f]+ <([^>]+)>:', line):
+            current = found.setdefault(header.group(1), [])
+        elif current is not None and (m := re.match(r'^\s*([0-9a-f]+):\s*(.*)$', line)):
+            current.append((m.group(1), re.sub(r'\s+', ' ', m.group(2).split('//')[0]).strip()))
+    return found
+
+
+@dataclass
+class Findings:
+    formed: list[tuple[int, str]] = field(default_factory=list)  # value, "function address: instruction"
+    uses: list[str] = field(default_factory=list)
+    calls: list[str] = field(default_factory=list)
+    bases: dict[str, int] = field(default_factory=dict)
+
+
+class Tracker:
+    """Follows registers holding a constant through one function in instruction order (not through branches)."""
+
+    def __init__(self, name: str, found: Findings) -> None:
+        self.name, self.found = name, found
+        self.regs: dict[int, int | str] = {}  # a constant, or 'data' for an adrp page
+
+    def form(self, reg: int, value: int, where: str) -> None:
+        self.regs[reg] = value & 0xFFFFFFFFFFFFFFFF
+        if in_window(value):
+            self.found.formed.append((value, where))
+
+    def step(self, address: str, text: str) -> None:  # noqa: C901
+        where = f'{self.name} {address}: {text}'
+        if m := MOVZ.match(text):
+            self.form(int(m[1]), int(m[2], 0) << int(m[3] or 0), where)
+        elif m := MOVK.match(text):
+            self.movk(int(m[1]), int(m[2], 0), int(m[3] or 0), where)
+        elif m := MOV_IMM.match(text):
+            self.form(int(m[1]), int(m[2], 0), where)
+        elif m := MOV_REG.match(text):
+            self.copy(int(m[1]), int(m[2]), where)
+        elif m := ADD_IMM.match(text):
+            held = self.regs.get(int(m[2]))
+            if isinstance(held, int):
+                self.form(int(m[1]), held + int(m[3], 0), where)
+            else:
+                self.regs.pop(int(m[1]), None)
+        elif m := ADRP.match(text):
+            self.regs[int(m[1])] = 'data'
+            if in_window(int(m[2], 16)):
+                self.found.formed.append((int(m[2], 16), where))
+        elif m := CALL.match(text):
+            self.call(m[1], m[2], where)
+        else:
+            self.access(where, text)
+            if (d := DEST.match(text)) and not text.startswith(NO_DEST):
+                self.regs.pop(int(d[1]), None)
+
+    def movk(self, reg: int, imm: int, shift: int, where: str) -> None:
+        held = self.regs.get(reg)
+        if isinstance(held, int):
+            self.form(reg, (held & ~(0xFFFF << shift)) | (imm << shift), where)
+        else:
+            self.regs.pop(reg, None)
+
+    def copy(self, dest: int, source: int, where: str) -> None:
+        held = self.regs.get(source)
+        if held is None:
+            self.regs.pop(dest, None)
+            return
+        self.regs[dest] = held
+        if isinstance(held, int) and in_window(held):
+            self.found.uses.append(f'{where}  (copy of {held:#x})')
+
+    def call(self, kind: str, target: str, where: str) -> None:
+        args = [f'x{r}={v:#x}' for r in range(8) if isinstance(v := self.regs.get(r), int) and in_window(v)]
+        if args:
+            self.found.calls.append(f'{where}  ({kind} {target} with {", ".join(args)})')
+        self.regs = {r: v for r, v in self.regs.items() if r >= 19 and r != 30}
+
+    def access(self, where: str, text: str) -> None:
+        if not (m := MEMORY.match(text)):
+            return
+        kind = 'load' if m[1] == 'ld' else 'store'
+        held = self.regs.get(int(m[2][1:])) if m[2] != 'sp' else None
+        if m[2] in ('sp', 'x29'):
+            base = 'stack'
+        elif held == 'data':
+            base = 'static data'
+        elif isinstance(held, int):
+            base = 'window constant' if in_window(held) else 'RAM constant'
+            if in_window(held):
+                self.found.uses.append(f'{where}  ({kind} through the window constant {held:#x})')
+        else:
+            base = 'pointer'
+        key = f'{kind} {base}'
+        self.found.bases[key] = self.found.bases.get(key, 0) + 1
+
+
+def callers(code: dict[str, list[tuple[str, str]]], target: str) -> list[str]:
+    return sorted(n for n, body in code.items() if any((m := CALL.match(t)) and m[2] == target for _, t in body))
+
+
+def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
+    lines = []
+    for name in ('switch_diag_read32', 'switch_t1t_read32'):
+        if name in code:
+            loads = [t for _, t in code[name] if MEMORY.match(t)]
+            lines.append(
+                f'   {name}: {" ; ".join(loads) or "no memory access"}; called by {", ".join(callers(code, name))}'
+            )
+    if 'switch_t1t_access' in code:
+        lines.append(
+            '   T1-T: static table (switch_t1t_address) -> switch_t1t_access -> switch_t1t_read32 -> one load; '
+            f'switch_t1t_address called by {", ".join(callers(code, "switch_t1t_address"))}'
+        )
+    return lines
+
+
+def judge(found: Findings, code: dict[str, list[tuple[str, str]]]) -> list[str]:
+    problems = []
+    for value, where in found.formed:
+        if value in ID_REGISTERS:
+            continue
+        if ': adrp' in where:
+            problems.append(f'a page address in the device window is formed by adrp: {where}')
+        site = where.split(':')[0]
+        problems += [f'window address {value:#x} is used: {u}' for u in found.uses + found.calls if u.startswith(site)]
+    problems += [f'a window constant goes to {c}' for c in found.calls if 'switch_diag_read32' not in c]
+    problems += [f'a window constant is copied or dereferenced: {u}' for u in found.uses if 'copy of' not in u]
+    seen = {v for v, _ in found.formed}
+    problems += [f'identity register constant {v:#x} not found' for v in ID_REGISTERS if v not in seen]
+    problems += [
+        f'switch_t1t_read32 is called by {c}' for c in callers(code, 'switch_t1t_read32') if c != 'switch_t1t_access'
+    ]
+    return problems
+
+
+def audit(disassembly: str, flat: bytes | None = None, *, t1t: bool = False) -> tuple[list[str], list[str]]:
+    """Return the report lines and the problems."""
+    code = parse(disassembly)
+    found, pointers = Findings(), []
+    for name, body in code.items():
+        before = dict(found.bases)
+        tracker = Tracker(name, found)
+        for address, text in body:
+            tracker.step(address, text)
+        mine = {k: v - before.get(k, 0) for k, v in found.bases.items() if 'pointer' in k and v - before.get(k, 0)}
+        if mine:
+            pointers.append(f'   {name}: ' + ', '.join(f'{k} x{v}' for k, v in sorted(mine.items())))
+    report = ['1. Instructions that form an address in the device window 0x50000000 to 0x7fffffff']
+    report += [f'   {where}  -> {value:#x}' for value, where in found.formed] or ['   none']
+    report.append('2. Where those registers go (loads, stores, copies, calls)')
+    report += [f'   {line}' for line in found.uses + found.calls] or ['   nothing']
+    report.append('3. The path from an address to its access')
+    report += path_lines(code)
+    report.append('4. Functions that load or store through a pointer that is not a constant (not bounded by this scan)')
+    report += pointers
+    report.append('5. Memory accesses by base: ' + ', '.join(f'{k} x{v}' for k, v in sorted(found.bases.items())))
+    problems = judge(found, code)
+    if flat is not None:
+        listed = inspect_image(flat, t1t=t1t)
+        report.append(
+            '6. Flat image: '
+            + (
+                'register address words match the T1-T list'
+                if t1t and not listed
+                else 'MISMATCH'
+                if t1t
+                else 'not checked'
+            )
+        )
+        problems += listed
+    return report, problems
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--disassembly', required=True, type=Path)
+    parser.add_argument('--uboot-image', type=Path, help='loader.uboot.bin; its flat image is checked as well')
+    parser.add_argument('--t1t', action='store_true', help='the image is T1-T: check its register address words')
+    args = parser.parse_args()
+    flat = None
+    if args.uboot_image:
+        raw = args.uboot_image.read_bytes()
+        if int.from_bytes(raw[:4], 'big') != UIMAGE_MAGIC:
+            print('not a legacy U-Boot image', file=sys.stderr)
+            return 2
+        flat = raw[UIMAGE_HEADER:]
+    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t)
+    print('\n'.join(report))
+    if problems:
+        print('\nPROBLEMS:\n' + '\n'.join(problems), file=sys.stderr)
+        return 1
+    print('\nAUDIT PASSED: only the two identity registers reach a call or an access.')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

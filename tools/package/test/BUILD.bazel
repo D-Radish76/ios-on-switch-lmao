@@ -286,6 +286,22 @@ py_test(
     ],
 )
 
+# The device-window audit on synthetic disassembly and on a real T1-T link.
+py_test(
+    name = "diag_mmio_audit_test",
+    size = "medium",
+    srcs = ["diag_mmio_audit_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader_inspect",
+        "//tools/package:diag_mmio_audit",
+    ],
+)
+
 # T1-T's read-only inspection, a real link through it, what its sources may name and the recorded hashes of every
 # diagnostic image. Both T1 tests read boot/BUILD.bazel, which //boot:all_sources leaves out.
 py_test(

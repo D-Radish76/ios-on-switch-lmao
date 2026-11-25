@@ -172,6 +172,13 @@ py_binary(
     deps = [":diag_loader_inspect"],
 )
 
+# Lists the device-window addresses a diagnostic loader forms in code, from its loader.dis (ERISTA_T1T_RUN.md).
+py_binary(
+    name = "diag_mmio_audit",
+    srcs = ["diag_mmio_audit.py"],
+    deps = [":diag_loader_inspect"],
+)
+
 # Offline reader for the Erista BPMP firmware, which is never stored here (ERISTA_BPMPFW.md).
 py_binary(
     name = "bpmpfw_scan",
