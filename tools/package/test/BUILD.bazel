@@ -129,6 +129,22 @@ py_test(
     ],
 )
 
+# The Erista's measured DRAM layout (bdinfo) against the D0 loader's span and the other ranges the package and hekate use.
+py_test(
+    name = "memory_layout_test",
+    size = "small",
+    srcs = ["memory_layout_test.py"],
+    data = [
+        "//boot:diag/erista-first-run.log",
+        "//boot:diag/erista-memory-bdinfo.log",
+    ],
+    deps = [
+        "//tools/package:diag_loader",
+        "//tools/package:loader_abi",
+        "//tools/package:memory_layout",
+    ],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",

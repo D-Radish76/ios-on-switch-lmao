@@ -170,3 +170,54 @@ carveouts or anything U-Boot does not track, so a bank with room at `0xA0000000`
 - Both reset paths returned to hekate on the Erista: the script's own tail (page 2) and the image's fallback after a
   failed script (page 1, `DIAGNOSTIC DID NOT RUN, NO BOOT`).
 
+### D0-pre result: the Erista's DRAM and U-Boot's place in it
+
+Measured (`boot/diag/erista-memory-bdinfo.log`, typed from the run's report):
+
+| | start | size | end |
+| --- | --- | --- | --- |
+| DRAM bank 0 | `0x80000000` | `0x7FD00000` | `0xFFD00000` |
+| DRAM bank 1 | `0x100000000` | `0x80000000` | `0x180000000` |
+
+Bank 0 plus bank 1 is `0xFFD00000` bytes, 4093 MiB, which is 4 GiB less 3 MiB. `TLB addr 0xFFCF0000`, `relocaddr
+0xFFC87000`, `reloc off 0x77B77000` (`relocaddr - reloc off = 0x88110000`, the image's link address), `irq_sp` and
+`sp start 0xFF87F710`, `fdt_blob 0xFF87F728`, early malloc 138 of 2000 bytes, `boot_params 0x80000100`.
+
+**Why 3 MiB are missing from bank 0.** `0xFFD00000..0x100000000` is the secure top of the first 4 GiB. The carveouts the
+run's MC rows describe sit there with no gap, and hekate's `l4t.c` builds the same layout without NVDEC/TSEC carveouts
+(`TZDRAM_BASE = 0xFFFFFFFF - 1 MiB + 1`, `GEN_CARVEOUT_TOP = TZDRAM_BASE - 1 MiB`, GPU firmware 256 KiB below it, GPU WPR
+768 KiB above that):
+
+| Range | Size | What | How known |
+| --- | --- | --- | --- |
+| `0xFFD00000..0xFFD40000` | 256 KiB | GPU firmware, MC carveout 2 (`0x70019c5c` = `0xffd00000`, size field 2 x 128 KiB) | decoded |
+| `0xFFD40000..0xFFE00000` | 768 KiB | GPU WPR, MC carveout 3 (`0x70019cac`, size field 6) | decoded |
+| `0xFFE00000..0xFFF00000` | 1 MiB | secure firmware (SC7 entry/exit, R2P, MTC table at +512 KiB, BPMP-FW), MC carveout 1 (`0x70019c0c`, size field 8) | decoded |
+| `0xFFF00000..0x100000000` | 1 MiB | TZDRAM, BL31 loaded at its base, `0x700199a0` = `0xfff00000` | register meaning inferred, size from `l4t.c` |
+
+The registers' roles are my reading of the T210 layout and `l4t.c`; the MC rows are the 25 the run reported equal to
+`native_gate`'s table. The package already keeps this range out of XNU as `secure-low-tail`. That U-Boot stops its
+first bank at the lowest carveout base is seen; how its code derives it is not read (the Switchroot U-Boot's source is
+not in this repository). `l4t.c` prints the same value as `DRAM Bank 0 TOP`.
+
+**U-Boot after relocation** sits in the top of bank 0: image `0xFFC87000..0xFFCF0000`, TLB `0xFFCF0000` up to the
+carveouts (64 KiB assumed), FDT at `0xFF87F728`, stack growing down from `0xFF87F710`, malloc between them. Before
+relocation it ran from hekate's copy at `0xAA000000` (hekate's environment below it at `0xA9FC0000`, hekate's DTB at
+`0xA8000000`, per `l4t.c`).
+
+**D0 loader `0xA0000000..0xA00151D0`** (reserved up to `0xA001EF00`; its stack is inside the image, `.stacks`):
+
+- inside bank 0, 1.5 GiB below U-Boot's stack top, so no stack depth that U-Boot has can reach it;
+- 160 MiB below the pre-relocation U-Boot, 127 MiB below hekate's DTB, 258 MiB above the boot-args page, 32 MiB below
+  the staged-kernel capacity, 40 KiB below the SD reference page;
+- clear of the framebuffer `0xF5A00000..0xF5E00000`, which is below U-Boot's stack top and above the loader.
+
+`memory_layout_test` runs these comparisons over every range the package and `l4t.c` name.
+
+hekate's T210B01 path copies its MTC table to `0xA0000000` (`BPMPFW_B01_MTC_TABLE_BASE`); the T210 path copies it to
+`SECFW_BASE + 512 KiB` (`0xFFE80000`), so on the Erista nothing of hekate's is documented at the loader's address.
+
+**Not shown.** That memory outside the listed ranges is free (a range this document does not know of); what U-Boot
+holds below its stack top; the hekate DTB's size; that the loader's own execution does not touch memory outside its
+span (checked by inspection of the binary, not run).
+

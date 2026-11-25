@@ -175,6 +175,13 @@ py_binary(
 )
 
 py_library(
+    name = "memory_layout",
+    srcs = ["memory_layout.py"],
+    imports = ["."],
+    deps = [":loader_abi"],
+)
+
+py_library(
     name = "hush_lint",
     srcs = ["hush_lint.py"],
     imports = ["."],

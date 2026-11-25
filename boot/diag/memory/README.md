@@ -67,5 +67,5 @@ The pinned `bl33.bin`'s control FDT has no `/reserved-memory`, so page 2 prints 
   apostrophe in `echo U-Boot's own view`, which hush reads as an unclosed quote. The rest of the script after it was not
   parsed as written; why the unknown command printed garbage is not established.
 - The reset after a good run and the reset after a failed script are both seen on the Erista.
-- `bdinfo` has not been seen to run. The apostrophe is gone and `hush_lint_test` rejects it and every other character
-  these scripts must not hold; page 1 needs one more run.
+- Page 1 after the fix (`60376c2e`) ran to `END OF bdinfo` and reset to hekate. The values are in
+  `boot/diag/erista-memory-bdinfo.log`; `tools/package/memory_layout.py` and its test read them.

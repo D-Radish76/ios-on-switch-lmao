@@ -104,6 +104,15 @@ No boot test until code review and a Bazel build are done.
 - `fdt_ranges.py` now refuses every malformed or unsupported DTB (header version, bounds, overlap, FDT_END, hierarchy,
   cells, ranges, 64 bit overflow); `fdt_ranges_test` covers each case.
 
+## Erista DRAM and U-Boot placement (D0-pre page 1, measured)
+
+- Banks: `0x80000000`+`0x7FD00000` and `0x100000000`+`0x80000000`; total 4093 MiB (4 GiB less 3 MiB).
+- The 3 MiB at `0xFFD00000..0x100000000` are the secure carveouts (GPU firmware, GPU WPR, secure firmware, TZDRAM): from the
+  run's MC rows and hekate's `l4t.c`. Register roles are decoded, not documented; U-Boot's own derivation is unread.
+- U-Boot relocated to `0xFFC87000`, TLB `0xFFCF0000`, stack top and FDT `0xFF87F710`/`0xFF87F728`: 1.5 GiB above the D0 loader.
+- No overlap between `0xA0000000..0xA00151D0` and any listed range (`memory_layout_test`). Not a proof that unlisted memory is
+  free. Details, margins and open items in `ERISTA_LOADER_DIAG.md`.
+
 ## Before the first boot test
 
 - Keep the SD card as the only write target and boot from hekate, so Linux and hekate stay the fallback.

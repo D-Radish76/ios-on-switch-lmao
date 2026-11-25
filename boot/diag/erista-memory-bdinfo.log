@@ -1,0 +1,18 @@
+# D0-pre page 1 (iOS Diag Memory) on a physical Erista (t210b01=0, sku=0), commit 60376c2e, hekate 6.5.5.
+# Typed from the run's report to this repository, not from the photograph: the layout is U-Boot's `bdinfo` with the
+# values as reported. Replace this file with the transcribed screen if it is typed in later. Console and board lines:
+# t210b01=0 sku=0 status=READY console=OK. The run reached END OF bdinfo and reset to hekate.
+arch_number = 0x00000000
+boot_params = 0x80000100
+DRAM bank 0 start = 0x80000000
+DRAM bank 0 size = 0x7FD00000
+DRAM bank 1 start = 0x100000000
+DRAM bank 1 size = 0x80000000
+baudrate = 115200
+TLB addr = 0xFFCF0000
+relocaddr = 0xFFC87000
+reloc off = 0x77B77000
+irq_sp = 0xFF87F710
+sp start = 0xFF87F710
+Early malloc usage = 138 / 2000
+fdt_blob = 0xFF87F728
