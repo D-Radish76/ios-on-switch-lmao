@@ -1,4 +1,5 @@
 import copy
+import os
 import plistlib
 import shutil
 import struct
@@ -24,6 +25,13 @@ def run_checked(command: list[str]) -> None:
         )
 
 
+def executable_names(bundle: Path) -> list[str]:
+    try:
+        return [plistlib.loads((bundle / 'Info.plist').read_bytes())['CFBundleExecutable']]
+    except (OSError, KeyError, plistlib.InvalidFileException):
+        return []
+
+
 def bundle_context(bundle: Path, identifier: str, entitlements: Path | None) -> str:
     """Describe the bundle, its identifier and its contents, which is what a failed signature has to be read against."""
     names = sorted(p.name for p in bundle.iterdir())
@@ -35,6 +43,10 @@ def bundle_context(bundle: Path, identifier: str, entitlements: Path | None) -> 
         f'nested bundles: {nested}',
         f'extended attributes: {attributes.stdout.strip() or attributes.stderr.strip() or "none"}',
     ]
+    for name in ('Info.plist', *executable_names(bundle)):
+        entry = bundle / name
+        kind = f'link to {os.readlink(entry)}' if entry.is_symlink() else 'file' if entry.is_file() else 'missing'
+        lines.append(f'{name}: {kind}')
     if entitlements:
         lint = subprocess.run(
             ['/usr/bin/plutil', '-lint', str(entitlements)], check=False, capture_output=True, text=True
@@ -63,8 +75,42 @@ def sign_file(path: Path, identifier: str | None = None, entitlements: Path | No
     run_checked([*args, str(path)])
 
 
+def inside(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def materialize_links(destination: Path) -> None:
+    """Replace the links of the copy that point out of the bundle, and its main executable and Info.plist, with files.
+
+    Links Bazel leaves in a tree lead outside it, and codesign refuses a bundle whose main executable or Info.plist is a
+    link. Links between a bundle's own files (Versions/Current) are part of its layout and stay. Only the copy changes.
+    """
+    root = destination.resolve()
+    mains = {destination / 'Info.plist'}
+    info = destination / 'Info.plist'
+    if info.exists():
+        executable = plistlib.loads(info.read_bytes()).get('CFBundleExecutable')
+        if executable:
+            mains.add(destination / executable)
+    for link in sorted(p for p in destination.rglob('*') if p.is_symlink()):
+        target = Path(os.path.realpath(link))
+        if inside(target, root) and link not in mains:
+            continue
+        if not target.exists():
+            raise CodesignError(
+                f'{link.relative_to(destination)} is a link to {os.readlink(link)}, which does not exist'
+            )
+        # A link to a link inside the copy resolves to the copy's own file, so the original is never written through.
+        link.unlink()
+        if target.is_dir():
+            shutil.copytree(target, link, symlinks=True)
+        else:
+            shutil.copy2(target, link)
+
+
 def sign_bundle(source: Path, destination: Path, entitlements: Path) -> Path:
     shutil.copytree(source, destination, symlinks=True)
+    materialize_links(destination)
     for path in [destination, *destination.rglob('*')]:
         if not path.is_symlink():
             path.chmod(path.stat().st_mode | 0o200)
