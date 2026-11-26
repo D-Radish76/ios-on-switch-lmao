@@ -124,7 +124,7 @@ TEST(S2, ResultStartsCleared)
     for (auto *p = reinterpret_cast<volatile unsigned char *>(&result); p < reinterpret_cast<unsigned char *>(&result + 1); ++p)
         *p = 0xa5;
     Fake fake;
-    switch_s2_io io{&fake, Fake::read};
+    switch_s2_io io{&fake, Fake::read, nullptr};
     switch_s2_run(&io, &result);
     EXPECT_EQ(result.stop, 0);
 }
