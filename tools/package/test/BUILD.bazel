@@ -473,6 +473,7 @@ py_test(
     srcs = ["diag_first_xnu_docs_test.py"],
     data = [
         "//:ERISTA_D1_DESIGN.md",
+        "//:ERISTA_T3T4_MINIMAL.md",
         "//:ERISTA_FIRST_XNU_BLOCKERS.md",
         "//:ERISTA_FIRST_XNU_BOOT.md",
         "//:ERISTA_FIRST_XNU_BOOT_GATE.md",

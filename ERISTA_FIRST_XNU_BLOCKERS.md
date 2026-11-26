@@ -18,15 +18,16 @@ Replaces the table in `ERISTA_FIRST_XNU_BOOT.md`.
 
 | # | Step | State | Blocks the run? |
 | --- | --- | --- | --- |
-| 1 | The Mac verifies everything on one commit (tests, builds, the trace-kernel scan, the loader hashes) | open until the Mac reports on the latest commit. For `c8f428d0b` the Mac reported six tests and four analysis runs (`ERISTA_FIRST_XNU_MAC.md` section 8); the builds and the linker warning's text are still to come | yes |
+| 1 | The Mac verifies everything on one commit (tests, builds, the trace-kernel scan, the loader hashes) | partly done. Reported: six tests and four analysis runs for `c8f428d0b`; the kernel scan on `kernel.macho` (exit 0 with the trace, 1 without) and the linker warnings (no difference between the two) for `56526e5e5`; the segment order (`ERISTA_FIRST_XNU_MAC.md` section 9). Not yet reported: the aquery check of the stamp dependency, the Mach-O addresses, sizes and permissions, the builds with action counts and hashes, the loader margin, the seeded wrapper build and scan |
 | 2 | D0-S | done: v2 PASS | no |
 | 3 | D1-min | done: PASS | no |
 | 4 | T2 | done: PASS | no |
 | 5 | A stop path | the person, plus the timed `SYSTEM_RESET` after VM done (built offline, not run). Proven from the loader at EL1 in seven runs (D0, D0-R, T1-T, T1 v3, D0-S v2, D1-min, T2); not proven after XNU owns the core | yes: the owner accepts the person in writing, or approves the run that tries the reset |
 | 6 | Seed decision | the owner prefers the per-install seed (2026-11-26); the written decision of the run is still open | yes |
-| 7 | T3 and T4 built and proved, or waived | open. Neither is built; the owner has not decided a waiver. See below | only if not waived |
+| 7 | T3 and T4 built and proved, or waived | open. Neither is built; the owner has not decided a waiver. The smallest forms and what each needs: `ERISTA_T3T4_MINIMAL.md` (2026-11-27). See below | only if not waived |
 | 8 | `boot` 1 for the build under test only: option B (derived board table, off by default) is implemented offline (`ERISTA_FIRST_XNU_BOOT_GATE.md`); the build flag that turns it on is not approved | open | yes |
-| 9 | The run: trace kernel, one core, stop after VM, stop rules, a person at the console (`ERISTA_FIRST_XNU_RUN.md`) | not approved | |
+| 9 | The run condition: marks that trickle in are not bounded by the stop rules, so up to about 10.5 minutes with the fan off are allowed by them. The owner holds this back; the three ways to change it are in `ERISTA_FIRST_XNU_RUN.md` | held | yes |
+| 10 | The run: trace kernel, one core, stop after VM, stop rules, a person at the console (`ERISTA_FIRST_XNU_RUN.md`) | not approved | |
 
 Owner's decision (2026-11-26): the full D1 is not a condition of the first VM-stop diagnostic. The Mac's checks for the first-XNU package are in `ERISTA_FIRST_XNU_MAC.md`.
 

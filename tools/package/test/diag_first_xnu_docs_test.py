@@ -204,7 +204,7 @@ class MacResults(unittest.TestCase):
             'boards.ok',
             'early-trace.ok',
             'first_xnu_check.py',
-            'bazel-bin/kernel/prelinked',
+            'bazel-bin/kernel/kernel.macho',
         ):
             self.assertIn(phrase, MAC, phrase)
         for mnemonic in (
@@ -274,10 +274,66 @@ class MacResults(unittest.TestCase):
             self.assertIn(phrase, run, phrase)
 
 
+class MeasuredKernel(unittest.TestCase):
+    def test_the_mac_kernel_results_and_the_corrected_path_are_recorded(self) -> None:
+        for phrase in (
+            '## 9. Mac results for the kernel',
+            'bazel-bin/kernel/kernel.macho',
+            'Apple ld-27106.1',
+            'Xcode 27.2',
+            'exit 0',
+            'exit 1',
+            '`__LINKEDIT` is last',
+            'Mach-O check still to do',
+            '0xfffffff004004000',
+            '0xfffffff007004000',
+        ):
+            self.assertIn(phrase, MAC, phrase)
+        self.assertNotIn('kernel bazel-bin/kernel/prelinked', MAC + read('ERISTA_FIRST_XNU_BOOT.md'))
+
+    def test_the_expected_addresses_and_permissions_are_the_link_lines(self) -> None:
+        recipe = read('kernel/xnu-10063.141.1/config/recipes_development.bzl')
+        self.assertIn('-Wl,-segaddr,__PRELINK_TEXT,0xfffffff004004000', recipe)
+        self.assertIn('-Wl,-image_base,0xfffffff007004000', recipe)
+        for segment, protection in (
+            ('__TEXT', 'r--'),
+            ('__TEXT_EXEC', 'r-x'),
+            ('__KLD', 'r-x'),
+            ('__LAST', 'r-x'),
+            ('__LASTDATA_CONST', 'r--'),
+            ('__DATA_CONST', 'r--'),
+            ('__KLDDATA', 'rw-'),
+            ('__LINKINFO', 'r--'),
+        ):
+            self.assertIn(f'-Wl,-segprot,{segment},{protection},{protection}', recipe, segment)
+
+    def test_the_seed_review_and_the_wrapper_finding_are_recorded(self) -> None:
+        for phrase in (
+            'Final review of the seed path',
+            'Review finding, not changed',
+            'WRONG_BOARD',
+            'from the repository root',
+        ):
+            self.assertIn(phrase, MAC, phrase)
+
+    def test_the_t3_t4_review_keeps_the_holds(self) -> None:
+        text = read('ERISTA_T3T4_MINIMAL.md')
+        for phrase in (
+            'Nothing is built, approved or waived',
+            'stay on HOLD',
+            'undecided',
+            'the smallest T4 is the PMIC watchdog alone',
+            'not an overheat protection',
+            "the person's POWER hold is the\nonly protection",
+        ):
+            self.assertIn(phrase, text, phrase)
+        self.assertIn('ERISTA_T3T4_MINIMAL.md', BLOCKERS)
+
+
 class Blockers(unittest.TestCase):
     def test_t2_is_done_and_the_list_still_has_nine_steps(self) -> None:
         self.assertIn('| 4 | T2 | done: PASS | no |', BLOCKERS)
-        self.assertEqual([str(n) for n in range(1, 10)], re.findall(r'^\| (\d) \|', BLOCKERS, re.MULTILINE))
+        self.assertEqual([str(n) for n in range(1, 11)], re.findall(r'^\| (\d+) \|', BLOCKERS, re.MULTILINE))
         self.assertIn('ERISTA_FIRST_XNU_BOOT_GATE.md', BLOCKERS)
         self.assertIn('ERISTA_FIRST_XNU_RUN.md', BLOCKERS)
 

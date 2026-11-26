@@ -33,9 +33,9 @@ text. It is host-tested on synthetic bytes only. On the Mac, once, to see it wor
 
 ```
 bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked
-python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/<the prelinked kernel>   # exit 0
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/kernel.macho   # exit 0
 bazel build --config=ios17 //kernel:prelinked
-python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/<the prelinked kernel>   # exit 1
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/kernel.macho   # exit 1
 ```
 
 The loader's room below U-Boot's stamps slot (`0xa001ef00`) and the SD reference page, from the built image (the link

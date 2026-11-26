@@ -18,9 +18,9 @@ Bazel was not run where this was written. Every command is the Mac's to run on o
 
 ```
 bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked
-python3 tools/package/first_xnu_check.py kernel <that kernel>      # exit 0
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/kernel.macho      # exit 0
 bazel build --config=ios17 //kernel:prelinked
-python3 tools/package/first_xnu_check.py kernel <that kernel>      # exit 1
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/kernel.macho      # exit 1
 ```
 
 Exit 0 only when `start.s` holds the trace sequence (marks 1 to 6 drawn); the plain kernel must give 1. `//tools/package/test:first_xnu_check_test`
@@ -80,6 +80,19 @@ The seeded target carries the `no-cache` and `no-remote` tags, and the seed file
 
 Never: commit, upload, paste or log the seed; put the seeded package or its logs in a remote or disk cache; pass the seed on a command line (bazel gets only the path `//local:erista-seed.hex`). A report carries
 the 8-digit fingerprint and file hashes, nothing derived from the seed's bytes. `//tools/package/test:erista_seed_test` and `erista_seeded_build_test` cover the tool and the cache tags.
+Final review of the seed path (2026-11-27), from `erista_seed.py`, `erista_seeded_build.py` and `boot/BUILD.bazel`:
+
+| Check | Result |
+| --- | --- |
+| Where it runs | from the repository root: the seed path and `git check-ignore` are relative to the working directory |
+| The file | 256 bytes of hex, mode 0600, created with `O_EXCL` unless `--force`; `local/.gitignore` names it; `load` refuses a group or world readable file, the pinned seed (whole or its first 64 bytes) and a seed with fewer than 100 distinct byte values |
+| What the build gets | only the path `//local:erista-seed.hex`; `erista_adt_seeded` is `no-cache` and `no-remote`, and the wrapper adds `--remote_cache=`, `--remote_executor=`, `--noremote_accept_cached`, `--noremote_upload_local_results`, `--disk_cache=` |
+| What the wrapper refuses | `-s`, `--subcommands`, `--verbose_failures`, `--sandbox_debug`, `--explain`, build-event, profile and execution-log flags |
+| What it prints | the 8 digit fingerprint and "seed ok"; never the seed |
+| What the package is today | the wrapper does not pass `--//boot:erista_boot_run`, so `//boot:erista_first_xnu_seeded` is built with the real board table: a package whose loader stops at `0x306` and whose script says `WRONG_BOARD`. It checks the seed path, the hashes and the copy to a card; it cannot boot the Erista |
+| Review finding, not changed | the wrapper passes extra arguments after `--` to bazel, so `-- --//boot:erista_boot_run=true` would build the boot=1 seeded package. Nothing in the tool stops it. A refusal of that flag in the wrapper (until the owner approves the run) is the same kind of closure as the stamp; it changes the tool and waits for approval |
+| Left on the Mac after a build | the seed file, `bazel-bin/boot/erista-full-ram-seeded.adt`, the `erista_first_xnu_seeded_work` tree; `scan` reads git's tracked files and `--also` files only, so it does not look in those |
+
 Which seed the run uses is recorded in row 6 of `ERISTA_FIRST_XNU_BLOCKERS.md`; the owner's written decision of the run itself is still open.
 
 ## 7. The full command set
@@ -164,7 +177,7 @@ that holds the real `SwitchBoard.h` ahead of the derived one (`loader.c` and `ca
 | `require_early_trace` unset on a boot-row target | analysis | `... enables boot rows but has no require_early_trace` | `boot/defs.bzl` `_derive_boards` |
 | release profile | analysis | `... needs the debug profile: the early marks exist only in DEVELOPMENT or DEBUG kernels` | `boot/defs.bzl` |
 | `stop_after_vm` without the trace build | analysis | `... stop_after_vm needs require_early_trace` | `boot/defs.bzl` |
-| the kernel was built with `--//kernel:early_trace=false` | build, action `EarlyTraceCheck` | `<kernel>: no SWITCH_EARLY_TRACE start.s found (early_trace=false or a release kernel)`, exit 1 | `tools/package/first_xnu_check.py`; kernel `bazel-bin/kernel/prelinked` (the file `//kernel:prelinked` builds, `ctx.file.kernel` of the package); stamp `bazel-bin/boot/erista_first_xnu_work/early-trace.ok` |
+| the kernel was built with `--//kernel:early_trace=false` | build, action `EarlyTraceCheck` | `<kernel>: no SWITCH_EARLY_TRACE start.s found (early_trace=false or a release kernel)`, exit 1 | `tools/package/first_xnu_check.py`; kernel `bazel-bin/kernel/kernel.macho` (the file `//kernel:prelinked` builds, `ctx.file.kernel` of the package; there is no file named `prelinked`); stamp `bazel-bin/boot/erista_first_xnu_work/early-trace.ok` |
 | a compressed or foreign kernel | build, same action | `start.s early-rendering enable not found` | same |
 
 The binary the check reads is the one in the package: the kernel's `start.s` must hold the 16-byte sequence `ENABLE_SEQUENCE + TRACE_SEQUENCE` (`first_xnu_check.py`). The stamp `early-trace.ok` is an input of `BootPackage` only.
@@ -209,15 +222,55 @@ What this could change, and what no evidence here settles: the linker places nam
 `__PRELINK_TEXT` has its own address (`-segaddr 0xfffffff004004000`), so it is not moved by that. Whether the built kernel's segment order matters to this repository's tools (prelink, window layout, `first_xnu_check.py`,
 which matches 16 bytes of `start.s`) depends on the order the kernel has, which a build output shows and the sources do not. Nothing said here is a finding about the boot; the link flags are not changed.
 
-To close it on the Mac (no change to any flag):
+The Mac ran the comparison on 2026-11-27: section 9.
+
+## 9. Mac results for the kernel (reported 2026-11-27 00:02 JST, commit `56526e5e5`)
+
+| Item | Result |
+| --- | --- |
+| Checked file | `bazel-bin/kernel/kernel.macho`, the output of `//kernel:prelinked`. Sections 2 and 8 said `bazel-bin/kernel/prelinked`; no such file exists, and they now say `kernel.macho` |
+| `first_xnu_check.py kernel`, `early_trace=true` | exit 0 |
+| `first_xnu_check.py kernel`, `early_trace=false` | exit 1 |
+| Linker warnings, `early_trace` true against false | no difference (`diff` of the `ld: warning` lines) |
+| Toolchain | Xcode 27.2, build 27B52, Apple ld-27106.1 |
+| Prelink candidate | 59154432 bytes (as reported; which file it names was not said) |
+| Not reported | the kernel window size and entry (17543168 bytes in 87 blocks, `0xb53cc4c8` at the earlier report); the old builds' warnings |
+
+`LC_SEGMENT_64` order from `otool -l`: `__TEXT`, `__DATA_CONST`, `__TEXT_EXEC`, `__KLD`, `__LASTDATA_CONST`, `__LAST`, `__KLDDATA`, `__DATA`, `__BOOTDATA`, `__PRELINK_TEXT`, `__PRELINK_INFO`,
+`__PLK_TEXT_EXEC`, `__PRELINK_DATA`, `__PLK_DATA_CONST`, `__PLK_LLVM_COV`, `__PLK_LINKEDIT`, `__LINKINFO`, `__LINKEDIT`.
+
+What that shows, against the link line (`recipes_development.bzl`):
+
+- The nine segments that the `-segment_order` list names appear in the list's order. The list's other names (`__DATA_SPTM`, `__TEXT_BOOT_EXEC`, `__PPLTEXT`, `__PPLTRAMP`, `__PPLDATA_CONST`, `__PPLDATA`, `__HIBDATA`) are absent from this kernel, which is allowed: the list names what may exist.
+- The eight segments the warnings name are all present, after `__BOOTDATA`, in the order of their `-sectcreate` options on the link line. So the linker put the unnamed segments after the named ones, in command-line order.
+- `__LINKEDIT` is last, so the ignored entry for it did no harm.
+- The warnings are therefore harmless in what they report: no segment is missing and none is misplaced. This is a reading of the order only. Addresses, sizes and permissions have not been reported yet (next list).
+
+The link flags stay as they are.
+
+### Mach-O check still to do: addresses, sizes, permissions
+
+Nothing below changes a flag or a file. Run on `kernel.macho` of the trace build and the plain build:
 
 ```
-bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked 2>&1 | tee kernel-link-trace.log | grep -i warning
-bazel build --config=ios17 --//kernel:early_trace=false //kernel:prelinked 2>&1 | tee kernel-link-plain.log | grep -i warning
-diff <(grep -i warning kernel-link-trace.log) <(grep -i warning kernel-link-plain.log)       # expected: no difference
-xcrun ld -v 2>&1 | head -2; xcodebuild -version
-for k in trace plain; do xcrun otool -l <that kernel> | awk '/segname/{s=$2} /vmaddr/{print s, $2}' > seg-$k.txt; done   # the kernel before prelink, from `//kernel:kernel`
+xcrun otool -l bazel-bin/kernel/kernel.macho | awk '/^ +segname/{s=$2} /^ +vmaddr/{a=$2} /^ +vmsize/{z=$2} /^ +fileoff/{o=$2} /^ +filesize/{f=$2} /^ +maxprot/{m=$2} /^ +initprot/{print s, a, z, o, f, m, $2}' | column -t
+xcrun nm -n bazel-bin/kernel/kernel.macho | grep -w -e __start -e _start      # the entry's address
+xcrun otool -l bazel-bin/kernel/kernel.macho | grep -A4 'LC_UNIXTHREAD\|LC_MAIN'
 ```
 
-Report the diff, the Xcode version and the two segment lists. In the segment list, check that `__LINKEDIT` is last, that the order of the named segments is the list's, and that the 17543168-byte, 87-block window and entry
-`0xb53cc4c8` of the last report are unchanged. If the old builds printed the same warnings, the toolchain did not change them.
+| Check | Expected, from the link line | A difference is |
+| --- | --- | --- |
+| `__PRELINK_TEXT` `vmaddr` | `0xfffffff004004000` (`-segaddr`) | a finding |
+| `__TEXT` `vmaddr` | `0xfffffff007004000` (`-image_base`) | a finding |
+| Every `vmaddr`, `vmsize`, `fileoff`, `filesize` | multiples of `0x4000` | a finding |
+| No two segments overlap in address or in file | by construction | a finding |
+| `__TEXT`, `__DATA_CONST`, `__LASTDATA_CONST`, `__LINKINFO` | `r--` (initprot and maxprot as listed on the link line) | a finding |
+| `__TEXT_EXEC`, `__KLD`, `__LAST`, `__PRELINK_TEXT` | `r-x` | a finding |
+| `__KLDDATA`, `__DATA`, `__BOOTDATA` | `rw-` | a finding |
+| No segment with both `w` and `x` in `initprot` or `maxprot` | | a finding |
+| The seven `-sectcreate ... /dev/null` segments' sizes | report them: they are empty by design and the linker's size for them is not known from the sources | a figure to record |
+| Entry (`LC_UNIXTHREAD` pc, or `-e __start`) | equals the `__start` symbol and lies in an executable segment | a finding |
+| Same figures for `early_trace` true and false | only `__TEXT_EXEC`'s content (the `start.s` object) differs; sizes and addresses should match, or differ by the object's size only | report the difference |
+
+The permissions are the kernel's own; the loader maps the window in 2 MiB blocks and the boot package's tools read this file (`native_xnu_layout_test.py` over `kernel.macho`), so the order and sizes above are what they depend on.
+Report the table and both entries. If the sizes of the two builds differ by more than `start.s`'s object, send the table before anything else.
