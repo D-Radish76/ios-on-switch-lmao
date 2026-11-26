@@ -110,7 +110,7 @@ class Links(unittest.TestCase):
             real.mkdir()
             (real / 'f').write_bytes(SEED)
             link.symlink_to(real)
-            self.assertEqual(seed_scan.scan(SEED, [link]).leaks, [real / 'f'])
+            self.assertEqual(seed_scan.scan(SEED, [link]).leaks, [real.resolve() / 'f'])
 
     def test_special_files_are_reported_and_not_opened(self):
         with fresh() as scratch:
