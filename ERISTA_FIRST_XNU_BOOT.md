@@ -218,6 +218,101 @@ is last and needs `boot` 1, which this tree does not set.
 and T4's protection design (`ERISTA_T2_DESIGN.md` has the loader's one-shot). The safety mechanisms that exist for a run are the person's power button and Nyx's temperature
 before and after. A hang has no hardware reset (`ERISTA_STOP_PATHS.md`). None of the three is a reason to run, and the owner may waive them in writing.
 
+## Before D0-S and D1-min (N7-J)
+
+Both are read-only diagnostics over D0-R's loader. Neither is approved to run. Before either, all of:
+
+| Check | How |
+| --- | --- |
+| The three loader images are equal | the `shasum` command above: `diag_state`, `diag_d1min` and `diag_loader_r` give the D0-R value |
+| The package holds only its own entry | `bootloader/ini/ios-diag-state.ini` (or `-d1min`) and `switchroot/ios-diag-state/` (or `-d1min`), nothing named `ios`, and the SHA-256 of each file recorded before copying |
+| No iOS entry is bootable | the Erista row is `boot 0`; `iOS` is not in hekate's list for this card, or the normal package is absent |
+| hekate is 6.5.5 and its entry list is photographed | the version the T1 v3 and D0 runs used |
+| Temperature and battery noted | Nyx's readout before. Start only below the provisional 40 C candidate. Battery charged, console on a table, Joy-Con off |
+| Someone is at the console and has read the stop rules | POWER held for any stop condition; the scripts end in `reset` after their dwell, "expected to land in hekate, not verified" |
+| The expected screen is known | the table above. D1-min only after D0-S's photograph is reviewed |
+| Nothing else touches the card | no write by either script. The card is not removed while the console is on |
+
+After the run: photograph first, then remove the entry's files, then record Nyx's temperature. A screen that differs from the table is a finding to send, not to explain away.
+
+**`setexpr` operators, from the pinned `bl33.bin`'s strings.** The help text there reads `setexpr[.b, .w, .l] name [*]value1 <op> [*]value2 ... <op> can be &, |, ^, +, -, *, /, %`, so `&` is built in, as are the `gsub` and `sub` forms. D0-S's two
+`\&` lines would use it. Not established by strings: that hush passes `\&` through as a literal `&` (it is the one escaped character in the script), and that the result is printed as bare hex (`4000`, which
+D0-S's `test` compares as text). If either fails, the line takes the `CAR BIT TEST FAILED` or `NOT READ` branch, which only skips the SDMMC1 reads. `itest` compares whole words and cannot isolate one bit, so it is not a substitute. No change is made.
+
+## T2 in a hardware diagnostic (design)
+
+Nothing here is built into an image. The sensor sequence exists on the host (`boot/diag/t2`, `t2_test`). A hardware run needs:
+
+1. A loader image `diag_t2`: T1 v3's loader (its I2C1 prelude, gates, allowlist and stop rules, `ERISTA_T1V3_DESIGN.md`) with `t2.c` as the sensor stage. The bus layer implements `t2.h`'s single register transfers
+   with T1 v3's transactions unchanged: divisor `00FF0001`, the same five I2C1 registers. U-Boot's script is T1 v3's with new text. It gets its own entry name and a new line in `erista-diag-image-hashes.txt`;
+   the seven existing hashes do not move.
+2. The allowlist is T1 v3's, extended in values only: `CMD_DATA1` pointers `03 11 12 02 01 10 00 15` and `0F`, `CNFG` `2802` and `2A02` (`ERISTA_T2_DESIGN.md`, "All writes"). `diag_mmio_audit_test` gets the same pairs and a count of one sensor write.
+3. Stop codes `07xx`, the 15 s countdown and the 50 s deadline as T1 v3. The deadlines stay provisional.
+4. Host tests before any build is run: `t2_test` against a model of the part (exists), an image inspection like `diag_loader_inspect` (the allowlist, no other store), and a script test like `diag_t1v3_test`.
+5. The run order: D0-S, D1-min (if wanted), then T2. T2 has the sensor write, so it is last and needs its own approval. Nyx's temperature before and after, as for T1 v3.
+6. What it will not settle: the conversion time's upper bound, which stays the 100 ms design bound, and whether the sensor ACKs other reads at that divisor in shutdown. Both are what the run is for.
+
+## T3 and T4 as safety mechanisms (design)
+
+None exists in code. What each would be, what proves it, and where it stops.
+
+| Mechanism | Covers | Needs | Proved by | Status |
+| --- | --- | --- | --- | --- |
+| The person, POWER held | everything, slowly | nothing | the stop rules above | the only mechanism there is |
+| Park, then reset by WDT0 after N seconds | a stop that ends by itself: VM done, panic | a WDT0 arm in `SwitchVmDone.c` (an MMIO write the panic path already makes elsewhere), a safe N, a reset that lands in hekate | one approved run; the OLED's panic path is the precedent, the Erista's is unverified (PMC scratch, whether the reset returns to hekate or loops) | not built, not approved |
+| PSCI `SYSTEM_RESET` from EL1 | the same, without the PMC | a conduit: the ADT has no `/psci`, so either a node (ADT change) or a fixed `smc` in the diagnostic | a diagnostic that issues it once and lands in hekate | not built. U-Boot (EL2) got a return to hekate; EL1 after XNU is unverified |
+| T3: fan, 5 V rail and PWM from hekate's sequence | heat while parked, a hang with the fan stopped | PWM clock already on (a CAR write is not part of T3), GPIO, pinmux, PMC writes (`regulator_5v_enable`) | tach edges: zero off, above zero at duty 51, up at the next step | designed (`ERISTA_THERMAL_DESIGN.md`); every write unapproved |
+| T4: MAX77620 watchdog | a hang | I2C5 writes; the PMIC's state across its own restart | would have to show hekate not looping | rejected for now: a boot loop is possible and nothing shows otherwise |
+| T4: SOC_THERM THERMTRIP | overheating | calibrated sensors, a driver's worth of register work, a PMC reset command the DTB does not give | cannot be tested by heating the console | out of reach; thresholds would be set by review |
+
+**What the first XNU run can rely on, today:** the person, a 30 s no-progress limit, a 120 s total limit (both provisional), a parked CPU that draws less than a spin but stays hot, and Nyx's reading before and after. A parked
+console cools only as far as the fan hekate left running. **Temperature protection:** the first-boot window is short (loader seconds, then XNU's VM init), the criteria are the provisional 40 and 55 C, and none is an official
+limit. No mechanism here acts on a temperature by itself. **Hang protection:** none acts without a person. So the run is attended, and the hardware boot stays held until the owner either approves one of the first three rows
+after its own proof or accepts the person as the stop in writing.
+
+## From now to the first XNU boot
+
+In order; each line blocks the next unless the owner waives it in writing.
+
+| # | Step | Settled by | Hardware |
+| --- | --- | --- | --- |
+| 1 | Mac verifies the commands below on one commit, including the trace-kernel scan and the three loader hashes | the Mac | no |
+| 2 | D0-S run and reviewed (framebuffer attributes, SDMMC1 words) | a photograph | yes, read-only |
+| 3 | D1-min run and reviewed (sector 0 CRC, `0xA001F200` range holds) | a photograph | yes, read-only, one SD read |
+| 4 | T2 run, or waived | `ERISTA_T2_DESIGN.md` plus this document | yes, one sensor write |
+| 5 | A stop path chosen: a proven reset (WDT0 or PSCI) or the person, in writing | the owner | the first two need a run |
+| 6 | Seed decided: pinned (public, fine for observation) or the per-install seed | the owner | no |
+| 7 | T3 and T4: built and proved, or waived | the owner | yes |
+| 8 | `boot` 1 for the build under test only, set by the owner | the owner | no |
+| 9 | The run itself: trace kernel, one core, stop after VM, stop rules | the person at the console | yes |
+
+## Mac: everything together
+
+One session, one commit. Bazel was not run here: the Python and g++ checks use stand-ins, so Starlark validity, runfiles and the BUILD labels below are the Mac's to show. A static pass here found every BUILD label's file or target present
+and exported, and no `**kwargs` in a BUILD file.
+
+```
+bazel test --config=ios17 \
+  //tools/package/test:boot_args_contract_test //tools/package/test:first_xnu_check_test \
+  //tools/package/test:erista_seed_test //tools/package/test:erista_seeded_build_test \
+  //tools/package/test:erista_package_test //tools/package/test:diag_state_test \
+  //diagnostics/switch/test:all //boot/loader/test:carveout_gate_test //boot/diag/loader/test:all
+bazel build --config=ios17 //boot:package //boot:erista_package //boot:diag_state //boot:diag_d1min //boot:diag_loader_r
+bazel build --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true //boot:erista_first_xnu
+bazel build --config=ios17 --//install:prebuilt=local //boot:erista_first_xnu                   # must fail: no early_trace
+bazel build --config=ios17 --config=release --//install:prebuilt=local //boot:erista_first_xnu # must fail: release
+bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked
+python3 tools/package/first_xnu_check.py kernel <that kernel>                                   # exit 0
+bazel build --config=ios17 //kernel:prelinked
+python3 tools/package/first_xnu_check.py kernel <that kernel>                                   # exit 1
+python3 tools/package/first_xnu_check.py margin bazel-bin/boot/erista_first_xnu_work/loader.uboot.bin
+shasum -a 256 bazel-bin/boot/diag_state/loader.uboot.bin bazel-bin/boot/diag_d1min/loader.uboot.bin bazel-bin/boot/diag_loader_r/loader.uboot.bin
+python3 tools/package/erista_seed.py generate && python3 tools/package/erista_seeded_build.py build
+python3 tools/package/erista_seeded_build.py scan && python3 tools/package/erista_seeded_build.py clean --seed
+```
+
+The two `must fail` builds are the check; their error text is worth sending. The plain package's `shasum` of `bazel-bin/boot/full-ram.adt` and the `OLED` package's action count (76) should not change.
+
 ## Before anyone runs it
 
 All of these, none of which is done:
@@ -226,7 +321,7 @@ All of these, none of which is done:
 - The Mac builds the target above and the loader's linked margin is reported (`ERISTA_XNU_HANDOFF.md` lists the Mac commands).
 - The trace build is used: only it draws marks.
 - A seed decision (`ERISTA_RANDOM_SEED.md`): the pinned seed is public, which does not matter for an observation boot.
-- A stop procedure the person has read: POWER held, then Nyx for temperature.
+- A stop path chosen (see the table above) and the stop procedure read: POWER held, then Nyx for temperature.
 - T2 run, or the run waived, so that a temperature before and after is available.
 
 ## Not covered
