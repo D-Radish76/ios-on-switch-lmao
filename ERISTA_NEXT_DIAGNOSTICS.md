@@ -1,21 +1,21 @@
 # Next diagnostics: T2 open items, a smaller D1, framebuffer and SD engine reads
 
-Design only. No hardware run is approved: T2, T3, T4, D1 and T1-H stay on hold.
+Design only. No further hardware run is approved: T3, T4, D1, T1-H and any T2 repeat stay on hold. T2 itself ran once (`ERISTA_T2_RESULT.md`).
 
 ## T2: what is still open
 
-From `ERISTA_T2_DESIGN.md`, "Not decided", by what would settle each.
+From `ERISTA_T2_DESIGN.md`, "Not decided", by what would settle each. The first run settled the two hardware rows below for one observation each.
 
 | Open item | Settled by | Hardware needed |
 | --- | --- | --- |
 | Send-byte or write-byte for register `0F` | the TMP451 data sheet's timing diagram | no |
 | Read addresses of the remote offset registers (hekate uses `11` and `12` both ways) | the data sheet's pointer list | no |
-| Whether BUSY is set during a one-shot, and whether 31 to 34 ms is the whole interval | one T2 run (the design already treats a missed BUSY as no failure and bounds the wait at 100 ms) | yes |
-| Whether the sensor ACKs reads other than the ID at the changed divisor, in shutdown | one T2 run | yes |
-| Who may run T2, and at what bus rate | a decision. The divisor `00FF0001` is the only rate that has run | no |
+| Whether BUSY is set during a one-shot, and whether 31 to 34 ms is the whole interval | BUSY was seen at the first poll and clear at the 31 ms poll. The interval is still unknown: no completion is accepted before 31 ms | settled for BUSY, open for the interval |
+| Whether the sensor ACKs reads other than the ID at the changed divisor, in shutdown | T2: all 35 transfers (17 register reads and the one-shot) ended without a stop code at `00FF0001` | settled |
+| Who may run T2 again, and at what bus rate | a decision. The divisor `00FF0001` is the only rate that has run | no |
 | Polling in the loader versus ALERT or a timer in a kernel driver | a decision for the kernel driver. The loader polls by counter like every loader stage | no |
 
-The first two need only the data sheet and can be closed before T2 is approved. The sensor write count stays at one.
+The first two needed only the data sheet. The sensor write count stays at one.
 
 ## D1: a smaller first step
 

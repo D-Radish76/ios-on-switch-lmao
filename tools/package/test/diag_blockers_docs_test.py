@@ -25,7 +25,7 @@ class Documents(unittest.TestCase):
             for phrase in ('`boot` ', 'HOLD'):
                 self.assertIn(phrase, text)
         self.assertIn('No part of this document lowers the HOLD', BLOCKERS)
-        self.assertIn('is not approved to run', T2_REVIEW)
+        self.assertIn('had no approval to run', T2_REVIEW)
 
     def test_the_xnu_sd_driver_is_called_unverified(self) -> None:
         self.assertIn("XNU's SD path", BLOCKERS)

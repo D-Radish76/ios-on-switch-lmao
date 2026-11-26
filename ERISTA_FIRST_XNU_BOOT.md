@@ -118,7 +118,7 @@ in this repository, so a Mac-to-Mac comparison needs a build of `5f474ed0d` on t
 | --- | --- |
 | A panic or exception | the screen stays (`reboot_s` 0); photograph it; hold POWER |
 | No new mark for 30 s | hold POWER. The 30 s is provisional, like the loader's deadlines |
-| `XNU VM INITIALIZED` shown and 120 s since the loader started | hold POWER. Provisional. No temperature limit is known: T2 to T4 have not run |
+| `XNU VM INITIALIZED` shown and 120 s since the loader started | hold POWER. Provisional. No temperature limit is known: T2 gave one loader-time reading, T3 and T4 have not run |
 | Anything unexpected on screen | hold POWER first, then read it |
 
 Nothing resets a hang in this kernel: no watchdog is armed before userspace (`ERISTA_STOP_PATHS.md`), and a normal stop spins. The person
@@ -233,7 +233,7 @@ is last and needs `boot` 1, which this tree does not set.
 **Run time and stop conditions.** D0-S and D1-min end by themselves (15 s, then `reset`, as D0). Their basis is D0's own run. The first-XNU limits (30 s with no new mark, 120 s after
 `XNU VM INITIALIZED`) are provisional: no run measured a stage time and no temperature limit is known. Hold POWER on any stop condition.
 
-**T2 to T4.** Open and unchanged: T2's register `0F` form and offset registers (data sheet), BUSY and the ACK at the changed divisor (one T2 run), T3's fan
+**T2 to T4.** T2 ran once (2026-11-26, `ERISTA_T2_RESULT.md`): the `0F` write form, BUSY and the ACKs at the changed divisor were observed once. Open and unchanged: T3's fan
 and T4's protection design (`ERISTA_T2_DESIGN.md` has the loader's one-shot). The safety mechanisms that exist for a run are the person's power button and Nyx's temperature
 before and after. A hang has no hardware reset (`ERISTA_STOP_PATHS.md`). None of the three is a reason to run, and the owner may waive them in writing.
 
@@ -302,7 +302,7 @@ In order; each line blocks the next unless the owner waives it in writing.
 | 1 | Mac verifies the commands below on one commit, including the trace-kernel scan and the three loader hashes | the Mac | no |
 | 2 | D0-S v1 hung (cause unknown); D0-S v2 run and passed 2026-11-26 (`ERISTA_D0S_V2_RESULT.md`); the framebuffer attributes and the four register values are recorded | a photograph | done, read-only |
 | 3 | D1-min ran and passed 2026-11-26 (`ERISTA_D1MIN_RESULT.md`): the CRC32 equals the Mac's, `55 AA` present, the range holds | a photograph | done, read-only, one SD read |
-| 4 | T2 run, or waived | `ERISTA_T2_DESIGN.md`, `ERISTA_T2_REVIEW.md` (run sheet `ERISTA_T2_RUN.md` and static audit done offline; the Mac's build and the owner's approval of the sensor write are open) | yes, one sensor write |
+| 4 | T2 ran and passed 2026-11-26 (`ERISTA_T2_RESULT.md`): one sensor write, 160 writes, 35 transfers, shutdown kept | a photograph | done, one sensor write |
 | 5 | A stop path chosen: a proven reset (WDT0 or PSCI) or the person, in writing | the owner | the first two need a run |
 | 6 | Seed decided: pinned (public, fine for observation) or the per-install seed | the owner | no |
 | 7 | T3 and T4: built and proved, or waived | the owner | yes |
@@ -345,7 +345,7 @@ All of these, none of which is done:
 - The trace build is used: only it draws marks.
 - A seed decision (`ERISTA_RANDOM_SEED.md`): the pinned seed is public, which does not matter for an observation boot.
 - A stop path chosen (see the table above) and the stop procedure read: POWER held, then Nyx for temperature.
-- T2 run, or the run waived, so that a temperature before and after is available.
+- T2 has run. A temperature before and after the first XNU run comes from Nyx; T2's reading was taken in the loader and says nothing about XNU's heat.
 
 ## Not covered
 

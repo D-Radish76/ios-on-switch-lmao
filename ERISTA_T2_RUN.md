@@ -1,7 +1,7 @@
 # T2: run sheet
 
-T2 hardware boot is on hold and the TMP451 write is not approved. This sheet is for the run once the owner approves it in writing. One run, no retry,
-`boot` stays 0, the feature mask stays 0. T3, T4, the full D1 and every XNU run stay on HOLD.
+T2 ran once on 2026-11-26 and passed (`ERISTA_T2_RESULT.md`). A second run is not approved and needs a new written approval. This sheet stays as the
+procedure for such a run: one run, no retry, `boot` stays 0, the feature mask stays 0. T3, T4, the full D1 and every XNU run stay on HOLD.
 
 T2 does what T1 v3 did (I2C1 divisor `00FF0001`, then reads at address `0x4C`) and adds one sensor write: the one-shot, pointer `0x0F`, value `0x00`.
 It writes no CAR register, no I2C5, no timing register, no other sensor register. The 50 s total is a point for the person to act, not a thermal limit.
@@ -21,8 +21,8 @@ PYTHONPATH=tools/package python3 tools/package/diag_mmio_audit.py \
 ```
 
 The audit must end with `AUDIT PASSED (T2)` and show `6. Flat image: register address words match the T2 list`. Its Linux output is
-`boot/diag/erista-t2-mmio-audit.txt`. No Mac hash of the T2 package has been reported yet, so none is written here: the Mac's four values (`bl31.bin`,
-`bl33.bin`, `script.txt`, `ios-diag-t2.ini`) go into the check in section 2 when it reports them. `bl31.bin` and `script.txt` should equal the other
+`boot/diag/erista-t2-mmio-audit.txt`. The Mac's `loader.uboot.bin` for the first run was `ce46a5d2...cba` (in full in `boot/diag/erista-t2-run1.txt`). The four card files matched their Mac hashes
+(4 of 4), but those four values were not reported, so none is written here; a later run reports them. `bl31.bin` and `script.txt` should equal the other
 diagnostics'; only `bl33.bin` and the ini should differ. The Linux flat hash is `7f5a91a4...f124` (`boot/diag/erista-diag-image-hashes.txt`); the Mac's
 clang may give another, so it is not a card check.
 
@@ -67,7 +67,7 @@ Older entries stay on the card. The entry is `iOS Diag T2`; launch it from Nyx "
 
 The sequence reads 14 registers before the polling (ID, configuration, two offsets, status, four old values), then status polls (at least two:
 about 2 ms and about 31 ms), the configuration again and five new values. With `n` polls that is `142 + 9n` writes, so `160` or more; the design
-estimated 150 to 190. The screen's `WRITES` is the figure. The host model in `t2_bus_test` gives the same count; no run has. Nothing is written to the CAR, `TIMING_0`,
+estimated 150 to 190. The screen's `WRITES` is the figure. The first run showed `WRITES 160` and `TRANSFERS 35`, which is n = 2, the count `t2_bus_test` derives and `t2_measured_test` replays. Nothing is written to the CAR, `TIMING_0`,
 `TIMING_1` or I2C5, and the allowlist refuses every other word (`ACCESS REFUSED BY THE ALLOWLIST. LOADER BUG`, `0710` or `0730`). Once a stop code
 exists nothing more is written. Nothing is restored after a stop.
 
@@ -110,8 +110,7 @@ configuration `C0` after with `BACK IN SHUTDOWN`. Before words equal T1 v3's: `C
 
 **BUSY and the timeout.** The first status read is at about 2 ms. No completion is accepted before 31 ms, the TI minimum; reads follow at about 31 ms,
 34 ms, then every 5 ms. BUSY clear at or after 31 ms is done (`DONE AT`). BUSY still set at 100 ms is `0725`, `CONVERSION NOT DONE IN 100 MS. NO RETRY`.
-The 100 ms is a design bound, about three times typical, not a TI figure. `BUSY NOT SEEN` is recorded and is not a failure: whether BUSY is set during a
-one-shot is unproven. The times are reference values of a polling loop.
+The 100 ms is a design bound, about three times typical, not a TI figure. `BUSY NOT SEEN` is recorded and is not a failure. The first run saw BUSY at its first poll (one observation). The times are reference values of a polling loop.
 
 **Temperature decode.** Each value is a high byte and a low byte. Sixteenths = high x 16 + (low >> 4), degrees = sixteenths / 16. Example: high `22`
 and low `80` are 34 + 8/16 = 34.5 C (high `0x22` = 34). The range is 0 to 127 C. The screen decodes the new pair; the old pair is the sensor's earlier
@@ -146,7 +145,7 @@ report the last line and how long it stood there, if:
 - the screen shows an exception, `NO RESET`, `PSCI SYSTEM_RESET RETURNED`, `EXIT CALLED OUTSIDE EL1`, a black screen or garbage;
 - the console feels hot or Nyx shows 50 C or more (provisional, not an official limit).
 
-After a stop or a finish the loader waits 15 s and calls PSCI `SYSTEM_RESET`, which returned to hekate in the D0, D0-R, T1-T, D0-S v2 and D1-min runs.
+After a stop or a finish the loader waits 15 s and calls PSCI `SYSTEM_RESET`, which returned to hekate in the D0, D0-R, T1-T, T1 v3, D0-S v2, D1-min and T2 runs.
 That is the automatic path; the held power button is the manual one, and Nyx is where the temperature is read. A loop ends by count (1,000,000
 iterations); a register read that hangs the bus cannot be ended by software.
 
@@ -170,5 +169,5 @@ No second run in the same sitting or the next, whatever the result, without a ne
 ## 11. Record
 
 Report the video, the Nyx start and end figures (start before selecting the entry), the selection-to-menu time, and a photograph of the loader screen
-sharp enough to read every digit. Transcribe the words from the photograph, not from this sheet. The record goes in `boot/diag/erista-t2-run1.txt`, the
-result in `ERISTA_T2_RESULT.md`, as for the earlier runs.
+sharp enough to read every digit. Transcribe the words from the photograph, not from this sheet. The first run's are `boot/diag/erista-t2-run1.txt` and
+`ERISTA_T2_RESULT.md`; a later run gets files of its own.

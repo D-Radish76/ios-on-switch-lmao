@@ -1,0 +1,72 @@
+# T2 first hardware run: PASS. Erista (T210B01=0, SKU 0, BOOT=0), hekate 6.5.5, from Nyx "More configs", entry iOS Diag T2.
+# Reported by the user 2026-11-26 (evening, JST) from the photograph of the loader screen and the Mac's results. The photograph is not stored here.
+# One run, no retry. Words are the screen's hexadecimal as printed; keys ending in _US are decimal microseconds; the decoded temperatures are what the screen
+# printed. The times run from the one-shot write to the status poll that saw BUSY (BUSY_SEEN_AT_US) and to the poll that saw it clear (DONE_AT_US). They are
+# polling-loop reference values and not the conversion time: the loop accepts no completion before 31000 us, so the conversion may have ended earlier.
+# Not measured or not recorded: the temperature during the run, the time from selecting the entry to hekate's return, whether the console was powered by USB
+# (a USB cable is visible in the photograph).
+result=PASS
+run_date=2026-11-26
+attempts=1
+start_temperature_nyx=34.5 C
+end_temperature_nyx=35.6 C
+temperature_difference=+1.1 C
+temperature_during_run=not measured
+selection_to_return_seconds=not recorded
+power_supply=USB cable visible in the photograph; supply state not confirmed
+psci_system_reset_returned_to_hekate=yes
+manual_power_hold_needed=no
+screen_stop_code=0000
+screen_writes=160
+screen_transfers=35
+mac_regression_tests=12/12 PASS
+mac_build=T2 build succeeded
+mac_audit=AUDIT PASSED (T2); 13 addresses match
+mac_earlier_diag_loader_hashes=unchanged
+mac_sd_card_sha256=4 of 4 match
+mac_loader_uboot_bin_sha256=ce46a5d297be6aa84442038406d7adb06192c6566b8d0a1c0d40bb2efc9adcba
+screen_remote_celsius=34.3125
+screen_local_celsius=31.9375
+HIDREV=00022117
+ODM4=00000204
+SCTLR=30D00800
+DAIF=3C0
+CNTFRQ=19200000
+HCR=80000000
+CNTHCTL=3
+CNTVOFF=0
+ENTRY_SP=FF87DD10
+RST_L=049102CA
+ENB_L=9802D131
+SRC_I2C1=00000003
+PLLP_BASE=48115408
+BEFORE_CNFG=00002842
+BEFORE_STATUS=00000000
+BEFORE_INT=00000000
+BEFORE_DIV=00050001
+BEFORE_LOAD=00000004
+TIMING_0=00000204
+TIMING_1=04070404
+AFTER_LOAD=00000004
+AFTER_DIV=00FF0001
+AFTER_STATUS=00000000
+AFTER_INT=00000000
+ID=55
+CONFIG_BEFORE=C0
+STATUS_BEFORE=00
+OFFSET_HIGH=00
+OFFSET_LOW=00
+OLD_REMOTE_HIGH=22
+OLD_REMOTE_LOW=10
+OLD_LOCAL_HIGH=1F
+OLD_LOCAL_LOW=D0
+BUSY_SEEN_AT_US=2005
+DONE_AT_US=31004
+MIN_US=31000
+BOUND_US=100000
+LAST_STATUS=00
+NEW_REMOTE_HIGH=22
+NEW_REMOTE_LOW=50
+NEW_LOCAL_HIGH=1F
+NEW_LOCAL_LOW=F0
+CONFIG_AFTER=C0

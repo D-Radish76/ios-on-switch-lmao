@@ -103,7 +103,7 @@ class RunSheet(unittest.TestCase):
 
     def test_the_holds_the_records_and_the_retry_ban(self) -> None:
         phrases = (
-            'hardware boot is on hold',
+            'ran once on 2026-11-26',
             'not approved',
             '`boot` stays 0',
             'the feature mask stays 0',

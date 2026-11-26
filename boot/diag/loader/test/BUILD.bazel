@@ -205,7 +205,19 @@ host_library(
 
 host_test(
     name = "t2_bus_test",
-    srcs = ["t2_bus_test.cpp"],
+    srcs = [
+        "t2_bus_test.cpp",
+        "t2_model.h",
+    ],
+    deps = [":t2_image"],
+)
+
+host_test(
+    name = "t2_measured_test",
+    srcs = [
+        "t2_measured_test.cpp",
+        "t2_model.h",
+    ],
     deps = [":t2_image"],
 )
 
@@ -213,4 +225,5 @@ exports_files([
     "t1t_measured_test.cpp",
     "t1v3_hardware_test.cpp",
     "t2_bus_test.cpp",
+    "t2_measured_test.cpp",
 ])

@@ -1,6 +1,6 @@
-# Blockers before the first XNU boot, after D1-min
+# Blockers before the first XNU boot, after T2
 
-State at 2026-11-26 22:05 JST. Nothing here approves a run. `boot` is 0 and the feature mask is 0 for the Erista; T2, T3, T4, the full D1 and every XNU run are on HOLD.
+State at 2026-11-26, after the T2 run (`ERISTA_T2_RESULT.md`); it replaces the list written after D1-min. Nothing here approves a run. `boot` is 0 and the feature mask is 0 for the Erista; T2, T3, T4, the full D1 and every XNU run are on HOLD.
 
 ## What the diagnostics have settled
 
@@ -10,6 +10,7 @@ State at 2026-11-26 22:05 JST. Nothing here approves a run. `boot` is 0 and the 
 | T1-T, T1 v3 | I2C1 at divisor `00FF0001` reaches the TMP451; ID `55` | any sensor write, any temperature |
 | D0-S v2 | SDMMC1 clock on and reset off at EL1; Present State and Clock Control readable (`ERISTA_D0S_V2_RESULT.md`) | D0-S v1's hang |
 | D1-min | U-Boot's SD driver reads sector 0 into DRAM; the bytes equal the Mac's; the loader handoff after it works (`ERISTA_D1MIN_RESULT.md`) | XNU's SD driver; the exporter (D1) |
+| T2 | one TMP451 one-shot at `0x4C`: BUSY seen, both temperature pairs changed, configuration `C0` after; 160 writes and 35 transfers as the host model gives; PSCI `SYSTEM_RESET` returned (`ERISTA_T2_RESULT.md`) | temperature or fan while XNU runs; any hang protection; a thermal limit |
 
 ## The steps to the first XNU boot, now
 
@@ -20,12 +21,12 @@ Replaces the table in `ERISTA_FIRST_XNU_BOOT.md`.
 | 1 | The Mac verifies everything on one commit (tests, builds, the trace-kernel scan, the loader hashes) | open until the Mac reports on the latest commit | yes |
 | 2 | D0-S | done: v2 PASS | no |
 | 3 | D1-min | done: PASS | no |
-| 4 | T2 run, or waived in writing | open. Reviewed in `ERISTA_T2_REVIEW.md`; run sheet `ERISTA_T2_RUN.md` and static audit (`--t2`) done offline; the Mac's build and hashes and the owner's written approval of the one sensor write are open | only if not waived |
-| 5 | A stop path | the person, plus the timed `SYSTEM_RESET` after VM done (built offline, not run). Proven from the loader at EL1 in five runs; not proven after XNU owns the core | yes: the owner accepts the person in writing, or approves the run that tries the reset |
+| 4 | T2 | done: PASS | no |
+| 5 | A stop path | the person, plus the timed `SYSTEM_RESET` after VM done (built offline, not run). Proven from the loader at EL1 in seven runs (D0, D0-R, T1-T, T1 v3, D0-S v2, D1-min, T2); not proven after XNU owns the core | yes: the owner accepts the person in writing, or approves the run that tries the reset |
 | 6 | Seed decision | open, the owner's | yes |
 | 7 | T3 and T4 built and proved, or waived | open. Neither is built; the owner has not decided a waiver. See below | only if not waived |
-| 8 | `boot` 1 for the build under test, set by the owner | open | yes |
-| 9 | The run: trace kernel, one core, stop after VM, stop rules, a person at the console | not approved | |
+| 8 | `boot` 1 for the build under test, set by the owner. Whether only the first-XNU package can carry it: `ERISTA_FIRST_XNU_BOOT_GATE.md` | open | yes |
+| 9 | The run: trace kernel, one core, stop after VM, stop rules, a person at the console (`ERISTA_FIRST_XNU_RUN.md`) | not approved | |
 
 Owner's decision (2026-11-26): the full D1 is not a condition of the first VM-stop diagnostic. The Mac's checks for the first-XNU package are in `ERISTA_FIRST_XNU_MAC.md`.
 
@@ -40,7 +41,7 @@ until a later boot reaches IOKit.
 
 ## Deferring T3, T4 and the full D1: risk for the first VM-stop diagnostic
 
-Assumed: the run is attended, the package is `//boot:erista_first_xnu` with `switch_stop_after_vm`, the trace kernel, one core, T2 run or waived.
+Assumed: the run is attended, the package is `//boot:erista_first_xnu` with `switch_stop_after_vm`, the trace kernel and one core. T2 has run.
 
 | Event | Without T3, T4, D1 | Residual risk |
 | --- | --- | --- |
@@ -53,7 +54,7 @@ Assumed: the run is attended, the package is `//boot:erista_first_xnu` with `swi
 | Exporter | not used | none: D1's exporter is a later step |
 
 Reading: deferring T3 and T4 means a hang or a failed reset has no autonomous stop and no fan, and the person is the only mechanism. That is the stated condition
-of the run. The full D1 adds nothing to this run's safety, so deferring it costs nothing here. What the owner decides, in writing, is whether a person's POWER
+of the run. T2 measured one temperature at the loader (remote 34.3125 C) and shows nothing about XNU's early heat. The full D1 adds nothing to this run's safety, so deferring it costs nothing here. What the owner decides, in writing, is whether a person's POWER
 hold is accepted as the sole protection against a hang with the fan off, with start below the provisional 40 C and the 30 s and 120 s rules. Those figures are not
 official limits. No part of this document lowers the HOLD.
 

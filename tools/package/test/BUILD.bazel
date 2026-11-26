@@ -440,6 +440,42 @@ py_test(
     ],
 )
 
+# The first-XNU run sheet and the boot-gate design against the sources they quote.
+py_test(
+    name = "diag_first_xnu_docs_test",
+    srcs = ["diag_first_xnu_docs_test.py"],
+    data = [
+        "//:ERISTA_FIRST_XNU_BLOCKERS.md",
+        "//:ERISTA_FIRST_XNU_BOOT.md",
+        "//:ERISTA_FIRST_XNU_BOOT_GATE.md",
+        "//:ERISTA_FIRST_XNU_MAC.md",
+        "//:ERISTA_FIRST_XNU_RUN.md",
+        "//boot:defs.bzl",
+        "//boot:loader/carveout.h",
+        "//boot:loader/loader.c",
+        "//diagnostics/switch:SwitchVmDone.c",
+        "//kits/SwitchBoard:SwitchBoard.h",
+        "//kits/SwitchBoard:SwitchBoardKernel.h",
+        "//tools/package:boot_script",
+    ],
+)
+
+# The recorded T2 run against the host model, the sensor constants, T1 v3's words and the result document.
+py_test(
+    name = "diag_t2_measured_test",
+    srcs = ["diag_t2_measured_test.py"],
+    data = [
+        "//:ERISTA_T2_RESULT.md",
+        "//boot:diag/erista-d0-run.log",
+        "//boot:diag/erista-d0sv2-run1.txt",
+        "//boot:diag/erista-t1v3-run1.txt",
+        "//boot:diag/erista-t2-run1.txt",
+        "//boot:diag/t2/t2.h",
+        "//boot/diag/loader/test:t2_bus_test.cpp",
+        "//boot/diag/loader/test:t2_measured_test.cpp",
+    ],
+)
+
 # T2's static audit: the allowlist read from the sources, the linked image's accesses, and the negative cases (ERISTA_T2_RUN.md section 1).
 py_test(
     name = "diag_t2_audit_test",

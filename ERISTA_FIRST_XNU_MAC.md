@@ -11,8 +11,8 @@ Bazel was not run where this was written. Every command is the Mac's to run on o
 | Only one first-XNU package | `//boot:erista_first_xnu` (and `_seeded`): `manual`, `require_early_trace`, `stop_after_vm`, `smp = :single_core`, output directories `erista-first-xnu` and `erista-first-xnu-seeded` |
 | It cannot be built without the trace kernel or in release | the two builds that must fail (section 6) |
 | The normal packages are untouched | `//boot:package` and `//boot:erista_package` build with the action counts recorded (76 for the normal OLED and Erista packages) and the `shasum` of `bazel-bin/boot/full-ram.adt` equals the earlier value |
-| The diagnostics are untouched | the nine Linux hashes of `diag_images.py`; the Mac's three equal `loader.uboot.bin` files (`diag_state`, `diag_d1min`, `diag_loader_r`) |
-| `boot` 0 | the Erista row in `kits/SwitchBoard/SwitchBoard.h` reads `X(ERISTA, "erista", 0, 0, 0, 0, ...)`: `t210b01` 0, `sku` 0, `boot` 0, features 0; `//boot/loader/test:carveout_gate_test` passes: the loader refuses the Erista (`0x306`) and U-Boot's script reports `WRONG_BOARD`. The first run needs the owner to set the row to 1 for the build under test |
+| The diagnostics are untouched | the nine Linux hashes of `diag_images.py`; the Mac's three equal `loader.uboot.bin` files (`diag_state`, `diag_d1min`, `diag_loader_r`); `diag_t2`'s Mac `loader.uboot.bin` stays `ce46a5d2...cba` (`boot/diag/erista-t2-run1.txt`) |
+| `boot` 0 | the Erista row in `kits/SwitchBoard/SwitchBoard.h` reads `X(ERISTA, "erista", 0, 0, 0, 0, ...)`: `t210b01` 0, `sku` 0, `boot` 0, features 0; `//boot/loader/test:carveout_gate_test` passes: the loader refuses the Erista (`0x306`) and U-Boot's script reports `WRONG_BOARD`. The first run needs the owner to set the row to 1 for the build under test; whether that can be limited to this package is `ERISTA_FIRST_XNU_BOOT_GATE.md` |
 
 ## 2. The trace kernel (`early_trace`)
 
@@ -73,9 +73,18 @@ tool and the tags. Which seed the first run uses is the owner's decision (row 6 
 ## 7. The full command set
 
 ```
-bazel test --config=ios17 //tools/package/test:boot_args_contract_test //tools/package/test:first_xnu_check_test \
+bazel test --config=ios17 \
+  //tools/package/test:boot_args_contract_test //tools/package/test:first_xnu_check_test \
   //tools/package/test:erista_seed_test //tools/package/test:erista_seeded_build_test //tools/package/test:erista_package_test \
-  //tools/package/test:diag_state_test //boot/loader/test:carveout_gate_test //boot/diag/loader/test:all //diagnostics/switch/test:all
+  //tools/package/test:diag_boot_test //tools/package/test:diag_loader_test //tools/package/test:diag_memory_test \
+  //tools/package/test:diag_sd_test //tools/package/test:diag_sd_loader_test //tools/package/test:diag_state_test \
+  //tools/package/test:diag_state_audit_test //tools/package/test:diag_state_v2_test //tools/package/test:diag_s2_measured_test \
+  //tools/package/test:diag_t1_test //tools/package/test:diag_t1r_test //tools/package/test:diag_t1t_test \
+  //tools/package/test:diag_t1t_measured_test //tools/package/test:diag_t1v3_test //tools/package/test:diag_t1v3_measured_test \
+  //tools/package/test:diag_t2_test //tools/package/test:diag_t2_audit_test //tools/package/test:diag_t2_run_docs_test \
+  //tools/package/test:diag_t2_measured_test //tools/package/test:diag_d1min_audit_test //tools/package/test:diag_d1min_measured_test \
+  //tools/package/test:diag_mmio_audit_test //tools/package/test:diag_blockers_docs_test //tools/package/test:diag_first_xnu_docs_test \
+  //boot/loader/test:carveout_gate_test //boot/diag/loader/test:all //diagnostics/switch/test:all
 bazel build --config=ios17 //boot:package //boot:erista_package //boot:diag_state //boot:diag_d1min //boot:diag_loader_r //boot:diag_t2
 bazel build --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true //boot:erista_first_xnu
 bazel build --config=ios17 --//install:prebuilt=local //boot:erista_first_xnu                     # must fail: no early_trace
