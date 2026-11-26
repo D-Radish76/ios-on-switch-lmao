@@ -1,7 +1,9 @@
 """//boot:erista_package: its own tree, DTB, directory and one core, and nothing a console could boot from.
 
-boot/BUILD.bazel is evaluated with recording stand-ins for its rules, so what is checked is the attribute each target
-gets. The refusals themselves are boot_script_board_test (U-Boot) and carveout_gate_test (the loader).
+boot/BUILD.bazel is evaluated with recording stand-ins for its rules, and boot/package.bzl's boot_entry over a recording
+boot_package, so what is checked is the attribute each target ends up with. This runs on Python, which accepts things
+Bazel's Starlark does not: the one such rule that bit this file (no `**` in a BUILD file) has its own test. The refusals
+themselves are boot_script_board_test (U-Boot) and carveout_gate_test (the loader).
 """
 
 import re
@@ -11,6 +13,7 @@ from pathlib import Path
 from boot_script import board_gate, boards
 
 BUILD = Path('boot/BUILD.bazel')
+PACKAGE_BZL = Path('boot/package.bzl')
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
 LOADER = Path('boot/loader/loader.c').read_text()
 OWN = {'name', 'adt', 'dtb', 'smp', 'out', 'loader_defines', 'tags', 'target_compatible_with', 'visibility'}
@@ -60,15 +63,30 @@ def targets():
     return found
 
 
+def package_attributes(entry):
+    """What boot_package receives for a boot_entry call of BUILD (boot/package.bzl run over stand-ins)."""
+    received = {}
+    namespace = {
+        'select': lambda branches, *_, **__: Select(branches),
+        'BOOTSTRAP_PACKAGES': {'package': 'source'},
+        'OVERLAY_BINARIES': {'target': 'source'},
+        'boot_package': lambda **attributes: received.update(attributes),
+        'load': lambda *_, **__: None,
+    }
+    exec(compile(PACKAGE_BZL.read_text(), str(PACKAGE_BZL), 'exec'), namespace)
+    namespace['boot_entry'](**entry)
+    return received
+
+
 TARGETS = targets()
-OLED = TARGETS['package'][1]
-ERISTA = TARGETS['erista_package'][1]
-ROWS = TARGETS['erista_rows_work'][1]
+OLED = package_attributes(TARGETS['package'][1])
+ERISTA = package_attributes(TARGETS['erista_package'][1])
+ROWS = package_attributes(TARGETS['erista_rows_work'][1])
 
 
 class EristaPackageTest(unittest.TestCase):
     def test_the_erista_has_its_own_tree_dtb_directory_and_one_core(self):
-        self.assertEqual(TARGETS['erista_package'][0], 'boot_package')
+        self.assertEqual(TARGETS['erista_package'][0], 'boot_entry')
         self.assertEqual(ERISTA['adt'], ':erista_adt')
         self.assertTrue(ERISTA['dtb'].endswith('erista-sku0.dtb'))
         self.assertEqual(ERISTA['smp'], ':single_core')
@@ -86,6 +104,15 @@ class EristaPackageTest(unittest.TestCase):
     def test_everything_else_is_shared(self):
         for other in (ERISTA, ROWS):
             self.assertEqual({k: v for k, v in other.items() if k not in OWN}, {k: v for k, v in OLED.items() if k not in OWN})
+
+    def test_no_call_in_a_build_file_unpacks_a_dictionary(self):
+        for build in (BUILD,):
+            self.assertIsNone(re.search(r'(?<![\w*"])\*\*\s*[A-Za-z_(\[{]', re.sub(r'"[^"\n]*"|#.*', '', build.read_text())), build)
+
+    def test_all_three_packages_come_from_the_one_macro(self):
+        for name in ('package', 'erista_package', 'erista_rows_work'):
+            self.assertEqual(TARGETS[name][0], 'boot_entry')
+            self.assertFalse({'kernel', 'bl31', 'loader_srcs'} & set(TARGETS[name][1]), name)
 
     def test_it_is_opt_in(self):
         for attributes in (ERISTA, ROWS):

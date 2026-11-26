@@ -438,6 +438,7 @@ py_test(
     data = [
         "//boot:build_file",
         "//boot:loader/loader.c",
+        "//boot:package.bzl",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
     deps = ["//tools/package:boot_script"],
