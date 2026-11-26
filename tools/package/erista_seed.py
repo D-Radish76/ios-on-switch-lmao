@@ -73,7 +73,7 @@ def fingerprint(seed: bytes) -> str:
 # What keeps a seeded build out of every cache. The package's actions are already no-cache and no-remote
 # (boot/defs.bzl private_seed); these are the same promise from the command line, for anything that action tags miss.
 CACHE_FLAGS = ('--remote_cache=', '--remote_executor=', '--noremote_accept_cached', '--noremote_upload_local_results',
-               '--disk_cache=')
+               '--disk_cache=', '--bes_backend=', '--bes_results_url=')
 BUILD_FLAGS = ('--config=ios17', '--//install:prebuilt=local', '--//kernel:early_trace=true')
 TARGET = '//boot:erista_first_xnu_seeded'
 

@@ -98,16 +98,45 @@ py_library(
 )
 
 py_library(
+    name = "seed_scan_lib",
+    srcs = ["seed_scan.py"],
+    imports = ["."],
+)
+
+py_library(
+    name = "seed_places_lib",
+    srcs = ["seed_places.py"],
+    imports = ["."],
+)
+
+py_library(
+    name = "seeded_taint_lib",
+    srcs = ["seeded_taint.py"],
+    imports = ["."],
+    deps = [":erista_seed_lib"],
+)
+
+py_library(
     name = "erista_seeded_build_lib",
     srcs = ["erista_seeded_build.py"],
     imports = ["."],
-    deps = [":erista_seed_lib"],
+    deps = [
+        ":erista_seed_lib",
+        ":seed_places_lib",
+        ":seed_scan_lib",
+        ":seeded_taint_lib",
+    ],
 )
 
 py_binary(
     name = "erista_seeded_build",
     srcs = ["erista_seeded_build.py"],
-    deps = [":erista_seed_lib"],
+    deps = [
+        ":erista_seed_lib",
+        ":seed_places_lib",
+        ":seed_scan_lib",
+        ":seeded_taint_lib",
+    ],
 )
 
 py_binary(

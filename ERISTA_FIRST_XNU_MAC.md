@@ -72,7 +72,7 @@ python3 tools/package/erista_seeded_build.py clean      # after the card's copy 
 python3 tools/package/erista_seeded_build.py clean --seed   # after the run is recorded, when no rebuild is planned
 ```
 
-Why that order: `scan` runs right after the build and again before anything is committed or posted, because it reads git's tracked files and the files named with `--also`, nothing else. `clean`
+Why that order: `scan` runs right after the build and again before anything is committed or posted, because it reads git's tracked files and the files named with `--also`, nothing else, unless `--caches` adds the disk caches and bazel's own state (section 12). `clean`
 removes the package, so it comes after the copy; the seed file goes last because a rebuild with a new seed gives a different package and the card's copy holds this one. `scan` does not look inside `bazel-bin`
 or the card, which hold the seed by design: the window on the card contains it, so the card is not shared and the entry's files are removed after the run.
 
@@ -91,7 +91,7 @@ Final review of the seed path (2026-11-27), from `erista_seed.py`, `erista_seede
 | What it prints | the 8 digit fingerprint and "seed ok"; never the seed |
 | What the package is today | the wrapper does not pass `--//boot:erista_boot_run`, so `//boot:erista_first_xnu_seeded` is built with the real board table: a package whose loader stops at `0x306` and whose script says `WRONG_BOARD`. It checks the seed path, the hashes and the copy to a card; it cannot boot the Erista |
 | Closed (2026-11-27) | the wrapper used to pass extra arguments after `--` to bazel, so `-- --//boot:erista_boot_run=true` would have built the boot=1 seeded package. Now: the flag is refused in any spelling, `--config`, `--bazelrc`, `--flagfile`, `--flag_alias` and `@file` are refused, `.bazelrc`, `user.bazelrc` and `~/.bazelrc` naming it stop the build, `--//boot:erista_boot_run=false` is the last flag of every command, and an analysis-only `bazel aquery` of the same flags must list `BootScript` and no `BoardHeader` or `BoardAgree` before bazel builds anything. A future approval of the flag needs its own design |
-| Left on the Mac after a build | the seed file, `bazel-bin/boot/erista-full-ram-seeded.adt`, the `erista_first_xnu_seeded_work` tree; `scan` reads git's tracked files and `--also` files only, so it does not look in those |
+| Left on the Mac after a build | the seed file, `bazel-bin/boot/erista-full-ram-seeded.adt`, the `erista_first_xnu_seeded_work` tree; `scan` reads git's tracked files and `--also` files only, so it does not look in those unless `--caches` names them (section 12) |
 
 Which seed the run uses is recorded in row 6 of `ERISTA_FIRST_XNU_BLOCKERS.md`; the owner's written decision of the run itself is still open.
 
@@ -355,3 +355,43 @@ python3 tools/package/erista_seeded_build.py clean --seed     # last; a rebuild 
 ```
 
 On the second build, "executed" action counts in bazel's summary for the seeded targets are the evidence; a cache hit there is a failure to report. The `bazel-bin/boot/erista_first_xnu_seeded_work/` path is `name + "_work"` from `boot/defs.bzl`; send the error if the file is not there.
+
+## 12. Mac results for the seeded build, and the wrapper after them (2026-11-27 01:01 JST)
+
+Measured on the Mac for the boot=0 seeded package (fingerprint `4b7779b2`, seed check PASS). Section 11 was written before these; where they differ, this section wins.
+
+| Item | Result |
+| --- | --- |
+| First build | success, 652.589 s, 13046 actions (7503 internal, 5537 darwin-sandbox, 6 local); kernel window 17543168 bytes, 87 blocks, entry `0xb53cc4c8` |
+| Second wrapper build | 1.057 s, 1 internal action, nothing re-executed. Expected: bazel found every output up to date. It says nothing about the caches, which only a run that executes the actions can show |
+| aquery, boot row | `BootScript` present, no `BoardHeader` or `BoardAgree` |
+| aquery, `no-cache: 1` and `no-remote: 1` | `LoaderCompile`, `LoaderLink`, `BootScript`, `BootUBoot`, `BootBl33`, `OverlayTree`, `InstallerSeedPin`, `BootPackage`. The full list is still to be reported; `InstallerSeedPin` pins the Installer bundle and does not hold the seed |
+| Seed leak scan | `no leak found`, from the old scan: git's tracked files only. It is not a leak check of caches or logs |
+| Loader margin | `flat_bytes` 122880, `image_end` `0xa001e000`, to the stamps slot `0xf00` (3840), to the SD reference page `0x1000` (4096) |
+| `first_xnu_check.py kernel`, `macho`, `early-trace.ok` | exit 0, exit 0, `early_trace`; the 18 segments, permissions, entry and notes match section 10 |
+| `output_base` mode | 755: any user of the Mac can read the seeded outputs |
+| Disk cache | `.bazelrc:19` `common --disk_cache=~/Library/Caches/switch-ios-bazel/disk`; `:31-33` garbage-collection settings; `:126` `build:reproducible-check --disk_cache=`; `:139` `build:remote` sets a smaller GC size |
+
+The ordinary cache stays. The seeded build ends its command line with `--disk_cache=`, which wins over line 19; no rc line is changed or needs to be.
+
+What the wrapper does now (host tool only; the package is still boot=0 and nothing runs on a console):
+
+- Extra bazel arguments after `--` must be on a short list (`--jobs=N`, `--keep_going`, `--color=`, `--curses=`, `--announce_rc` and a few more); anything naming a remote, disk cache, build-event upload or credentials is refused by name, and so is everything else not listed. A flag that takes a value must be written `--name=value`.
+- The cache and build-event flags (now also `--bes_backend=` and `--bes_results_url=`) and `--//boot:erista_boot_run=false` come last, after the config and every extra flag.
+- `build` refuses when the output base is not mode 700, is not yours, or has an ACL, and prints `chmod 700 "<output_base>"`. This changes nothing for ordinary builds: it is the same user's own directory. A separate output base would cost a full rebuild with no cache (about 11 minutes) and a second server, so it is not the default.
+- `build` and `actions` follow the seed through the action graph with `bazel aquery inputs(...)`: every action that reads the seed file or an output of one that does must carry `no-cache` and `no-remote`, and `BootAdt`, `KernelLayout`, `KernelWindow`, `BootScript`, `BootBl33` and `BootPackage` must be among them. It refuses on a missing tag, on a missing required action, on a graph with no reader of the seed, and on a query it cannot read. It does not go by a path containing "seeded". Process-less actions (`Symlink`, `FileWrite`, ...) need no tag; an action it does not know does. The text format of `aquery` (`Inputs:`, `Outputs:`, `ExecutionInfo:`) is assumed from the Mac's earlier output and not yet confirmed for these fields.
+- `clean` removes `erista-full-ram-seeded.adt` as well as the work tree and the package, and only those; `--seed` adds the seed file, and `--deep` adds `bazel clean` (all build outputs; the first build took 652 s; never implied).
+- `scan` walks directories, never follows a link, reads files in chunks, fails on a path that does not exist and on a file it cannot read, and prints how many files and places it covered and what it cannot see. A hit is printed as a path, never as the seed. `--caches` adds the disk caches named in any rc file, bazel's logs, `action_cache`, `server` and `sandbox` under the output base, and counts the seeded outputs as expected places. `execroot` and `external` are left out by design and said so. The seeded ADT must hold the seed, or the scan fails: it proves the scanner can see the seed. Not detected: compressed or encrypted data, other encodings, derived data, remote caches, the SD card.
+
+Run on the Mac, from the repository root, in this order:
+
+```
+python3 tools/package/erista_seeded_build.py actions                  # the action-graph check alone; prints mnemonic counts
+chmod 700 "$(bazel info output_base)"                                  # only if build says it must; then stat -f %Lp "$(bazel info output_base)"
+ls -led "$(bazel info output_base)"                                    # no numbered ACL lines
+python3 tools/package/erista_seeded_build.py clean                     # the seeded outputs only; the ordinary caches and packages stay
+python3 tools/package/erista_seeded_build.py build                     # this time the seeded actions execute: report the process counts and any "cache hit"
+python3 tools/package/erista_seeded_build.py scan --caches 2> scan.err   # exit 0; send only the summary lines
+```
+
+Report: the counts from `actions`, whether `build` accepted the output base, the process line of the rebuild (a "disk cache hit" or "remote cache hit" there is a failure), and the scan summary (files, places, unreadable count, exit code). Not seed bytes, not `scan.err` unless it names a path.

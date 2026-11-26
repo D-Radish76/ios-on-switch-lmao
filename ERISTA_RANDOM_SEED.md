@@ -52,7 +52,7 @@ LZ4 shards, `KernelWindow`, the loader compiles that include `layout.h`/`runs.h`
 checks that git ignores it and does not track it, then runs bazel with `--remote_cache= --remote_executor= --noremote_accept_cached
 --noremote_upload_local_results --disk_cache=` and refuses flags that would write build details to a log or file (`-s`, `--subcommands`,
 `--verbose_failures`, `--profile`, build-event and execution-log files). The seed is never an argument: bazel receives the path `//local:erista-seed.hex`.
-`scan` looks for the seed (hex or raw) in git's tracked files and in files named with `--also`, such as a saved log. `clean` removes the seeded outputs and, with `--seed`, the seed.
+Extra bazel flags come from a short list, and the cache and build-event flags come last. `build` also checks the output base (mode 700, no ACL) and follows the seed through the action graph, refusing unless every action that holds it is `no-cache` and `no-remote`. `scan` looks for the seed (hex or raw) in git's tracked files and in files and directories named with `--also`; `--caches` adds the disk caches and bazel's logs and state, and the report says what it could not see. `clean` removes the seeded outputs, the seeded ADT included, and with `--seed` the seed; `--deep` also runs `bazel clean`. Details and the Mac's measurements: `ERISTA_FIRST_XNU_MAC.md` section 12.
 
 What stays on the Mac after a build: the seed file; `bazel-bin/boot/erista-full-ram-seeded.adt` and the `erista_first_xnu_seeded_work` tree (the ADT, window
 shards, loader, bl33.bin); `bazel-bin/boot/erista-first-xnu-seeded` (the package that goes on the SD card); the SD card itself. The output base's action cache keeps digests, not

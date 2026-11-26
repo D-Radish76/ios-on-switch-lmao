@@ -475,6 +475,7 @@ py_test(
         "//:ERISTA_D1_DESIGN.md",
         "//:ERISTA_T3T4_MINIMAL.md",
         "//:ERISTA_T3T4_REUSE.md",
+        "//:ERISTA_RANDOM_SEED.md",
         "//kernel/switch:include/switch/boot_layout.h",
         "//:ERISTA_FIRST_XNU_BLOCKERS.md",
         "//:ERISTA_FIRST_XNU_BOOT.md",
@@ -882,4 +883,17 @@ py_test(
         "//boot:defs.bzl",
     ],
     deps = ["//tools/package:erista_seeded_build_lib"],
+)
+
+# The seed scanner and the action-graph check the wrapper uses. Synthetic seeds and graphs only.
+py_test(
+    name = "seed_scan_test",
+    srcs = ["seed_scan_test.py"],
+    deps = ["//tools/package:seed_scan_lib"],
+)
+
+py_test(
+    name = "seeded_taint_test",
+    srcs = ["seeded_taint_test.py"],
+    deps = ["//tools/package:seeded_taint_lib"],
 )

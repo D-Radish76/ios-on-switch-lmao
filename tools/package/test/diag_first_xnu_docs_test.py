@@ -215,6 +215,35 @@ class MacResultsMacho(unittest.TestCase):
         self.assertNotIn('--erista_boot_run=true\npython3', text)
 
 
+class SeededWrapperRecord(unittest.TestCase):
+    def test_the_mac_measurements_and_the_wrapper_changes_are_recorded(self) -> None:
+        text = read('ERISTA_FIRST_XNU_MAC.md')
+        section = text[text.index('## 12. Mac results for the seeded build') :]
+        for phrase in (
+            '`4b7779b2`',
+            '652.589 s',
+            '13046 actions',
+            '`flat_bytes` 122880',
+            '`0xa001e000`',
+            '`0xf00` (3840)',
+            '755',
+            'any user of the Mac can read the seeded outputs',
+            '`--disk_cache=`, which wins over line 19',
+            'chmod 700',
+            '--bes_backend=',
+            'It does not go by a path containing "seeded"',
+            'erista-full-ram-seeded.adt',
+            '`--deep` adds `bazel clean`',
+            'never follows a link',
+            'Not detected: compressed or encrypted data',
+            'scan --caches',
+            'a "disk cache hit" or "remote cache hit" there is a failure',
+        ):
+            self.assertIn(phrase, section, phrase)
+        self.assertNotIn('erista_boot_run=true', section)
+        self.assertIn('section 12', read('ERISTA_RANDOM_SEED.md'))
+
+
 class MacResults(unittest.TestCase):
     def test_the_mac_report_and_the_graph_check_are_recorded(self) -> None:
         for phrase in (
