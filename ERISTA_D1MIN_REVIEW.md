@@ -1,6 +1,6 @@
 # D1-min: review before a run
 
-D1-min is not approved to run. This is the offline review of 2026-11-26. `boot` stays 0, the feature mask stays 0, every HOLD stays.
+This is the offline review of 2026-11-26. D1-min then ran once and passed (`ERISTA_D1MIN_RESULT.md`). `mmc read` has now run on this console. `boot` stays 0, the feature mask stays 0, every HOLD stays.
 `diag_d1min_audit_test` pins what this page says about the script and the target.
 
 D1-min is D0-R's loader, unchanged, behind a U-Boot script that adds one block between `bootm loados` and `bootm prep`: `mmc dev 1`,
@@ -33,7 +33,7 @@ digits U-Boot prints are zero padded is not known for this build. U-Boot prints 
 
 ## Findings
 
-1. **`mmc read` has not run on this hardware.** `mmc dev 1` has (`erista-sd-pages.log`: the card initialized, `mmc1 is current device`, hekate
+1. **`mmc read` had not run on this hardware before the run (it has now, and returned).** `mmc dev 1` has (`erista-sd-pages.log`: the card initialized, `mmc1 is current device`, hekate
    came back by itself). The normal script reads with `read mmc 1 ...`, a different command, and that has not run on an Erista either.
    The read moves data through U-Boot's SD host driver into DRAM by DMA, which is new on this console.
 2. **D0-S v1's hang is unexplained.** It happened after `bootm prep`, on U-Boot loads of device words. D1-min's U-Boot access to SDMMC1 is

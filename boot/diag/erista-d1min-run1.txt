@@ -1,0 +1,40 @@
+# D1-min first hardware run: PASS. Erista, hekate 6.5.5, from Nyx "More configs", entry iOS Diag D1-min.
+# Reported by the user 2026-11-26 22:05 JST, read from the photograph. The photograph is not stored here. Run once, no retry.
+# The sector's bytes were never shown; only the CRC32 and the signature result. No identifying data is recorded.
+result=PASS
+start_temperature_nyx=34.5 C
+end_temperature_nyx=38.6 C
+temperature_difference=+4.1 C
+psci_system_reset_returned_to_hekate=yes
+manual_power_hold_needed=no
+mac_crc32_sector0=E1D4E0FF
+switch_crc32_sector0=E1D4E0FF
+crc32_match=yes
+signature_55aa=PRESENT
+loader_size_bytes=88848
+# U-Boot lines, as reported:
+uboot: BOARD OK
+uboot: FRAMEBUFFER OK
+uboot: DTB COPIED AND FRAMEBUFFER RESERVED
+uboot: LOADER WRITTEN TO 0xA0000000
+uboot: switch to partitions #0, OK
+uboot: mmc1 is current device
+uboot: MMC read: dev #1, block #0, count 1 ... 1 blocks read: OK
+uboot: D1-MIN SECTOR 0 READ TO 0xA001F200
+uboot: CRC32 for a001f200 ... a001f3ff ==> e1d4e0ff
+uboot: D1-MIN SIGNATURE 55 AA PRESENT
+# Loader (EL1) lines, as reported:
+loader: LOAD DIAG D0-R
+loader: BOARD ERISTA T210B01=0 SKU=0 BOOT=0
+loader: EL1 STATE PASS
+loader: MC REGISTERS READ 25 DIFFERENT FROM THE OLED 0
+loader: FDT TOTAL 172032 RESERVATIONS 3
+loader: FDT WALK CODE 0 ALL RANGES FREE
+loader: FDT NODES 3 BANKS 2
+loader: EXPORTER 0xA7000000-0xA7010000 CLEAR BANK 0
+loader: SD REFERENCE 0xA001F000-0xA0020000 CLEAR BANK 0
+loader: BOOT STAYS 0
+loader: RESET IN 15 S
+# Differences from the script's text, to be sent and not explained away: the script echoes "D1-MIN SECTOR 0 READ TO 0xA001F200. CRC32 OF THE
+# 512 BYTES:" and the report gives the line without the second sentence (a transcription, or a screen that differs). The rise of 4.1 C
+# spans hekate, Nyx and the run; the run's own share is not separable. The run's duration was not reported.

@@ -87,7 +87,7 @@ from the first U-Boot line. Launch from Nyx "More configs", as T1-T was.
 | # | Register (I2C1, `7000c000` +) | Value | Purpose |
 | --- | --- | --- | --- |
 | 1 | `CLK_DIVISOR` `+6c` | `00FF0001` | the one change |
-| 2 | `CONFIG_LOAD` `+94` | `01` | applies it |
+| 2 | `CONFIG_LOAD` `+8c` | `01` | applies it |
 | 3 | `CMD_ADDR0` | `98` | TMP451 write address |
 | 4 | `CMD_DATA1` | `FE` | pointer to the manufacturer ID |
 | 5 | `CNFG` | `2800` | write, one byte, no go |

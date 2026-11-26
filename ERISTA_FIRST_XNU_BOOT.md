@@ -293,14 +293,16 @@ The call from XNU's EL1 and a timed stop are worked out in `ERISTA_PROTECTION.md
 
 ## From now to the first XNU boot
 
+`ERISTA_FIRST_XNU_BLOCKERS.md` restates this list after D1-min and assesses deferring T3, T4 and the full D1.
+
 In order; each line blocks the next unless the owner waives it in writing.
 
 | # | Step | Settled by | Hardware |
 | --- | --- | --- | --- |
 | 1 | Mac verifies the commands below on one commit, including the trace-kernel scan and the three loader hashes | the Mac | no |
 | 2 | D0-S v1 hung (cause unknown); D0-S v2 run and passed 2026-11-26 (`ERISTA_D0S_V2_RESULT.md`); the framebuffer attributes and the four register values are recorded | a photograph | done, read-only |
-| 3 | D1-min run and reviewed (sector 0 CRC, `0xA001F200` range holds) | a photograph | yes, read-only, one SD read |
-| 4 | T2 run, or waived | `ERISTA_T2_DESIGN.md` plus this document | yes, one sensor write |
+| 3 | D1-min ran and passed 2026-11-26 (`ERISTA_D1MIN_RESULT.md`): the CRC32 equals the Mac's, `55 AA` present, the range holds | a photograph | done, read-only, one SD read |
+| 4 | T2 run, or waived | `ERISTA_T2_DESIGN.md`, `ERISTA_T2_REVIEW.md` (needs a run procedure and an audit first) | yes, one sensor write |
 | 5 | A stop path chosen: a proven reset (WDT0 or PSCI) or the person, in writing | the owner | the first two need a run |
 | 6 | Seed decided: pinned (public, fine for observation) or the per-install seed | the owner | no |
 | 7 | T3 and T4: built and proved, or waived | the owner | yes |

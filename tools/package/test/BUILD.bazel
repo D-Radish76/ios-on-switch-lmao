@@ -428,6 +428,34 @@ py_test(
     ],
 )
 
+# The recorded D1-min run against the script, the loader's text and the review's pass criteria (ERISTA_D1MIN_RESULT.md).
+py_test(
+    name = "diag_d1min_measured_test",
+    srcs = ["diag_d1min_measured_test.py"],
+    data = [
+        "//:ERISTA_D1MIN_RESULT.md",
+        "//boot:all_sources",
+        "//boot:diag/erista-d0s-run1.txt",
+        "//boot:diag/erista-d1min-run1.txt",
+    ],
+)
+
+# The blocker list and the T2 review written after D1-min, against the code they cite.
+py_test(
+    name = "diag_blockers_docs_test",
+    srcs = ["diag_blockers_docs_test.py"],
+    data = [
+        "//:ERISTA_D1MIN_RESULT.md",
+        "//:ERISTA_FIRST_XNU_BLOCKERS.md",
+        "//:ERISTA_T1V3_RUN.md",
+        "//:ERISTA_T2_DESIGN.md",
+        "//:ERISTA_T2_REVIEW.md",
+        "//boot:all_sources",
+        "//boot:diag/erista-d0sv2-run1.txt",
+        "//boot:diag/erista-t1v3-run1.txt",
+    ],
+)
+
 # D1-min's rendered script and its BUILD target, read offline before any run (ERISTA_D1MIN_REVIEW.md).
 py_test(
     name = "diag_d1min_audit_test",

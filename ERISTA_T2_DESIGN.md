@@ -87,7 +87,7 @@ Every device write goes through the T1 v3 allowlist, extended only in values. Re
 | Register | Values | Used for |
 | --- | --- | --- |
 | `CLK_DIVISOR` (`+6c`) | `00FF0001`, once | the rate T1 v3 proved |
-| `CONFIG_LOAD` (`+94`) | `01` once; `25` before every transaction | apply the divisor; load the transaction |
+| `CONFIG_LOAD` (`+8c`) | `01` once; `25` before every transaction | apply the divisor; load the transaction |
 | `CMD_ADDR0` (`+04`) | `98`, `99` | write and read address |
 | `CMD_DATA1` (`+0c`) | `FE 03 11 12 02 01 10 00 15` pointers, `0F` for the one-shot | register pointer; for the one-shot, pointer `0F` and value `00` in one word |
 | `CNFG` (`+00`) | `2800`, `2840` no go; `2A00`, `2A40` go; `2802` no go and `2A02` go for the one-shot | one-byte write, one-byte read, two-byte write |
