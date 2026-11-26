@@ -55,6 +55,7 @@ exports_files([
     "ERISTA_NEXT_DIAGNOSTICS.md",
     "ERISTA_T1V3_RUN.md",
     "ERISTA_T3T4_MINIMAL.md",
+    "ERISTA_T3T4_REUSE.md",
     "ERISTA_T2_DESIGN.md",
     "ERISTA_T2_REVIEW.md",
     "ERISTA_T2_RESULT.md",

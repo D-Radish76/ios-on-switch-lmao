@@ -384,14 +384,23 @@ py_binary(
 # 'any' screen class) from the kind's OS volume image or its mounted root:
 #   bazel run //tools/package:wallpaper_1x -- <kind> <OS volume .dmg or root> <output directory>
 py_library(
+    name = "macho_check_lib",
+    srcs = ["macho_check.py"],
+    imports = ["."],
+    deps = [":native_xnu_layout"],
+)
+
+py_library(
     name = "first_xnu_check_lib",
     srcs = ["first_xnu_check.py"],
     imports = ["."],
+    deps = [":macho_check_lib"],
 )
 
 py_binary(
     name = "first_xnu_check",
     srcs = ["first_xnu_check.py"],
+    deps = [":macho_check_lib"],
 )
 
 # The derived board table the first-XNU diagnostic's loader and script are built from (ERISTA_FIRST_XNU_BOOT_GATE.md).

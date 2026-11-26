@@ -284,12 +284,40 @@ class MeasuredKernel(unittest.TestCase):
             'exit 0',
             'exit 1',
             '`__LINKEDIT` is last',
-            'Mach-O check still to do',
+            'Mach-O measured by the Mac',
             '0xfffffff004004000',
+            '0xfffffff00427c000',
+            'first_xnu_check.py macho',
             '0xfffffff007004000',
         ):
             self.assertIn(phrase, MAC, phrase)
         self.assertNotIn('kernel bazel-bin/kernel/prelinked', MAC + read('ERISTA_FIRST_XNU_BOOT.md'))
+
+    def test_the_reported_virtual_entry_maps_to_the_reported_physical_entry(self) -> None:
+        layout = read('kernel/switch/include/switch/boot_layout.h')
+        self.assertIn('#define SWITCH_KERNEL_PHYS_BASE 0xb207c000', layout)
+        physical = 0xB207C000 + (0xFFFFFFF0075CC4C8 - 0xFFFFFFF00427C000)
+        self.assertEqual(0xB53CC4C8, physical)
+        self.assertEqual(0, (0xFFFFFFF00427C000 - 0xB207C000) % 0x200000)
+        self.assertIn('0xb53cc4c8', MAC)
+        self.assertIn('0x182a000', MAC)
+
+    def test_the_t3_t4_reuse_review_keeps_the_holds_and_its_caveat(self) -> None:
+        text = read('ERISTA_T3T4_REUSE.md')
+        for phrase in (
+            'stay on HOLD',
+            'undecided',
+            'master',
+            'not the 6.5.5 tag',
+            'BDK_HW_EXTRA_DEINIT',
+            '0x9802D131',
+            '0x049102CA',
+            'not a system reset',
+            'Neither is a precondition of the other',
+            'both stay on HOLD',
+        ):
+            self.assertIn(phrase, text, phrase)
+        self.assertIn('ERISTA_T3T4_REUSE.md', BLOCKERS)
 
     def test_the_expected_addresses_and_permissions_are_the_link_lines(self) -> None:
         recipe = read('kernel/xnu-10063.141.1/config/recipes_development.bzl')
@@ -310,7 +338,7 @@ class MeasuredKernel(unittest.TestCase):
     def test_the_seed_review_and_the_wrapper_finding_are_recorded(self) -> None:
         for phrase in (
             'Final review of the seed path',
-            'Review finding, not changed',
+            'Closed (2026-11-27)',
             'WRONG_BOARD',
             'from the repository root',
         ):

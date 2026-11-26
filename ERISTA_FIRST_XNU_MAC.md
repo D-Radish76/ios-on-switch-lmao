@@ -90,7 +90,7 @@ Final review of the seed path (2026-11-27), from `erista_seed.py`, `erista_seede
 | What the wrapper refuses | `-s`, `--subcommands`, `--verbose_failures`, `--sandbox_debug`, `--explain`, build-event, profile and execution-log flags |
 | What it prints | the 8 digit fingerprint and "seed ok"; never the seed |
 | What the package is today | the wrapper does not pass `--//boot:erista_boot_run`, so `//boot:erista_first_xnu_seeded` is built with the real board table: a package whose loader stops at `0x306` and whose script says `WRONG_BOARD`. It checks the seed path, the hashes and the copy to a card; it cannot boot the Erista |
-| Review finding, not changed | the wrapper passes extra arguments after `--` to bazel, so `-- --//boot:erista_boot_run=true` would build the boot=1 seeded package. Nothing in the tool stops it. A refusal of that flag in the wrapper (until the owner approves the run) is the same kind of closure as the stamp; it changes the tool and waits for approval |
+| Closed (2026-11-27) | the wrapper used to pass extra arguments after `--` to bazel, so `-- --//boot:erista_boot_run=true` would have built the boot=1 seeded package. Now: the flag is refused in any spelling, `--config`, `--bazelrc`, `--flagfile`, `--flag_alias` and `@file` are refused, `.bazelrc`, `user.bazelrc` and `~/.bazelrc` naming it stop the build, `--//boot:erista_boot_run=false` is the last flag of every command, and an analysis-only `bazel aquery` of the same flags must list `BootScript` and no `BoardHeader` or `BoardAgree` before bazel builds anything. A future approval of the flag needs its own design |
 | Left on the Mac after a build | the seed file, `bazel-bin/boot/erista-full-ram-seeded.adt`, the `erista_first_xnu_seeded_work` tree; `scan` reads git's tracked files and `--also` files only, so it does not look in those |
 
 Which seed the run uses is recorded in row 6 of `ERISTA_FIRST_XNU_BLOCKERS.md`; the owner's written decision of the run itself is still open.
@@ -248,29 +248,46 @@ What that shows, against the link line (`recipes_development.bzl`):
 
 The link flags stay as they are.
 
-### Mach-O check still to do: addresses, sizes, permissions
+### Mach-O measured by the Mac (reported 2026-11-27 00:11 JST, `early_trace=true`)
 
-Nothing below changes a flag or a file. Run on `kernel.macho` of the trace build and the plain build:
+18 `LC_SEGMENT_64`; every `maxprot` and `initprot` is 1, 3 or 5; no segment is writable and executable; `__LINKEDIT` is last.
+
+| Segment | vmaddr | vmsize | file | prot (max/init) |
+| --- | --- | --- | --- | --- |
+| `__TEXT` | `0xfffffff007004000` | `0x1dc000` | not reported | 1/1 |
+| `__TEXT_EXEC` | `0xfffffff007400000` | `0xa78000` | not reported | 5/5 |
+| `__PRELINK_TEXT` | `0xfffffff00427c000` | `0x6a4000` | offset 25337856, size 6963200 | 1/1 |
+| `__LAST`, `__PLK_LLVM_COV`, `__PLK_LINKEDIT` | not reported | 0 | | not reported |
+
+`__start` is `0xfffffff0075cc4c8`, inside `__TEXT_EXEC`. The header's own entry (`LC_UNIXTHREAD`) has not been reported.
+
+Answers, from the sources and the arithmetic. Nothing was run on the Mac for them:
+
+| Question | Answer |
+| --- | --- |
+| Why `__PRELINK_TEXT` is at `0xfffffff00427c000`, not `0xfffffff004004000` | My expectation in this section was wrong: `-segaddr __PRELINK_TEXT,0xfffffff004004000` is on the link line of the raw kernel (`kernel_unprelinked`), and `//kernel:prelinked` is the prelink output (`kernel_prelink_switch`, slide `-0x1000000` in `kernel/prelink.bzl`) that re-lays out the kext segments. The address the file has is the one the repository pins for this IPSW: `ipsw/pins.bzl` kind `21H461` has `kernel_virt_base` `0xfffffff00427c000`, `boot_args_contract_test` and `native_xnu_layout_test` use it, and it is built into the kernel (`-DSWITCH_KERNEL_VIRT_BASE`). The measurement equals the pin. How `0x4004000` becomes `0x427c000` step by step (original kernelcache base plus the slide) was not derived here |
+| Why `__TEXT` equals `-image_base` and `__PRELINK_TEXT` does not | The ld output's `__TEXT` was not moved (`0xfffffff007004000` is the link line's `-image_base`); only the kext segments were placed by the prelink |
+| Empty `__LAST`, `__PLK_LLVM_COV`, `__PLK_LINKEDIT` | Normal. The last two come from `-sectcreate ... /dev/null`; `__LAST` has a protection set by `-segprot` and no section. The layout tool (`native_xnu_layout.py`) already skips segments of size 0, so nothing places them. `first_xnu_check.py macho` accepts them and prints a note |
+| Header entry against `__start` | The tool compares the `LC_UNIXTHREAD` pc with the `__start` symbol from `LC_SYMTAB` and fails on a difference. Run it (below); this is not yet measured |
+| Virtual entry `0xfffffff0075cc4c8` against physical `0xb53cc4c8` | `SWITCH_KERNEL_PHYS_BASE` is `0xb207c000` (`kernel/switch/include/switch/boot_layout.h`) and is where the lowest segment goes: `0xb207c000 + (0xfffffff0075cc4c8 - 0xfffffff00427c000)` = `0xb207c000 + 0x33504c8` = `0xb53cc4c8`, the entry of the earlier package reports. The offset is the same modulo 2 MiB (`0x7c000`), as `kernel/BUILD.bazel` requires. This is arithmetic on the reported numbers; the tool recomputes it from the file |
+
+Adding the new mode to the commands (`first_xnu_check.py macho`, built from `tools/package/macho_check.py`; it needs no Xcode):
 
 ```
-xcrun otool -l bazel-bin/kernel/kernel.macho | awk '/^ +segname/{s=$2} /^ +vmaddr/{a=$2} /^ +vmsize/{z=$2} /^ +fileoff/{o=$2} /^ +filesize/{f=$2} /^ +maxprot/{m=$2} /^ +initprot/{print s, a, z, o, f, m, $2}' | column -t
-xcrun nm -n bazel-bin/kernel/kernel.macho | grep -w -e __start -e _start      # the entry's address
-xcrun otool -l bazel-bin/kernel/kernel.macho | grep -A4 'LC_UNIXTHREAD\|LC_MAIN'
+python3 tools/package/first_xnu_check.py macho bazel-bin/kernel/kernel.macho \
+  --base 0xfffffff00427c000 --phys-base 0xb207c000 --entry-phys 0xb53cc4c8
+# the same on the plain build, and the differences between the two builds:
+python3 tools/package/first_xnu_check.py macho kernel-trace.macho --compare kernel-plain.macho \
+  --base 0xfffffff00427c000 --phys-base 0xb207c000 --entry-phys 0xb53cc4c8
 ```
 
-| Check | Expected, from the link line | A difference is |
-| --- | --- | --- |
-| `__PRELINK_TEXT` `vmaddr` | `0xfffffff004004000` (`-segaddr`) | a finding |
-| `__TEXT` `vmaddr` | `0xfffffff007004000` (`-image_base`) | a finding |
-| Every `vmaddr`, `vmsize`, `fileoff`, `filesize` | multiples of `0x4000` | a finding |
-| No two segments overlap in address or in file | by construction | a finding |
-| `__TEXT`, `__DATA_CONST`, `__LASTDATA_CONST`, `__LINKINFO` | `r--` (initprot and maxprot as listed on the link line) | a finding |
-| `__TEXT_EXEC`, `__KLD`, `__LAST`, `__PRELINK_TEXT` | `r-x` | a finding |
-| `__KLDDATA`, `__DATA`, `__BOOTDATA` | `rw-` | a finding |
-| No segment with both `w` and `x` in `initprot` or `maxprot` | | a finding |
-| The seven `-sectcreate ... /dev/null` segments' sizes | report them: they are empty by design and the linker's size for them is not known from the sources | a figure to record |
-| Entry (`LC_UNIXTHREAD` pc, or `-e __start`) | equals the `__start` symbol and lies in an executable segment | a finding |
-| Same figures for `early_trace` true and false | only `__TEXT_EXEC`'s content (the `start.s` object) differs; sizes and addresses should match, or differ by the object's size only | report the difference |
+(`kernel-trace.macho` and `kernel-plain.macho` are copies of `bazel-bin/kernel/kernel.macho` made after each of the two builds.) `--base` comes from the kind's `kernel_virt_base` in `ipsw/pins.bzl`; the tool has no literal for any kind.
 
-The permissions are the kernel's own; the loader maps the window in 2 MiB blocks and the boot package's tools read this file (`native_xnu_layout_test.py` over `kernel.macho`), so the order and sizes above are what they depend on.
-Report the table and both entries. If the sizes of the two builds differ by more than `start.s`'s object, send the table before anything else.
+What the mode refuses (exit 1): a segment writable and executable in `initprot` or `maxprot`, `initprot` outside `maxprot`, a segment's file range outside the file or overlapping another's, overlapping virtual ranges, `filesize` above `vmsize`,
+a non-empty segment whose address or size is not a multiple of `0x4000`, no or two `__LINKEDIT`, `__LINKEDIT` not last in the load commands, two segments with one name, no or two `LC_UNIXTHREAD`, an entry that is not 4-byte aligned or not in an executable
+segment's file-backed range, an entry that differs from `__start`, a kernel `native_xnu_layout.parse_kernel` refuses, a lowest segment other than `--base`, a physical base whose offset differs modulo 2 MiB, an entry that does not map to `--entry-phys`.
+What it only prints as a note: empty segments, zerofill (`filesize` below `vmsize`), a file offset that is not a multiple of `0x4000`, anything above `__LINKEDIT` in memory or in the file, `__LINKEDIT` not ending at the end of the file, a kernel without `__start`.
+`--compare` lists the segments and the entry that differ; a difference is never an error. `ERISTA_ADT.md` and `ERISTA_FIRST_XNU_BOOT.md` record windows of 17539072 and 17543168 bytes with the same entry for two packages; the cause of the 0x1000 was not attributed to the kernel (the packages' boot-args and trees differ too).
+If the two kernels differ, the explanation comes first: `early_trace` changes `start.s`'s object only.
+
+`__PRELINK_TEXT`'s file offset 25337856 is `0x182a000`: a multiple of `0x2000`, not of `0x4000`. That is why a file offset that is not 16 KiB aligned is a note and not an error in the tool; the reported kernel has one. Its file size 6963200 is `0x6a4000`, equal to its `vmsize`, so it has no zerofill.

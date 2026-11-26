@@ -2,12 +2,15 @@
 
 kernel KERNEL    exits 0 only if the kernel's start.s was built with SWITCH_EARLY_TRACE (the early marks draw).
 margin LOADER    prints the loader image's room below U-Boot's stamps slot and the SD reference page.
+macho KERNEL     checks segments, protections and entry (macho_check.py); --compare OTHER lists differences.
 """
 
 import argparse
 import struct
 import sys
 from pathlib import Path
+
+import macho_check as macho
 
 LOAD = 0xA0000000
 STAMPS_SLOT = 0xA001EF00
@@ -42,12 +45,41 @@ def loader_margin(image: bytes) -> dict:
     }
 
 
+def run_macho(args) -> int:
+    status = 0
+    images = []
+    for path in [args.path, *([args.compare] if args.compare else [])]:
+        try:
+            image, errors = macho.check(path, args.base, args.phys_base, args.entry_phys)
+        except (macho.MachoError, OSError) as exc:
+            print(f'{path}: {exc}', file=sys.stderr)
+            return 1
+        images.append(image)
+        print(path)
+        print('\n'.join('  ' + row for row in macho.table(image)))
+        print('\n'.join(f'  note: {line}' for line in macho.notes(image)))
+        for error in errors:
+            print(f'{path}: {error}', file=sys.stderr)
+        status |= bool(errors)
+    if args.compare:
+        lines = macho.differences(*images)
+        print('differences:' if lines else 'no difference in segments or entry')
+        print('\n'.join('  ' + line for line in lines))
+    return status
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('mode', choices=('kernel', 'margin'))
+    parser.add_argument('mode', choices=('kernel', 'margin', 'macho'))
     parser.add_argument('path', type=Path)
     parser.add_argument('--stamp', type=Path, help='kernel mode: write this file when the check passes')
+    parser.add_argument('--base', type=lambda v: int(v, 0), help='macho: the lowest segment must be at this address')
+    parser.add_argument('--phys-base', type=lambda v: int(v, 0), default=0xB207C000, help='macho: where that segment goes')
+    parser.add_argument('--entry-phys', type=lambda v: int(v, 0), help='macho: the entry must map to this physical address')
+    parser.add_argument('--compare', type=Path, help='macho: a second kernel to list differences against (not a failure)')
     args = parser.parse_args(argv)
+    if args.mode == 'macho':
+        return run_macho(args)
     data = args.path.read_bytes()
     if args.mode == 'kernel':
         if not enable_sequences(data):

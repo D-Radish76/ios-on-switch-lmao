@@ -474,6 +474,8 @@ py_test(
     data = [
         "//:ERISTA_D1_DESIGN.md",
         "//:ERISTA_T3T4_MINIMAL.md",
+        "//:ERISTA_T3T4_REUSE.md",
+        "//kernel/switch:include/switch/boot_layout.h",
         "//:ERISTA_FIRST_XNU_BLOCKERS.md",
         "//:ERISTA_FIRST_XNU_BOOT.md",
         "//:ERISTA_FIRST_XNU_BOOT_GATE.md",
@@ -839,6 +841,13 @@ py_test(
         "//kernel/xnu-10063.141.1/osfmk:arm64/start.s",
     ],
     deps = ["//tools/package:loader_abi"],
+)
+
+# The kernel's Mach-O check (first_xnu_check.py macho) on synthetic kernels.
+py_test(
+    name = "macho_check_test",
+    srcs = ["macho_check_test.py"],
+    deps = ["//tools/package:first_xnu_check_lib"],
 )
 
 # The first-XNU package's kernel and loader-margin checks, and that the package rule demands the kernel check.
