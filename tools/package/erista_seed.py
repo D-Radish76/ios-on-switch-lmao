@@ -70,11 +70,16 @@ def fingerprint(seed: bytes) -> str:
     return hashlib.sha256(b'switch-erista-seed-fingerprint' + seed).hexdigest()[:8]
 
 
+# What keeps a seeded build out of every cache. The package's actions are already no-cache and no-remote
+# (boot/defs.bzl private_seed); these are the same promise from the command line, for anything that action tags miss.
+CACHE_FLAGS = ('--remote_cache=', '--remote_executor=', '--noremote_accept_cached', '--noremote_upload_local_results',
+               '--disk_cache=')
+BUILD_FLAGS = ('--config=ios17', '--//install:prebuilt=local', '--//kernel:early_trace=true')
+TARGET = '//boot:erista_first_xnu_seeded'
+
+
 def command() -> str:
-    return (
-        'bazel build --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true '
-        '--noremote_accept_cached --noremote_upload_local_results --disk_cache= //boot:erista_first_xnu_seeded'
-    )
+    return 'python3 tools/package/erista_seeded_build.py build'
 
 
 def main(argv=None) -> int:

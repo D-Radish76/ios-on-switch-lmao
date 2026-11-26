@@ -201,6 +201,7 @@ boot_entry(
     adt = ":erista_adt_seeded",
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu-seeded",
+    private_seed = True,
     require_early_trace = True,
     stop_after_vm = True,
     smp = ":single_core",

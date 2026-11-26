@@ -97,6 +97,19 @@ py_library(
     imports = ["."],
 )
 
+py_library(
+    name = "erista_seeded_build_lib",
+    srcs = ["erista_seeded_build.py"],
+    imports = ["."],
+    deps = [":erista_seed_lib"],
+)
+
+py_binary(
+    name = "erista_seeded_build",
+    srcs = ["erista_seeded_build.py"],
+    deps = [":erista_seed_lib"],
+)
+
 py_binary(
     name = "erista_seed",
     srcs = ["erista_seed.py"],

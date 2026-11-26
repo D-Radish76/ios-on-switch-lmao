@@ -635,3 +635,14 @@ py_test(
     ],
     deps = ["//tools/package:erista_seed_lib"],
 )
+
+# The seeded build's wrapper (erista_seeded_build.py) and that every action of the seeded package is uncacheable.
+py_test(
+    name = "erista_seeded_build_test",
+    srcs = ["erista_seeded_build_test.py"],
+    data = [
+        "//boot:build_file",
+        "//boot:defs.bzl",
+    ],
+    deps = ["//tools/package:erista_seeded_build_lib"],
+)

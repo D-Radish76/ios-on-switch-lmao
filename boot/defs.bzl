@@ -64,6 +64,16 @@ _VERBOSE_CONSOLE = {"debug": "-DSWITCH_VERBOSE_CONSOLE=1", "release": "-DSWITCH_
 # The shell that runs an Xcode tool: DEVELOPER_DIR from @xcode//:xcode.env (its first argument), then the tool.
 _XCODE_SHELL = 'DEVELOPER_DIR="$(/usr/bin/sed -n "s/^DEVELOPER_DIR=//p" "$1")"; export DEVELOPER_DIR; shift; exec "$@"'
 
+# A package with a per-install seed: every action of it keeps its outputs out of the disk and remote caches (the seed is in
+# the ADT and so in every later output).
+_PRIVATE = {"no-cache": "1", "no-remote": "1"}
+
+def _requirements(ctx, base = None):
+    requirements = dict(base or {})
+    if ctx.attr.private_seed:
+        requirements.update(_PRIVATE)
+    return requirements or None
+
 def _xcode(ctx, tool, arguments, inputs, outputs, mnemonic, message):
     ctx.actions.run_shell(
         command = _XCODE_SHELL,
@@ -73,7 +83,7 @@ def _xcode(ctx, tool, arguments, inputs, outputs, mnemonic, message):
         env = {"LC_ALL": "C", "PATH": "/usr/bin:/bin", "TZ": "UTC"},
         mnemonic = mnemonic,
         progress_message = message,
-        execution_requirements = _XCODE_EXECUTION,
+        execution_requirements = _requirements(ctx, _XCODE_EXECUTION),
     )
 
 def _run(ctx, tool, arguments, inputs, outputs, mnemonic, message):
@@ -84,6 +94,7 @@ def _run(ctx, tool, arguments, inputs, outputs, mnemonic, message):
         outputs = outputs,
         mnemonic = mnemonic,
         progress_message = message,
+        execution_requirements = _requirements(ctx),
     )
 
 # The kernel window's shards (tools/package/loader_abi.py WINDOW_SHARDS: the MiB of the window a block starts in).
@@ -152,6 +163,7 @@ def _compile_loader(ctx, out, profile, layout_h, runs_h, constants):
         outputs = [loader],
         mnemonic = "LoaderLink",
         progress_message = "Linking the native loader",
+        execution_requirements = _requirements(ctx),
     )
     return loader
 
@@ -232,7 +244,7 @@ def _boot_package_impl(ctx):
             outputs = catalog_outputs,
             mnemonic = "LaunchdCatalog",
             progress_message = "Preparing the %s native launchd catalogue" % pins["build"],
-            execution_requirements = {"requires-darwin": "", "no-sandbox": ""},
+            execution_requirements = _requirements(ctx, {"requires-darwin": "", "no-sandbox": ""}),
         )
         files["build/switch-bootstrap/launchd.plist"] = catalog
         files["build/switch-bootstrap/launchd.plist.sig"] = signature
@@ -353,6 +365,7 @@ def _boot_package_impl(ctx):
             env = {"LC_ALL": "C", "PATH": "/usr/bin:/bin"},
             mnemonic = "KernelCompress",
             progress_message = "Compressing the kernel window's MiB %d" % i,
+            execution_requirements = _requirements(ctx),
         )
         compressed.append(lz4)
 
@@ -442,6 +455,7 @@ def _boot_package_impl(ctx):
         outputs = [package],
         mnemonic = "BootPackage",
         progress_message = "Assembling the iOS boot entry",
+        execution_requirements = _requirements(ctx),
     )
     return [
         DefaultInfo(files = depset([package])),
@@ -547,6 +561,7 @@ boot_package = rule(
         "_boot_script": _tool("//tools/package:boot_script"),
         "_bl33": _tool("//tools/package:bl33"),
         "_first_xnu_check": _tool("//tools/package:first_xnu_check"),
+        "private_seed": attr.bool(doc = "the ADT carries a per-install seed: no action of this target may be cached, locally or remotely"),
         "stop_after_vm": attr.bool(doc = "bake switch_stop_after_vm=1 into the boot-args: the trace kernel parks once arm_vm_init returned"),
         "require_early_trace": attr.bool(doc = "refuse a release profile, and a kernel whose start.s was not built with early_trace"),
         # LLVM 23.1.4's linker and binutils.

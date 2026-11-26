@@ -43,10 +43,21 @@ Rebuilding recomputes every check value (stage id, block table, the script's CRC
 deterministic for a given file. Unset, short, all-zero, low-variety, world-readable or pinned seeds are refused by the tool
 and by the ADT step, and without the file the target does not exist to build.
 
-Caches: the ADT action is `no-cache` and `no-remote`, but later actions (window, loader, bl33) carry the seed too. Build
-with the flags `erista_seed.py command` prints (`--noremote_accept_cached --noremote_upload_local_results --disk_cache=`).
-Nothing enforces that; a remote cache configured elsewhere would still need those flags. Unverified on the Mac:
-the target, the flags and `//local:erista-seed.hex` as a missing input.
+Caches (N7-I). Every action downstream of the seeded ADT holds the seed in its inputs or outputs: `BootAdt`, the window layout and its
+LZ4 shards, `KernelWindow`, the loader compiles that include `layout.h`/`runs.h` and the link, the boot script, `BootBl33` and the package copy. `boot_package`'s
+`private_seed` attribute (set on `//boot:erista_first_xnu_seeded` only) gives all six of the rule's action calls `no-cache` and `no-remote`, and
+`erista_seeded_build_test` counts that none is missed. Untainted actions of that target become uncacheable too, which only costs time.
+
+`tools/package/erista_seeded_build.py` is the one way to build it. `build` loads the seed (refused when unset, short, pinned, low-variety or readable by others),
+checks that git ignores it and does not track it, then runs bazel with `--remote_cache= --remote_executor= --noremote_accept_cached
+--noremote_upload_local_results --disk_cache=` and refuses flags that would write build details to a log or file (`-s`, `--subcommands`,
+`--verbose_failures`, `--profile`, build-event and execution-log files). The seed is never an argument: bazel receives the path `//local:erista-seed.hex`.
+`scan` looks for the seed (hex or raw) in git's tracked files and in files named with `--also`, such as a saved log. `clean` removes the seeded outputs and, with `--seed`, the seed.
+
+What stays on the Mac after a build: the seed file; `bazel-bin/boot/erista-full-ram-seeded.adt` and the `erista_first_xnu_seeded_work` tree (the ADT, window
+shards, loader, bl33.bin); `bazel-bin/boot/erista-first-xnu-seeded` (the package that goes on the SD card); the SD card itself. The output base's action cache keeps digests, not
+contents. A remote cache or a disk cache set in `~/.bazelrc` is overridden by the flags above. `bazel shutdown` and `clean` do not remove the seed file.
+Unverified on the Mac: the flags' spelling for Bazel 9.3.1, that `no-cache` is honoured for every one of these actions, and `scan` against real outputs.
 
 What this does not give: a seed per boot. Every boot of one install has the same physmap slide and stack guard, and the
 seed file sits in the loader window on the card. SE1 is untouched (not approved).

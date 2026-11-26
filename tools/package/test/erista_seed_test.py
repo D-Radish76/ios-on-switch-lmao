@@ -87,10 +87,9 @@ class EristaSeedTest(unittest.TestCase):
         self.assertIn('"no-cache"', target)
         self.assertIn('"no-remote"', target)
         self.assertIn('erista-seed.hex', LOCAL_IGNORE)
-        command = erista_seed.command()
-        for flag in ('--noremote_upload_local_results', '--noremote_accept_cached', '--disk_cache='):
-            self.assertIn(flag, command)
-        self.assertIn('erista_first_xnu_seeded', command)
+        for flag in ('--noremote_upload_local_results', '--noremote_accept_cached', '--disk_cache=', '--remote_cache='):
+            self.assertIn(flag, erista_seed.CACHE_FLAGS)
+        self.assertEqual(erista_seed.TARGET, '//boot:erista_first_xnu_seeded')
         self.assertIn('erista_seed.load', SEEDED_ADT)
 
     def test_the_pinned_targets_are_untouched(self):
