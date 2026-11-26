@@ -1,0 +1,113 @@
+# The U-Boot half of the D0-S state diagnostic, sourced from its slot in bl33.bin (tools/package/diag_loader.py fills in
+# the values). It is the D0 script, and the D0-R loader runs unchanged after it. One block is added, between `bootm prep`
+# and `bootm go`, the moment the normal loader tests the SD engine: the framebuffer properties of the control FDT as the
+# script read them, and two read-only loads of SDMMC1 (0x700B0024, 0x700B002C) behind a check of its clock and reset bits in
+# CAR. Nothing here writes a register, the card or RAM beyond the D0 script's own; a refused gate says so and the loads are
+# not made. Nothing here boots a kernel.
+setenv handoff_status WRONG_BOARD
+if setenv stdout vidconsole && setenv stderr vidconsole; then
+    echoe "D0-S STATE DIAGNOSTIC. READ ONLY. NO KERNEL. NO BOOT"
+else
+    setenv handoff_status CONSOLE_FAILED
+fi
+base 0
+if test "${handoff_status}" = "WRONG_BOARD"; then
+@BOARD_GATE@
+fi
+if test "${handoff_status}" = "READY"; then
+    echoe "BOARD OK"
+fi
+
+if test "${handoff_status}" = "READY"; then
+    setenv handoff_fb_addr
+    setenv handoff_fb_size_bytes
+    setenv handoff_fb_width
+    setenv handoff_fb_height
+    setenv handoff_fb_format
+    setenv handoff_fb_rot
+    if test -n "${fdtcontroladdr}" && fdt addr ${fdtcontroladdr}; then
+        if fdt get value handoff_fb_addr /framebuffer address && fdt get size handoff_fb_size_bytes /framebuffer size && fdt get value handoff_fb_width /framebuffer width && fdt get value handoff_fb_height /framebuffer height && fdt get value handoff_fb_format /framebuffer format && fdt get value handoff_fb_rot /framebuffer rot; then
+            if itest.l ${handoff_fb_addr} == 0xF5A00000 && itest.l ${handoff_fb_size_bytes} == 4 && itest.l ${handoff_fb_width} == 0x2D0 && itest.l ${handoff_fb_height} == 0x500 && test "${handoff_fb_format}" = "a8b8g8r8" && itest.l ${handoff_fb_rot} == 3; then
+                echoe "FRAMEBUFFER OK"
+            else
+                setenv handoff_status FRAMEBUFFER_MISMATCH
+            fi
+        else
+            setenv handoff_status FRAMEBUFFER_PROPERTY_FAILED
+        fi
+    else
+        setenv handoff_status CONTROL_FDT_FAILED
+    fi
+fi
+
+if test "${handoff_status}" = "READY"; then
+    if cp.b @DTB@ 0x8D000000 @DTB_BYTES@; then
+        if fdt addr 0x8D000000 0x30000; then
+            if itest.l *0x8D000000 == 0xedfe0dd0 && itest.l *0x8D000004 == 0x00000300; then
+                if fdt rsvmem add 0xF5A00000 0x400000; then
+                    echoe "DTB COPIED AND FRAMEBUFFER RESERVED"
+                else
+                    setenv handoff_status FRAMEBUFFER_RESERVE_FAILED
+                fi
+            else
+                setenv handoff_status DTB_PADDING_FAILED
+            fi
+        else
+            setenv handoff_status DTB_HEADER_FAILED
+        fi
+    else
+        setenv handoff_status DTB_COPY_FAILED
+    fi
+fi
+
+if test "${handoff_status}" = "READY"; then
+    if setenv fdt_high ffffffffffffffff && setenv bootm_low 0x80000000 && setenv bootm_size 0x7FD00000 && setenv bootm_mapsize 0x7FD00000 && setenv bootargs switch_diag=1 && setenv verify no; then
+        if bootm start @LOADER@ - 0x8D000000; then
+            if bootm loados; then
+                echoe "LOADER WRITTEN TO 0xA0000000"
+            else
+                setenv handoff_status IMAGE_LOAD_FAILED
+            fi
+        else
+            setenv handoff_status BOOT_HEADER_FAILED
+        fi
+    else
+        setenv handoff_status BOOT_ENVIRONMENT_FAILED
+    fi
+fi
+if test "${handoff_status}" = "READY"; then
+    if bootm prep; then
+        echoe "D0-S FRAMEBUFFER PROPERTIES: ADDRESS ${handoff_fb_addr}, SIZE PROPERTY LENGTH ${handoff_fb_size_bytes}, ${handoff_fb_width} X ${handoff_fb_height}, ${handoff_fb_format}, ROT ${handoff_fb_rot}"
+        if setexpr.l state_car_reset *0x60006004 && setexpr.l state_car_clock *0x60006010; then
+            echoe "D0-S CAR RST_DEVICES_L ${state_car_reset}, CLK_OUT_ENB_L ${state_car_clock}"
+            if setexpr state_sd_reset ${state_car_reset} \& 0x4000 && setexpr state_sd_clock ${state_car_clock} \& 0x4000; then
+                if test "${state_sd_reset}" = "0" -a "${state_sd_clock}" = "4000"; then
+                    if setexpr.l state_sd_present *0x700b0024 && setexpr.l state_sd_clock_word *0x700b002c; then
+                        echoe "D0-S SDMMC1 PRESENT STATE ${state_sd_present}, WORD AT 0x2C ${state_sd_clock_word} (BYTE 3 IS SOFTWARE RESET)"
+                    fi
+                else
+                    echoe "D0-S SDMMC1 CLOCK OFF OR IN RESET: NOT READ"
+                fi
+            else
+                echoe "D0-S CAR BIT TEST FAILED: SDMMC1 NOT READ"
+            fi
+        else
+            echoe "D0-S CAR READ FAILED: SDMMC1 NOT READ"
+        fi
+        sleep 5
+        echoe "HANDOFF TO THE LOADER. THE SCREEN CLEARS, THEN THE REPORT"
+        bootm go
+        setenv handoff_status UNEXPECTED_BOOTM_RETURN
+    else
+        setenv handoff_status BOOT_PREP_FAILED
+    fi
+fi
+echoe "REFUSED: ${handoff_status}. Reset in @DWELL@ s, expected to land in hekate, not verified"
+for left in @DWELL_STEPS@; do
+    sleep @STEP@
+    echoe "RESET in ${left} s"
+done
+reset
+while true; do
+    sleep 1
+done

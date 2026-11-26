@@ -586,3 +586,17 @@ py_test(
     srcs = ["t1r_run_test.py"],
     data = ["//boot:all_sources"],
 )
+
+# D0-S and D1-min: the D0 script plus one read-only block each, over D0-R's loader. Reads boot/BUILD.bazel for the targets.
+py_test(
+    name = "diag_state_test",
+    srcs = ["diag_state_test.py"],
+    data = [
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = ["//tools/package:diag_loader"],
+)
+
