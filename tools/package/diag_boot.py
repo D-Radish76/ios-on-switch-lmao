@@ -76,10 +76,10 @@ INI = '\n'.join(
 
 
 def carveout_table(loader_src: str) -> list[tuple[int, int]]:
-    """(address, OLED value) of native_gate's `mc` table in boot/loader/loader.c, in its order."""
-    gate = re.search(r'static const uint32_t mc\[\]\[2\] = \{(.*?)\n    \};', loader_src, re.DOTALL)
+    """(address, OLED value) of native_gate's OLED table in boot/loader/carveout.h, in its order."""
+    gate = re.search(r'static const uint32_t switch_carveout_oled\[\]\[2\] = \{(.*?)\n\};', loader_src, re.DOTALL)
     if not gate:
-        raise SystemExit('loader.c has no native_gate mc table')
+        raise SystemExit('carveout.h has no OLED carveout table')
     pairs = re.findall(r'\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+|\d+)\}', gate.group(1))
     if not pairs or len(pairs) != gate.group(1).count('{'):
         raise SystemExit('native_gate has a register row diag_boot.py cannot read')

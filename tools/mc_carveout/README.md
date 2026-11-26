@@ -34,5 +34,5 @@ loader's there. That is evidence for the Erista, not proof.
 ## Why it is the way it is
 
 `native_gate` refuses on any mismatch (0x410 plus the register's index) instead of inferring free memory, so a wrong value
-either blocks the boot or lets a secure carveout be reused. The test checks the script's table against `loader.c`, so the
+either blocks the boot or lets a secure carveout be reused. The test checks the script's table against `boot/loader/carveout.h`, so the
 two cannot drift.

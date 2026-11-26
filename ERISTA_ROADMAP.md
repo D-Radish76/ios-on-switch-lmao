@@ -63,7 +63,7 @@ Register names for the 25 addresses are not mapped yet (Linux `tegra210` MC and 
 | Area | Where | OLED assumption | On Erista today |
 |---|---|---|---|
 | Boot gate | `boot/u-boot-script.txt` | `t210b01=1`, `sku=3` | Refuses (`WRONG_BOARD`) |
-| MC carveouts | `boot/loader/loader.c` `native_gate` | Values read on the OLED | Refuses on a mismatch; Erista values unmeasured |
+| MC carveouts | `boot/loader/carveout.h`, called from `native_gate` | One table per board; the Erista table is the D0 measurement | Refuses on a mismatch; an Erista never reaches it while `boot 0` |
 | EMC raise | `boot/loader/emc.c`, `TegraBPMP`, `SwitchPMIC` | BPMP answers, T210B01 table, VDD_CORE rows | No BPMP after BL31 (SC7-Entry firmware makes it power the BPMP off), so ping fails and nothing is written. DRAM stays at hekate's 800 MHz |
 | CPU rail and clock | `TegraDFLL/platform.c`, `SwitchThermal.cpp` | MAX77812 at I2C5 0x31/0x33 | DFLL returns `-ENODEV`. SwitchThermal refuses on "not a T210B01 (HIDREV)" before any rail access |
 | GPU | `TegraGM20B/platform.c` | VDD_GPU on MAX77812 | Not safe to run; off in the minimal mode |

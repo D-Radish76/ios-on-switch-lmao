@@ -154,6 +154,7 @@ boot_package(
     linker_script = ":loader/link.ld",
     loader_hdrs = [
         ":loader/boot_args.h",
+        ":loader/carveout.h",
         ":handoff/display.h",
         ":handoff/entry.S",
         ":handoff/record.h",

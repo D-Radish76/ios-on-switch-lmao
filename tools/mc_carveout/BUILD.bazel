@@ -7,13 +7,13 @@ lint_files()
 
 exports_files(["dump.sh"])
 
-# dump.sh against a fake devmem, and its register table against boot/loader/loader.c.
+# dump.sh against a fake devmem, and its register table against boot/loader/carveout.h.
 py_test(
     name = "test_dump",
     size = "small",
     srcs = ["test_dump.py"],
     data = [
         "dump.sh",
-        "//boot:loader/loader.c",
+        "//boot:loader/carveout.h",
     ],
 )

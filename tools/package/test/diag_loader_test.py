@@ -38,6 +38,7 @@ from loader_abi import (
 ROOT = Path('.')
 HEADER = (ROOT / 'kits/SwitchBoard/SwitchBoard.h').read_text()
 LOADER_C = (ROOT / 'boot/loader/loader.c').read_text()
+CARVEOUT_H = (ROOT / 'boot/loader/carveout.h').read_text()
 TEMPLATE = (ROOT / 'boot/diag/loader/u-boot-script.txt').read_text()
 BL33 = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
 DTB = (ROOT / 'bazel/pinned/firmware/erista-sku0.dtb').read_bytes()
@@ -279,7 +280,7 @@ class Tables(unittest.TestCase):
     def test_the_mc_table_is_native_gates(self) -> None:
         header = (ROOT / 'boot/diag/loader/mc_table.h').read_text()
         pairs = re.findall(r'\{(0x[0-9a-f]+), (0x[0-9a-f]+|\d+)\}', header.split('switch_diag_gic')[0])
-        self.assertEqual(carveout_table(LOADER_C), [(int(a, 16), int(v, 0)) for a, v in pairs])
+        self.assertEqual(carveout_table(CARVEOUT_H), [(int(a, 16), int(v, 0)) for a, v in pairs])
 
     def test_the_gic_words_are_native_gates(self) -> None:
         gate = re.search(r'const uint32_t addresses\[\] = \{([^}]*)\}', LOADER_C)

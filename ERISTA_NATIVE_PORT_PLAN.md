@@ -18,9 +18,9 @@ Everything between a Nintendo Switch (2017) and the first XNU instruction, in th
 | 7 | `boot/loader/loader.c:288` (`loader_after_transition`) | Refuse `0x301` unless EL1h, SCTLR clear, DAIF masked, CNTFRQ 19.2 MHz, HCR/CNTHCTL/CNTVOFF as the EL2 drop leaves them | None expected | CNTFRQ 19.2 MHz measured. EL2 drop result on the Erista: only D0-R's register log, check before closing |
 | 8 | `boot/loader/loader.c:292-294` | Reads HIDREV and ODM4, refuses `0x306` when `board->boot` is 0 | Same as row 1. This is the second place `boot 0` stops the loader | measured |
 | 9 | `boot/loader/loader.c:370` (`native_gate` call) | Any non-zero return refuses | See rows 10 to 13 | |
-| 10 | `boot/loader/loader.c:248` (`native_gate`) | `switch_board_streq(board->name, "oled")` else refuse `0x402` | Replace the name test with a per-board carveout table, so the Erista row carries its own expected values. This is the one code blocker in the gate | The 25 values equal the OLED's |
+| 10 | `boot/loader/loader.c` (`native_gate`), `boot/loader/carveout.h` (`switch_carveout_table`) | Done (N1): the OLED name test is gone. A board with no table is refused `0x402` before anything is read | none | The 25 values equal the OLED's |
 | 11 | `boot/loader/loader.c:253` | Entry SP in `[0xf0001000, 0xffd00000)` else `0x401` | None | `FF87D010` and `FF87DD10` pass |
-| 12 | `boot/loader/loader.c:257-268` | 25 MC registers (`0x70019050` ... `0x70019d54`), refuse `0x410 + i` | Same table as row 10, Erista column | All 25 read equal. Carveouts: GPU FW `0xFFD00000`, GPU WPR `0xFFD40000`, secure FW `0xFFE00000`, TZDRAM `0xFFF00000` |
+| 12 | `boot/loader/carveout.h` (`switch_carveout_check`) | Done (N1): one table per board, `switch_carveout_oled` and `switch_carveout_erista`, refuse `0x410 + i`. Host test `carveout_test` | none | All 25 read equal. Carveouts: GPU FW `0xFFD00000`, GPU WPR `0xFFD40000`, secure FW `0xFFE00000`, TZDRAM `0xFFF00000` |
 | 13 | `boot/loader/loader.c:270-274` | Reads six GIC-400 registers into the probe record, no refusal | None | GIC-400 at `0x50041000` and `0x50042000` read on the Erista |
 | 14 | `boot/loader/loader.c:380-384` | CRC32 field of `ID_AA64ISAR0_EL1` must be 1, else `0x305` | None if the A57 reports 1 | Not recorded in the notes I read: confirm in the D0-R log |
 | 15 | `boot/loader/loader.c:406`, `:454`, `:460` | Kernel CRC (`0x302`, `0x303`) and boot-args shape (`0x304`) | None, board independent | none needed |
@@ -43,7 +43,7 @@ Problems found while surveying (reported, not changed)
 - Rows 7, 14 and 18 have no Erista reading in the documents I read. They are unverified, not safe.
 
 Conditions to lift `boot 0` (none of these is done)
-1. Rows 10 and 12 carry an Erista column, with a host test that the Erista and OLED tables are separate.
+1. Rows 10 and 12: done in N1 (separate tables, host tests).
 2. Rows 4, 7, 14, 16, 18 each have an Erista measurement or are removed from the Erista path with a reason.
 3. An Erista ADT exists and its differences from the OLED tree are audited (A-3).
 4. A person sets `boot 1`. Then the Erista build is also checked on both iOS versions (CLAUDE.md, version containment).
@@ -109,7 +109,7 @@ version), Disableable (feature bit stays 0 at first boot).
 
 ## Suggested order (not started)
 
-1. Per-board carveout table in `native_gate` with host tests (rows 10, 12). No hardware.
+1. Per-board carveout table in `native_gate` with host tests (rows 10, 12). Done (N1).
 2. Close the open measurement rows (4, 7, 14, 18) through read-only diagnostics, one at a time, each approved.
 3. Erista ADT generator path: panel, touch removed, SDMMC tuning from its DTB, one CPU.
 4. Single-core build, still `boot 0`, checked on both iOS versions by build and emulator.

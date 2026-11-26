@@ -29,7 +29,7 @@ from diag_boot import (
 from loader_abi import BL33_BASE, DTB_SLOT, EXPORTER_SLOT, LOADER_SLOT, SCRIPT_SLOT, STAGE_HEADER
 
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
-LOADER = Path('boot/loader/loader.c').read_text()
+LOADER = Path('boot/loader/carveout.h').read_text()
 TEMPLATE = Path('boot/diag/u-boot-diag-script.txt').read_text()
 BL33 = Path('bazel/pinned/firmware/bl33.bin').read_bytes()
 BL31 = Path('bazel/pinned/firmware/bl31.bin')
@@ -323,7 +323,7 @@ class DiagPackage(unittest.TestCase):
                 Namespace(
                     template=Path('boot/diag/u-boot-diag-script.txt'),
                     boards=Path('kits/SwitchBoard/SwitchBoard.h'),
-                    loader_src=Path('boot/loader/loader.c'),
+                    loader_src=Path('boot/loader/carveout.h'),
                     bl31=BL31,
                     bl33=Path('bazel/pinned/firmware/bl33.bin'),
                     out=Path(out),

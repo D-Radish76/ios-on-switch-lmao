@@ -2,8 +2,8 @@
 #define SWITCH_DIAG_MC_TABLE_H
 #include <stdint.h>
 
-/* The memory controller registers native_gate (boot/loader/loader.c) compares, in its order, with the values it expects
- * (read on the OLED). Only ever read. diag_loader_test.py keeps both lists equal to loader.c's. */
+/* The memory controller registers native_gate (boot/loader/carveout.h) compares, in its order, with the values it expects
+ * (read on the OLED). Only ever read. diag_loader_test.py keeps both lists equal to the loader's (carveout.h, loader.c). */
 static const uint32_t switch_diag_mc[][2] = {
     {0x70019050, 0x1000},     {0x70019670, 0},          {0x70019674, 0},          {0x700199d4, 0},
     {0x700199a0, 0xfff00000}, {0x700199a4, 0},          {0x700199a8, 0},          {0x70019648, 0},

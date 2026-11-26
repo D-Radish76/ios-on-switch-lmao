@@ -240,3 +240,25 @@ host_test(
     ],
     deps = [":boot_args"],
 )
+
+host_library(
+    name = "carveout",
+    hdrs = [
+        "//boot:loader/carveout.h",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    includes = ["host_include"],
+    textual_hdrs = ["host_include/SwitchBoard.h"],
+)
+
+# native_gate's per-board carveout check against the Erista's measured registers (erista_mc_fixture.h) and the OLED table.
+host_test(
+    name = "carveout_test",
+    srcs = [
+        "carveout_test.cpp",
+        "erista_mc_fixture.h",
+    ],
+    deps = [":carveout"],
+)
+
+exports_files(["erista_mc_fixture.h"])

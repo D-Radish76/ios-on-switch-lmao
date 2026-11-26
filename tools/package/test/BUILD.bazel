@@ -67,7 +67,7 @@ py_test(
         "//bazel/pinned:firmware/bl33.bin",
         "//boot:diag/erista-first-run.log",
         "//boot:diag/u-boot-diag-script.txt",
-        "//boot:loader/loader.c",
+        "//boot:loader/carveout.h",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
     deps = [
@@ -202,6 +202,18 @@ py_test(
         "//tools/package:fdt_ranges",
         "//tools/package:memory_layout",
     ],
+)
+
+# The Erista carveout table in boot/loader/carveout.h and the host test's fixture against the measured log.
+py_test(
+    name = "carveout_fixture_test",
+    size = "small",
+    srcs = ["carveout_fixture_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//boot/loader/test:erista_mc_fixture.h",
+    ],
+    deps = ["//tools/package:memory_layout"],
 )
 
 # D0-R's run on the Erista (boot/diag/erista-d0r-run.log): banks, reserve map and the exporter and SD reference areas

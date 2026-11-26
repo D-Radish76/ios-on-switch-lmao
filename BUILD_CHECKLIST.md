@@ -189,7 +189,7 @@ ls -l package/switchroot/ios-diag-loader package/bootloader/ini
 The measured first-run log replaces the fixture (path of your `LOG.txt` in place of `~/LOG.txt`):
 
 ```sh
-PYTHONPATH=tools/package python3 tools/package/diag_boot.py adopt ~/LOG.txt --loader-src boot/loader/loader.c \
+PYTHONPATH=tools/package python3 tools/package/diag_boot.py adopt ~/LOG.txt --loader-src boot/loader/carveout.h \
   --source "Erista HAC-001, hekate 6.5.5, diagnostic commit c6931169, log saved from the run's screen" \
   --out boot/diag/erista-first-run.log
 PYTHONPATH=tools/package python3 tools/package/test/diag_boot_test.py
@@ -230,7 +230,7 @@ Passed once, attended. The screen's text, transcribed by the reviewer from a pho
 bazel test //tools/package/test:d0_run_test
 ```
 
-The test compares the 25 MC rows and six GIC addresses with `boot/diag/loader/mc_table.h` and `boot/loader/loader.c`, the
+The test compares the 25 MC rows and six GIC addresses with `boot/diag/loader/mc_table.h`, `boot/loader/carveout.h` and `boot/loader/loader.c`, the
 rows with `erista-first-run.log`, the entry SP with `erista-memory-bdinfo.log`, and the reservation count with the packaged
 DTB. Linux: 11 passed; Bazel: not run yet. Still owed on the Mac: `diag_boot.py adopt` for the first diagnostic's own
 values, `bazel test //...`, ios27 and release builds, emulator checks. Next is a review of `ERISTA_D1_DESIGN.md` only.

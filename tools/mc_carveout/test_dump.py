@@ -9,11 +9,11 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path('tools/mc_carveout/dump.sh')
-LOADER = Path('boot/loader/loader.c').read_text()
+LOADER = Path('boot/loader/carveout.h').read_text()
 
 
 def gate_table():
-    body = LOADER[LOADER.index('static const uint32_t mc[][2] = {') :]
+    body = LOADER[LOADER.index('switch_carveout_oled[][2] = {') :]
     body = body[: body.index('};')]
     return [(int(a, 16), int(v, 0)) for a, v in re.findall(r'\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+|\d+)\}', body)]
 

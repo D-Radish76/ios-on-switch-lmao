@@ -11,6 +11,7 @@
 #include "seed.h"
 #include "boot_args.h"
 #include "SwitchBoard.h"
+#include "carveout.h"
 
 #ifndef LOAD_FAST_COPY
 #define LOAD_FAST_COPY 0
@@ -241,31 +242,28 @@ static uint64_t stage_check(void)
 }
 #endif
 
+#if LOAD_NATIVE_GATES
+static uint32_t carveout_read(uint32_t address)
+{
+    return *(const volatile uint32_t *)(uintptr_t)address;
+}
+#endif
+
 static uint64_t native_gate(const struct switch_board *board)
 {
 #if LOAD_NATIVE_GATES
-    // The carveout values below were read on the OLED: no other board has been measured.
-    if (!switch_board_streq(board->name, "oled"))
+    if (!switch_carveout_table(board->name))
         return 0x402;
     // U-Boot's inherited stack must be where hardware showed it before we switch to ours.
     // The full RAM profile later retires completed U-Boot allocations; live
     // FDT reservations, secure carveouts and the display remain protected.
     if (probe_record[R_ENTRY_SP] < UINT64_C(0xf0001000) || probe_record[R_ENTRY_SP] >= UINT64_C(0xffd00000))
         return 0x401;
-    // Memory-controller carveout registers as read on hardware. Refuse a
-    // changed carveout layout instead of inferring new free memory.
-    static const uint32_t mc[][2] = {
-        {0x70019050, 0x1000},     {0x70019670, 0},          {0x70019674, 0},          {0x700199d4, 0},
-        {0x700199a0, 0xfff00000}, {0x700199a4, 0},          {0x700199a8, 0},          {0x70019648, 0},
-        {0x7001964c, 0},          {0x70019978, 0},          {0x70019c0c, 0xffe00000}, {0x70019c10, 0},
-        {0x70019c14, 8},          {0x70019c5c, 0xffd00000}, {0x70019c60, 0},          {0x70019c64, 2},
-        {0x70019cac, 0xffd40000}, {0x70019cb0, 0},          {0x70019cb4, 6},          {0x70019cfc, 0},
-        {0x70019d00, 0},          {0x70019d04, 0},          {0x70019d4c, 0},          {0x70019d50, 0},
-        {0x70019d54, 0},
-    };
-    for (unsigned i = 0; i < sizeof(mc) / sizeof(mc[0]); ++i)
-        if (*(const volatile uint32_t *)(uintptr_t)mc[i][0] != mc[i][1])
-            return 0x410 + i;
+    // Memory-controller carveout registers as read on hardware, per board (carveout.h). Refuse a changed carveout
+    // layout instead of inferring new free memory.
+    const uint64_t carveout = switch_carveout_check(board->name, carveout_read);
+    if (carveout)
+        return carveout;
     // Non-destructive register observation only: never read IAR or change
     // security groups. The kernel will check its accessible NS interface.
     const uint32_t addresses[] = {0x50041000, 0x50041004, 0x50041100, 0x50042000, 0x50042004, 0x500420fc};
