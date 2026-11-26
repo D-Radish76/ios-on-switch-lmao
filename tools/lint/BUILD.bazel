@@ -33,5 +33,6 @@ py_test(
         "starlark_syntax.py",
         "test_starlark_syntax.py",
     ],
+    imports = ["."],
     main = "test_starlark_syntax.py",
 )
