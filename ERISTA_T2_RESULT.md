@@ -14,7 +14,7 @@ That write and the divisor write are done; no other sensor write, no retry and n
 | Sensor | `0x4C`, ID `55`, configuration `C0`, status `00`, offsets `00.00` |
 | One-shot | written; BUSY seen at 2005 us; BUSY clear at 31004 us; last status `00` |
 | After | configuration `C0`, `BACK IN SHUTDOWN` |
-| Mac | 12 of 12 tests, T2 build, `AUDIT PASSED (T2)` with the 13 addresses, the earlier loaders' hashes unchanged, 4 of 4 card hashes equal; `loader.uboot.bin` `ce46a5d2...cba` (full value in the record) |
+| Mac | 12 of 12 tests, T2 build, `AUDIT PASSED (T2)` with the 13 addresses, the earlier loaders' hashes unchanged, 4 of 4 card hashes equal; `loader.uboot.bin` `ce46a5d2...cba`; the four card files' hashes are in the record and in `ERISTA_T2_RUN.md` section 1 |
 
 ## Readings
 

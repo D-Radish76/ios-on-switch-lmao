@@ -12,7 +12,7 @@ protection exists; no temperature is read by any layer during the run.
 | --- | --- | --- |
 | 1 | The Mac passed every command of `ERISTA_FIRST_XNU_MAC.md` section 7 on one commit and reported the figures | `ERISTA_FIRST_XNU_MAC.md` |
 | 2 | Owner's written decisions: the run itself; the stop path (the person, plus the timed reset, which is untried after XNU owns the core); the seed; `boot` 1 for this build only; T3/T4 deferred or waived | `ERISTA_FIRST_XNU_BLOCKERS.md` |
-| 3 | The package is `//boot:erista_first_xnu` (or `_seeded`), built with the trace kernel; the two must-fail builds failed | `ERISTA_FIRST_XNU_MAC.md` sections 2, 7 |
+| 3 | The package is `//boot:erista_first_xnu_seeded`, built with the trace kernel through the seed wrapper; the two must-fail builds failed | `ERISTA_FIRST_XNU_MAC.md` sections 2, 7 |
 | 4 | Loader margin reported: flat 122880 or less, `to_stamps_slot` `0xf00` or more, `to_sd_reference` `0x1000` or more | `first_xnu_check.py margin` |
 | 5 | The card holds only this entry's files, hashed on the Mac, copied, hashed again after a re-insert; no `._` files; `iOS` is not in hekate's list | `ERISTA_FIRST_XNU_BOOT.md` "Real-hardware preparation" |
 | 6 | The normal Erista package is not on the card | `ERISTA_FIRST_XNU_MAC.md` section 1 |
@@ -31,9 +31,22 @@ screen, whose LAST STAGE line names the stage. If no mark appears the screen can
 | --- | --- |
 | A panic, an exception screen, garbage or black | hold POWER; photograph first if the screen is readable |
 | No new mark for 30 s | hold POWER (provisional) |
-| `XNU VM INITIALIZED` shown and no reset 120 s after the loader started | hold POWER (provisional). `wfe` waking under XNU's `cntkctl_el1` and the reset call after XNU are what this run tests; if they fail only POWER ends it |
+| `RESETTING IN <n> S` shown and the console has not reset n + 10 s later | hold POWER (provisional). The line is drawn once and does not count down; time it from when it appears. `wfe` waking under XNU's `cntkctl_el1` and the reset call after XNU are what this run tests; if they fail only POWER ends it |
 | `SMC RETURNED <x0>. NO RETRY` or `NO RESET` on screen | the core parks; hold POWER |
 | Nyx showed 50 C or more at the start of any attempt, or the console is hot | do not start; hold POWER if running (provisional, not official limits) |
+
+## Why there is no total time limit
+
+The earlier 120 s limit from the loader's start is withdrawn. Nothing measured says that 120 s with the fan stopped is safe, and a limit that long was
+never a protection. The two rules above are tied to events instead. A hang before the VM text is cut 30 s after the last mark. After the text the reset is due `n`
+seconds later (`n` is `vm_reset_seconds`, 15 unless the owner sets it, 1 to 60), so the longest the console sits parked is `n + 10` s. The 10 s covers the call and hekate's return and is a guess. Marks that
+arrive slower than every 30 s are not bounded by these rules; the person may stop earlier at any time. The record gets the selection-to-hekate time, which no run has measured, so the next sheet can use a measured figure.
+A shorter `n` shortens the parked time and costs the time to photograph the screen; that setting is the owner's.
+
+## Seed
+
+The run uses the per-install seed (owner's stated priority): `//boot:erista_first_xnu_seeded`, built only through `erista_seeded_build.py`
+(`ERISTA_FIRST_XNU_MAC.md` section 6). The card's copy holds the seed, so the card is not shared and the entry's files are removed afterwards. Reports carry the 8-digit fingerprint and file hashes, never the seed.
 
 ## Afterwards
 

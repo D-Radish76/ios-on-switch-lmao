@@ -22,8 +22,17 @@ PYTHONPATH=tools/package python3 tools/package/diag_mmio_audit.py \
 
 The audit must end with `AUDIT PASSED (T2)` and show `6. Flat image: register address words match the T2 list`. Its Linux output is
 `boot/diag/erista-t2-mmio-audit.txt`. The Mac's `loader.uboot.bin` for the first run was `ce46a5d2...cba` (in full in `boot/diag/erista-t2-run1.txt`). The four card files matched their Mac hashes
-(4 of 4), but those four values were not reported, so none is written here; a later run reports them. `bl31.bin` and `script.txt` should equal the other
-diagnostics'; only `bl33.bin` and the ini should differ. The Linux flat hash is `7f5a91a4...f124` (`boot/diag/erista-diag-image-hashes.txt`); the Mac's
+(4 of 4). The Mac's values, also in the record:
+
+| File | SHA-256 |
+| --- | --- |
+| `ios-diag-t2.ini` | `7e14bae13e6d4daa9038d55d38735956a5ff9320f19c4be074dc24834ff7cbea` |
+| `bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `bl33.bin` | `657d1c6f5117ec444ae1f810ac47f86c647d1872bed212618b224406012b151e` |
+| `script.txt` | `f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef` |
+
+`bl31.bin` is the pinned file and `script.txt` equals T1 v2's, as expected; the ini and the script also reproduce on Linux from the sources
+(`diag_t2_measured_test`). `bl33.bin` holds the loader, so only a Mac build of the same commit compares. The Linux flat hash is `7f5a91a4...f124` (`boot/diag/erista-diag-image-hashes.txt`); the Mac's
 clang may give another, so it is not a card check.
 
 The nine earlier images must not change: `diag_images.py` prints their nine Linux hashes, and the Mac's `loader.uboot.bin` of `diag_state`,

@@ -394,6 +394,18 @@ py_binary(
     srcs = ["first_xnu_check.py"],
 )
 
+# The derived board table the first-XNU diagnostic's loader and script are built from (ERISTA_FIRST_XNU_BOOT_GATE.md).
+py_library(
+    name = "board_header_lib",
+    srcs = ["board_header.py"],
+    imports = ["."],
+)
+
+py_binary(
+    name = "board_header",
+    srcs = ["board_header.py"],
+)
+
 py_binary(
     name = "wallpaper_1x",
     srcs = ["wallpaper_1x.py"],

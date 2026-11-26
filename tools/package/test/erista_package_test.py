@@ -16,7 +16,7 @@ BUILD = Path('boot/BUILD.bazel')
 PACKAGE_BZL = Path('boot/package.bzl')
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
 LOADER = Path('boot/loader/loader.c').read_text()
-OWN = {'name', 'adt', 'dtb', 'smp', 'out', 'loader_defines', 'tags', 'target_compatible_with', 'visibility', 'require_early_trace', 'stop_after_vm'}
+OWN = {'name', 'adt', 'dtb', 'smp', 'out', 'loader_defines', 'tags', 'target_compatible_with', 'visibility', 'require_early_trace', 'stop_after_vm', 'enable_boot_rows'}
 
 
 class Select:
@@ -51,7 +51,7 @@ def targets():
         'BOOTSTRAP_PACKAGES': {'package': 'source'},
         'OVERLAY_BINARIES': {'target': 'source'},
     }
-    for kind in ('package', 'exports_files', 'filegroup', 'alias', 'label_flag'):
+    for kind in ('package', 'exports_files', 'filegroup', 'alias', 'label_flag', 'config_setting'):
         namespace[kind] = rule(kind)
 
     def load(_, *names, **aliases):
@@ -95,10 +95,12 @@ class EristaPackageTest(unittest.TestCase):
         self.assertNotIn(ERISTA['out'], (OLED.get('out', 'ios'), ROWS['out']))
 
     def test_the_first_xnu_package_is_the_erista_package_under_its_own_directory(self):
-        self.assertEqual({k: v for k, v in FIRST.items() if k not in ('name', 'out', 'require_early_trace', 'stop_after_vm')}, {k: v for k, v in ERISTA.items() if k not in ('name', 'out')})
+        self.assertEqual({k: v for k, v in FIRST.items() if k not in ('name', 'out', 'require_early_trace', 'stop_after_vm', 'enable_boot_rows')}, {k: v for k, v in ERISTA.items() if k not in ('name', 'out')})
         self.assertIs(FIRST['require_early_trace'], True)
         self.assertIs(FIRST['stop_after_vm'], True)
         self.assertNotIn('stop_after_vm', ERISTA)
+        self.assertNotIn('enable_boot_rows', ERISTA)
+        self.assertEqual(FIRST['enable_boot_rows'], Select({':erista_boot_run_on': ['erista'], '//conditions:default': []}))
         self.assertNotIn('require_early_trace', ERISTA)
         self.assertEqual(FIRST['out'], 'erista-first-xnu')
         self.assertNotIn(FIRST['out'], (ERISTA['out'], ROWS['out'], OLED.get('out', 'ios')))

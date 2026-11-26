@@ -121,10 +121,12 @@ def _one(target, what):
         fail("{} {} must be one file, not {}".format(what, target.label, len(files)))
     return files[0]
 
-def _compile_loader(ctx, out, profile, layout_h, runs_h, constants):
-    """The loader for this window: a compile per source (only those including layout.h/runs.h see it), linked."""
+def _compile_loader(ctx, out, profile, layout_h, runs_h, constants, markers, headers):
+    """The loader for this window: a compile per source (only those including layout.h/runs.h see it), linked.
+
+    `markers` and `headers` are the include directories and header inputs: the real board table, or the one derived for this package."""
     includes = []
-    for marker in ctx.files.loader_include_markers:
+    for marker in markers:
         includes += ["-I", marker.dirname]
     windowed = {f.path: True for f in ctx.files.loader_window_srcs}
     objects = []
@@ -136,7 +138,7 @@ def _compile_loader(ctx, out, profile, layout_h, runs_h, constants):
             "/usr/bin/clang",
             LOADER_COPTS + [_VERBOSE_CONSOLE[profile]] + ctx.attr.loader_defines + (["-I", layout_h.dirname] if reads_window else []) + includes +
             ["-c", src.path, "-o", obj.path],
-            [src] + ctx.files.loader_hdrs + ([layout_h, runs_h] if reads_window else []),
+            [src] + headers + ([layout_h, runs_h] if reads_window else []),
             [obj],
             "LoaderCompile",
             "Compiling the loader's %s" % src.short_path,
@@ -167,6 +169,51 @@ def _compile_loader(ctx, out, profile, layout_h, runs_h, constants):
     )
     return loader
 
+# The targets that may boot a row the board table keeps at boot 0, and which rows (ERISTA_FIRST_XNU_BOOT_GATE.md). No other
+# target can name one, whatever attributes it sets.
+_BOOT_ENABLE_TARGETS = {
+    "erista_first_xnu": ["erista"],
+    "erista_first_xnu_seeded": ["erista"],
+}
+_BOARD_TABLE_PACKAGE = "kits/SwitchBoard"
+_BOARD_TABLE_NAME = "SwitchBoard.h"
+
+def _swap(files, real, derived):
+    """`files` with the real board table replaced by the derived one, in the same place; the real one must be there once."""
+    if len([f for f in files if f.path == real.path]) != 1:
+        fail("the real board table %s must be in the list exactly once" % real.path)
+    return [derived if f.path == real.path else f for f in files]
+
+def _derive_boards(ctx, out, release, smp, prebuilt):
+    """The board table this package's script and loader are built from, with the rows it enables booting; fails closed.
+
+    Every condition is checked here and again by the tool that writes the file, which refuses without the matching flag."""
+    rows = ctx.attr.enable_boot_rows
+    if _BOOT_ENABLE_TARGETS.get(ctx.label.name) != rows or ctx.label.package != "boot":
+        fail("%s may not enable boot rows %s: only %s can" % (ctx.label, rows, _BOOT_ENABLE_TARGETS))
+    for ok, why in (
+        (not release and not prebuilt, "a release profile or prebuilt loader"),
+        (ctx.attr.require_early_trace, "no require_early_trace"),
+        (ctx.attr.stop_after_vm, "no stop_after_vm"),
+        (not smp, "more than one core"),
+    ):
+        if not ok:
+            fail("%s enables boot rows but has %s" % (ctx.label, why))
+    real = ctx.file.boards
+    if ctx.attr.boards.label.package != _BOARD_TABLE_PACKAGE or ctx.attr.boards.label.name != _BOARD_TABLE_NAME:
+        fail("%s enables boot rows from %s, not the board table" % (ctx.label, ctx.attr.boards.label))
+    if len(rows) != 1:
+        fail("%s: one row at a time" % ctx.label)
+    derived = out("boards/" + _BOARD_TABLE_NAME)
+    args = ctx.actions.args()
+    args.add("derive")
+    args.add("--board", rows[0])
+    args.add("--header", real)
+    args.add("--out", derived)
+    args.add_all(["--early-trace", "--stop-after-vm", "--single-core", "--profile", "debug"])
+    _run(ctx, ctx.executable._board_header, [args], [real], [derived], "BoardHeader", "Deriving the board table that boots %s" % rows[0])
+    return derived
+
 def _boot_package_impl(ctx):
     name = ctx.attr.name
 
@@ -181,6 +228,15 @@ def _boot_package_impl(ctx):
     smp = ctx.attr.smp[BuildSettingInfo].value
     profile = "release" if prebuilt else ctx.attr._profile[BuildSettingInfo].value
     release = profile == "release"
+
+    # The board table the script and the loader share. Without enable_boot_rows it is the real one, and boot is what it says.
+    boards = ctx.file.boards
+    markers = ctx.files.loader_include_markers
+    loader_headers = ctx.files.loader_hdrs
+    if ctx.attr.enable_boot_rows:
+        boards = _derive_boards(ctx, out, release, smp, prebuilt)
+        markers = _swap(markers, ctx.file.boards, boards)
+        loader_headers = _swap(loader_headers, ctx.file.boards, boards)
 
     early_trace_check = None
     if ctx.attr.require_early_trace:
@@ -385,7 +441,7 @@ def _boot_package_impl(ctx):
     if prebuilt:
         loader, loader_constants = ctx.file.prebuilt_loader, [ctx.file.prebuilt_loader_constants]
     else:
-        loader, loader_constants = _compile_loader(ctx, out, profile, layout_h, runs_h, constants), []
+        loader, loader_constants = _compile_loader(ctx, out, profile, layout_h, runs_h, constants, markers, loader_headers), []
 
     # --- U-Boot and its script ------------------------------------------------------------------------------------
     script_text, script = out("boot-script.txt"), out("boot-script.img")
@@ -393,10 +449,22 @@ def _boot_package_impl(ctx):
     args.add("--template", ctx.file.script_template)
     args.add("--constants", constants)
     args.add("--dtb", ctx.file.dtb)
-    args.add("--boards", ctx.file.boards)
+    args.add("--boards", boards)
     args.add("--text", script_text)
     args.add("--image", script)
-    _run(ctx, ctx.executable._boot_script, [args], [ctx.file.script_template, constants, ctx.file.dtb, ctx.file.boards], [script_text, script], "BootScript", "Writing U-Boot's boot script")
+    _run(ctx, ctx.executable._boot_script, [args], [ctx.file.script_template, constants, ctx.file.dtb, boards], [script_text, script], "BootScript", "Writing U-Boot's boot script")
+
+    # The script accepts exactly the rows the table the loader is built from boots; the stamp is an input of bl33, so a package without it is not made.
+    board_checks = []
+    if ctx.attr.enable_boot_rows:
+        agreed = out("boards.ok")
+        args = ctx.actions.args()
+        args.add("agree")
+        args.add("--derived", boards)
+        args.add("--script", script_text)
+        args.add("--stamp", agreed)
+        _run(ctx, ctx.executable._board_header, [args], [boards, script_text], [agreed], "BoardAgree", "Checking U-Boot's script and the loader boot the same rows")
+        board_checks.append(agreed)
 
     u_boot = out("u-boot.bin")
     _run(ctx, ctx.executable._bl33, ["patch", ctx.file.bl33.path, u_boot.path], [ctx.file.bl33], [u_boot], "BootUBoot", "Patching U-Boot's default environment")
@@ -412,7 +480,7 @@ def _boot_package_impl(ctx):
     args.add("--dtb", ctx.file.dtb)
     args.add_all(loader_constants, before_each = "--loader-constants")
     args.add("--out", bl33)
-    _run(ctx, ctx.executable._bl33, [args], [u_boot, window, constants, script, loader, ctx.file.exporter, ctx.file.dtb] + loader_constants, [bl33], "BootBl33", "Staging the boot files and the kernel window in bl33.bin")
+    _run(ctx, ctx.executable._bl33, [args], [u_boot, window, constants, script, loader, ctx.file.exporter, ctx.file.dtb] + loader_constants + board_checks, [bl33], "BootBl33", "Staging the boot files and the kernel window in bl33.bin")
 
     # --- the overlay and the directory -----------------------------------------------------------------------------
     overlay = ctx.actions.declare_directory(name + "_work/overlay")
@@ -563,6 +631,12 @@ boot_package = rule(
         "_boot_script": _tool("//tools/package:boot_script"),
         "_bl33": _tool("//tools/package:bl33"),
         "_first_xnu_check": _tool("//tools/package:first_xnu_check"),
+        "_board_header": _tool("//tools/package:board_header"),
+        "enable_boot_rows": attr.string_list(
+            doc = "board rows this package boots although SwitchBoard.h keeps them at boot 0, through a derived copy of the table that the " +
+                  "script and the loader both use. Only the targets in _BOOT_ENABLE_TARGETS may set it, and only with require_early_trace, " +
+                  "stop_after_vm, one core and a debug profile",
+        ),
         "private_seed": attr.bool(doc = "the ADT carries a per-install seed: no action of this target may be cached, locally or remotely"),
         "stop_after_vm": attr.bool(doc = "bake switch_stop_after_vm=<vm_reset_seconds> into the boot-args: the trace kernel resets the console that long after arm_vm_init returned"),
         "vm_reset_seconds": attr.int(default = 15, doc = "the wait of stop_after_vm, 1 to 60 seconds; a setting, not a safe duration"),

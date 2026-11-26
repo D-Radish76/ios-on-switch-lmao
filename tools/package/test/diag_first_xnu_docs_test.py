@@ -34,7 +34,7 @@ class RunSheet(unittest.TestCase):
             self.assertIn(text, VM_DONE, text)
 
     def test_the_stop_limits_are_the_boot_documents(self) -> None:
-        for phrase in ('No new mark for 30 s', '120 s'):
+        for phrase in ('No new mark for 30 s', 'n + 10 s'):
             self.assertIn(phrase, RUN)
             self.assertIn(phrase, BOOT_DOC)
         self.assertIn('provisional', RUN)
@@ -65,6 +65,88 @@ class RunSheet(unittest.TestCase):
     def test_no_em_dash(self) -> None:
         for text in (RUN, GATE):
             self.assertNotIn('—', text)
+
+
+class StopRules(unittest.TestCase):
+    def test_the_120_second_limit_is_withdrawn_everywhere(self) -> None:
+        self.assertIn('120 s limit from the loader', RUN)
+        self.assertIn('withdrawn', RUN)
+        for name, text in (('BOOT', BOOT_DOC), ('BLOCKERS', BLOCKERS), ('MAC', MAC)):
+            self.assertNotRegex(text, r'120 s (total|since|after)', name)
+            self.assertNotIn('30 s and 120 s', text, name)
+        self.assertIn('withdrawn', BOOT_DOC)
+
+    def test_the_vm_text_is_drawn_once_so_the_sheet_says_it_does_not_count_down(self) -> None:
+        self.assertIn('does not count down', RUN)
+        self.assertEqual(1, VM_DONE.count('"RESETTING IN   S. HOLD POWER TO STOP"'))
+        self.assertEqual(1, VM_DONE.count('RESETTING IN'))
+
+    def test_the_reset_wait_is_the_setting_the_sheet_names(self) -> None:
+        self.assertIn('"vm_reset_seconds": attr.int(default = 15', DEFS)
+        self.assertIn('vm_reset_seconds < 1 or ctx.attr.vm_reset_seconds > 60', DEFS)
+        self.assertIn('`vm_reset_seconds`, 15 unless the owner sets it, 1 to 60', RUN)
+        self.assertIn('n + 10', RUN)
+
+    def test_no_total_limit_is_claimed_to_be_safe(self) -> None:
+        self.assertIn('Nothing measured says', RUN)
+        self.assertIn('neither a thermal limit', BOOT_DOC)
+
+
+class Seed(unittest.TestCase):
+    SEED = read('tools/package/erista_seed.py')
+    WRAPPER = read('tools/package/erista_seeded_build.py')
+
+    def section(self) -> str:
+        return MAC[MAC.index('## 6. The seed and its secrecy') : MAC.index('## 7. The full command set')]
+
+    def test_the_commands_come_in_the_documented_order(self) -> None:
+        text = self.section()
+        order = [
+            'erista_seed.py generate',
+            'erista_seed.py check',
+            'erista_seeded_build.py build',
+            'erista_seeded_build.py scan',
+            'shasum -a 256 bazel-bin/boot/erista-first-xnu-seeded',
+            'erista_seeded_build.py clean      ',
+            'erista_seeded_build.py clean --seed',
+        ]
+        positions = [text.index(item) for item in order]
+        self.assertEqual(sorted(positions), positions)
+
+    def test_the_wrapper_is_the_only_build_command_and_has_the_flags_the_section_names(self) -> None:
+        text = self.section()
+        self.assertNotRegex(text, r'^bazel build', 'a plain bazel build of the seeded package')
+        for flag in (
+            "'--config=ios17'",
+            "'--//install:prebuilt=local'",
+            "'--//kernel:early_trace=true'",
+            "'--remote_cache='",
+            "'--disk_cache='",
+        ):
+            self.assertIn(flag, self.SEED)
+        self.assertIn("TARGET = '//boot:erista_first_xnu_seeded'", self.SEED)
+        for flag in ('--profile', '--subcommands', '--build_event_json_file', '--execution_log_json_file'):
+            self.assertIn(flag, self.WRAPPER)
+
+    def test_the_section_says_what_scan_reads_and_the_secrecy_rules(self) -> None:
+        text = self.section()
+        for phrase in (
+            "git's tracked files",
+            'nothing else',
+            'the 8-digit fingerprint',
+            'is not shared',
+            'Never: commit, upload, paste or log the seed',
+        ):
+            self.assertIn(phrase, text.replace("git's", "git's"), phrase)
+
+    def test_the_tool_prints_only_a_fingerprint_and_the_seed_stays_ignored(self) -> None:
+        self.assertIn("f'seed written to {path} (fingerprint {fingerprint(load(path))})", self.SEED)
+        self.assertIn('erista-seed.hex', read('local/.gitignore'))
+        self.assertFalse((ROOT / 'local/erista-seed.hex').exists())
+
+    def test_the_run_sheet_and_the_blockers_name_the_seeded_package(self) -> None:
+        self.assertIn('//boot:erista_first_xnu_seeded', RUN)
+        self.assertIn('the owner prefers the per-install seed', BLOCKERS)
 
 
 class BootGate(unittest.TestCase):
@@ -99,9 +181,10 @@ class BootGate(unittest.TestCase):
         self.assertIn('stop_after_vm needs require_early_trace', DEFS)
 
     def test_the_document_says_what_is_not_built(self) -> None:
-        for phrase in ('none of it done', 'Nothing here changes a row or a build rule', 'it does not approve a run'):
+        phrases = ('implemented offline', 'is unchanged', 'is not approved', 'it does not approve a run', 'Neither is given')
+        for phrase in phrases:
             self.assertIn(phrase.lower(), GATE.lower(), phrase)
-        self.assertFalse((ROOT / 'tools/package/board_header.py').exists())
+        self.assertTrue((ROOT / 'tools/package/board_header.py').exists())
 
 
 class Blockers(unittest.TestCase):

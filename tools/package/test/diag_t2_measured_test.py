@@ -1,8 +1,11 @@
 """The recorded T2 run (boot/diag/erista-t2-run1.txt) against the host model, the sensor constants and T1 v3's words."""
 
+import hashlib
 import re
 import unittest
 from pathlib import Path
+
+import diag_loader
 
 ROOT = Path('.')
 TEXT = (ROOT / 'boot/diag/erista-t2-run1.txt').read_text()
@@ -150,6 +153,45 @@ class Sensor(unittest.TestCase):
         self.assertEqual(0, word('LAST_STATUS') & enum_value('T2_STATUS_OPEN'))
         self.assertEqual(enum_value('T2_CONFIG_SHUTDOWN'), word('CONFIG_AFTER'))
         self.assertEqual(word('CONFIG_BEFORE'), word('CONFIG_AFTER'))
+
+
+class CardFiles(unittest.TestCase):
+    """The four card files' Mac hashes: three reproduce on Linux from the sources; bl33.bin holds the loader."""
+
+    def digest(self, key: str) -> str:
+        return FACTS[key]
+
+    def test_the_hashes_are_sha256_values(self) -> None:
+        for key in ('mac_card_ini_sha256', 'mac_card_bl31_sha256', 'mac_card_bl33_sha256', 'mac_card_script_sha256'):
+            self.assertRegex(self.digest(key), r'^[0-9a-f]{64}$', key)
+
+    def test_the_ini_is_the_one_the_sources_write(self) -> None:
+        ini = diag_loader.entry_ini('iOS Diag T2', 'ios-diag-t2', 'iDiagT2')
+        self.assertEqual(self.digest('mac_card_ini_sha256'), hashlib.sha256(ini.encode()).hexdigest())
+
+    def test_the_script_is_the_one_the_sources_write(self) -> None:
+        template = (ROOT / 'boot/diag/loader/u-boot-script.txt').read_text()
+        header = (ROOT / 'kits/SwitchBoard/SwitchBoard.h').read_text()
+        dtb = (ROOT / 'bazel/pinned/firmware/erista-sku0.dtb').read_bytes()
+        script = diag_loader.diag_script(template, header, 'erista', len(dtb))
+        self.assertEqual(self.digest('mac_card_script_sha256'), hashlib.sha256(script.encode()).hexdigest())
+
+    def test_bl31_is_the_pinned_file_and_the_script_is_t1_v2s(self) -> None:
+        pinned = hashlib.sha256((ROOT / 'bazel/pinned/firmware/bl31.bin').read_bytes()).hexdigest()
+        self.assertEqual(self.digest('mac_card_bl31_sha256'), pinned)
+        self.assertIn(self.digest('mac_card_script_sha256'), (ROOT / 'NOTES.md').read_text())
+
+    def test_bl33_and_the_ini_differ_from_t1_v2s_and_from_the_loader_image(self) -> None:
+        notes = (ROOT / 'NOTES.md').read_text()
+        self.assertNotIn(self.digest('mac_card_bl33_sha256'), notes)
+        self.assertNotIn(self.digest('mac_card_ini_sha256'), notes)
+        self.assertNotEqual(self.digest('mac_card_bl33_sha256'), FACTS['mac_loader_uboot_bin_sha256'])
+        self.assertEqual(4, len({FACTS[k] for k in FACTS if k.startswith('mac_card_')}))
+
+    def test_the_run_sheet_lists_all_four(self) -> None:
+        run = (ROOT / 'ERISTA_T2_RUN.md').read_text()
+        for key in ('mac_card_ini_sha256', 'mac_card_bl31_sha256', 'mac_card_bl33_sha256', 'mac_card_script_sha256'):
+            self.assertIn(self.digest(key), run, key)
 
 
 class AgainstEarlierRuns(unittest.TestCase):

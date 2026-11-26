@@ -23,9 +23,9 @@ Replaces the table in `ERISTA_FIRST_XNU_BOOT.md`.
 | 3 | D1-min | done: PASS | no |
 | 4 | T2 | done: PASS | no |
 | 5 | A stop path | the person, plus the timed `SYSTEM_RESET` after VM done (built offline, not run). Proven from the loader at EL1 in seven runs (D0, D0-R, T1-T, T1 v3, D0-S v2, D1-min, T2); not proven after XNU owns the core | yes: the owner accepts the person in writing, or approves the run that tries the reset |
-| 6 | Seed decision | open, the owner's | yes |
+| 6 | Seed decision | the owner prefers the per-install seed (2026-11-26); the written decision of the run is still open | yes |
 | 7 | T3 and T4 built and proved, or waived | open. Neither is built; the owner has not decided a waiver. See below | only if not waived |
-| 8 | `boot` 1 for the build under test, set by the owner. Whether only the first-XNU package can carry it: `ERISTA_FIRST_XNU_BOOT_GATE.md` | open | yes |
+| 8 | `boot` 1 for the build under test only: option B (derived board table, off by default) is implemented offline (`ERISTA_FIRST_XNU_BOOT_GATE.md`); the build flag that turns it on is not approved | open | yes |
 | 9 | The run: trace kernel, one core, stop after VM, stop rules, a person at the console (`ERISTA_FIRST_XNU_RUN.md`) | not approved | |
 
 Owner's decision (2026-11-26): the full D1 is not a condition of the first VM-stop diagnostic. The Mac's checks for the first-XNU package are in `ERISTA_FIRST_XNU_MAC.md`.
@@ -55,7 +55,7 @@ Assumed: the run is attended, the package is `//boot:erista_first_xnu` with `swi
 
 Reading: deferring T3 and T4 means a hang or a failed reset has no autonomous stop and no fan, and the person is the only mechanism. That is the stated condition
 of the run. T2 measured one temperature at the loader (remote 34.3125 C) and shows nothing about XNU's early heat. The full D1 adds nothing to this run's safety, so deferring it costs nothing here. What the owner decides, in writing, is whether a person's POWER
-hold is accepted as the sole protection against a hang with the fan off, with start below the provisional 40 C and the 30 s and 120 s rules. Those figures are not
+hold is accepted as the sole protection against a hang with the fan off, with start below the provisional 40 C and the 30 s and n + 10 s rules. Those figures are not
 official limits. No part of this document lowers the HOLD.
 
 A stronger statement is not available: nothing measured shows XNU's early heat or the reset after XNU.

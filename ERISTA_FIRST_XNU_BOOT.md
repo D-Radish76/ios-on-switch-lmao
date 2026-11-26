@@ -118,7 +118,7 @@ in this repository, so a Mac-to-Mac comparison needs a build of `5f474ed0d` on t
 | --- | --- |
 | A panic or exception | the screen stays (`reboot_s` 0); photograph it; hold POWER |
 | No new mark for 30 s | hold POWER. The 30 s is provisional, like the loader's deadlines |
-| `XNU VM INITIALIZED` shown and 120 s since the loader started | hold POWER. Provisional. No temperature limit is known: T2 gave one loader-time reading, T3 and T4 have not run |
+| `RESETTING IN <n> S` shown and no reset n + 10 s later | hold POWER. Provisional; the earlier 120 s limit is withdrawn (`ERISTA_FIRST_XNU_RUN.md`). No temperature limit is known: T2 gave one loader-time reading, T3 and T4 have not run |
 | Anything unexpected on screen | hold POWER first, then read it |
 
 Nothing resets a hang in this kernel: no watchdog is armed before userspace (`ERISTA_STOP_PATHS.md`), and a normal stop spins. The person
@@ -230,8 +230,8 @@ is last and needs `boot` 1, which this tree does not set.
 | D1-min | D0-R's report, `D1-MIN SECTOR 0 READ TO 0xA001F200`, a CRC32 line, then `SIGNATURE 55 AA PRESENT` or `ABSENT` | a CRC for 512 bytes, the loader still `CLEAR` for the SD reference range |
 | First XNU | green marks 1 to 21 at y 280 (with the trace build), then `XNU VM INITIALIZED` and the stop text, or a panic screen | marks in order, a readable panic, no heat |
 
-**Run time and stop conditions.** D0-S and D1-min end by themselves (15 s, then `reset`, as D0). Their basis is D0's own run. The first-XNU limits (30 s with no new mark, 120 s after
-`XNU VM INITIALIZED`) are provisional: no run measured a stage time and no temperature limit is known. Hold POWER on any stop condition.
+**Run time and stop conditions.** D0-S and D1-min end by themselves (15 s, then `reset`, as D0). Their basis is D0's own run. The first-XNU limits (30 s with no new mark, n + 10 s after
+`RESETTING IN <n> S`) are provisional: no run measured a stage time and no temperature limit is known. Hold POWER on any stop condition.
 
 **T2 to T4.** T2 ran once (2026-11-26, `ERISTA_T2_RESULT.md`): the `0F` write form, BUSY and the ACKs at the changed divisor were observed once. Open and unchanged: T3's fan
 and T4's protection design (`ERISTA_T2_DESIGN.md` has the loader's one-shot). The safety mechanisms that exist for a run are the person's power button and Nyx's temperature
@@ -284,7 +284,7 @@ None exists in code. What each would be, what proves it, and where it stops.
 | T4: MAX77620 watchdog | a hang | I2C5 writes; the PMIC's state across its own restart | would have to show hekate not looping | rejected for now: a boot loop is possible and nothing shows otherwise |
 | T4: SOC_THERM THERMTRIP | overheating | calibrated sensors, a driver's worth of register work, a PMC reset command the DTB does not give | cannot be tested by heating the console | out of reach; thresholds would be set by review |
 
-**What the first XNU run can rely on, today:** the person, a 30 s no-progress limit, a 120 s total limit (both provisional), a parked CPU that draws less than a spin but stays hot, and Nyx's reading before and after. A parked
+**What the first XNU run can rely on, today:** the person, a 30 s no-progress limit and an n + 10 s limit after the VM text (both provisional, neither a thermal limit), a parked CPU that draws less than a spin but stays hot, and Nyx's reading before and after. A parked
 console cools only as far as the fan hekate left running. **Temperature protection:** the first-boot window is short (loader seconds, then XNU's VM init), the criteria are the provisional 40 and 55 C, and none is an official
 limit. No mechanism here acts on a temperature by itself. **Hang protection:** none acts without a person. So the run is attended, and the hardware boot stays held until the owner either approves one of the first three rows
 after its own proof or accepts the person as the stop in writing.

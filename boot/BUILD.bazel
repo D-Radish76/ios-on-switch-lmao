@@ -181,6 +181,20 @@ boot_entry(
     tags = ["manual"],
 )
 
+# The explicit build-time permission for the first-XNU diagnostic's board table (ERISTA_FIRST_XNU_BOOT_GATE.md). Off by default: with it off
+# the first-XNU package is built from the real SwitchBoard.h, whose Erista row is boot 0. --//boot:erista_boot_run=true makes the two
+# first-XNU targets (and only those) derive a table with that one field set to 1, and it is not approved. Analysis shows the effect
+# without building: bazel aquery --//boot:erista_boot_run=true //boot:erista_first_xnu.
+bool_flag(
+    name = "erista_boot_run",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "erista_boot_run_on",
+    flag_values = {":erista_boot_run": "True"},
+)
+
 # The Erista's first-XNU observation package (ERISTA_FIRST_XNU_BOOT.md): erista_package under a directory of its own, so a
 # build with --//kernel:early_trace=true cannot overwrite the plain one. The flag, not this target, makes the kernel draw
 # its stage marks. Still boot 0: both stages refuse an Erista console.
@@ -189,6 +203,10 @@ boot_entry(
     adt = ":erista_adt",
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu",
+    enable_boot_rows = select({
+        ":erista_boot_run_on": ["erista"],
+        "//conditions:default": [],
+    }),
     require_early_trace = True,
     stop_after_vm = True,
     smp = ":single_core",
@@ -202,6 +220,10 @@ boot_entry(
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu-seeded",
     private_seed = True,
+    enable_boot_rows = select({
+        ":erista_boot_run_on": ["erista"],
+        "//conditions:default": [],
+    }),
     require_early_trace = True,
     stop_after_vm = True,
     smp = ":single_core",

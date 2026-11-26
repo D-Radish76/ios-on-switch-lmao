@@ -113,6 +113,12 @@ No boot test until code review and a Bazel build are done.
 - No overlap between `0xA0000000..0xA00151D0` and any listed range (`memory_layout_test`). Not a proof that unlisted memory is
   free. Details, margins and open items in `ERISTA_LOADER_DIAG.md`.
 
+## Limited boot permission for the first XNU run (offline, 2026-11-26)
+
+`tools/package/board_header.py` derives a copy of `SwitchBoard.h` in which only the Erista row's `boot` is 1; `SwitchBoard.h` itself stays at boot 0, features 0. `boot_package` takes it through `enable_boot_rows`, allowed only for `erista_first_xnu` and `erista_first_xnu_seeded`, and only behind `--//boot:erista_boot_run` (default false, nothing sets it). U-Boot's script, the loader's include path and its header inputs all use the derived file, and a `BoardAgree` stamp compares the script with it. Analysis fails for release, a prebuilt loader, no early_trace, no stop_after_vm or more than one core. Tests: `board_header_test`, `boot_gate_rule_test`; Starlark itself is only exercised by the Mac (`bazel aquery`, see `ERISTA_FIRST_XNU_MAC.md` section 7). No boot=1 package was built; no run is approved.
+
+The T2 Mac card hashes are recorded in `boot/diag/erista-t2-run1.txt`. The ini, script and bl31 hashes reproduce on Linux; `bl33.bin` does not. The 120 s stop limit is withdrawn (no measured basis); see `ERISTA_FIRST_XNU_RUN.md`.
+
 ## Before the first boot test
 
 - Keep the SD card as the only write target and boot from hekate, so Linux and hekate stay the fallback.

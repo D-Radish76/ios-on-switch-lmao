@@ -25,6 +25,11 @@ mac_audit=AUDIT PASSED (T2); 13 addresses match
 mac_earlier_diag_loader_hashes=unchanged
 mac_sd_card_sha256=4 of 4 match
 mac_loader_uboot_bin_sha256=ce46a5d297be6aa84442038406d7adb06192c6566b8d0a1c0d40bb2efc9adcba
+# The four card files' SHA-256, from the Mac's build, reported afterwards (2026-11-26 23:23 JST). The card showed the same four after copying.
+mac_card_ini_sha256=7e14bae13e6d4daa9038d55d38735956a5ff9320f19c4be074dc24834ff7cbea
+mac_card_bl31_sha256=dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4
+mac_card_bl33_sha256=657d1c6f5117ec444ae1f810ac47f86c647d1872bed212618b224406012b151e
+mac_card_script_sha256=f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef
 screen_remote_celsius=34.3125
 screen_local_celsius=31.9375
 HIDREV=00022117

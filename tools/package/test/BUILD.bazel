@@ -440,6 +440,31 @@ py_test(
     ],
 )
 
+# The derived board table: one field of one row, only with every condition stated, and the loader's carveout table following it.
+py_test(
+    name = "board_header_test",
+    srcs = ["board_header_test.py"],
+    data = [
+        "//boot:loader/carveout.h",
+        "//kits/SwitchBoard:SwitchBoard.h",
+        "//tools/package:board_header",
+    ],
+    deps = [
+        "//tools/package:board_header_lib",
+        "//tools/package:boot_script",
+    ],
+)
+
+# How boot/defs.bzl and boot/BUILD.bazel let a package enable a boot row: the allowlist, the conditions, one table for all three users.
+py_test(
+    name = "boot_gate_rule_test",
+    srcs = ["boot_gate_rule_test.py"],
+    data = [
+        "//boot:build_file",
+        "//boot:defs.bzl",
+    ],
+)
+
 # The first-XNU run sheet and the boot-gate design against the sources they quote.
 py_test(
     name = "diag_first_xnu_docs_test",
@@ -456,7 +481,11 @@ py_test(
         "//diagnostics/switch:SwitchVmDone.c",
         "//kits/SwitchBoard:SwitchBoard.h",
         "//kits/SwitchBoard:SwitchBoardKernel.h",
+        "//tools/package:board_header",
         "//tools/package:boot_script",
+        "//tools/package:erista_seed",
+        "//tools/package:erista_seeded_build",
+        "//local:.gitignore",
     ],
 )
 
@@ -466,6 +495,7 @@ py_test(
     srcs = ["diag_t2_measured_test.py"],
     data = [
         "//:ERISTA_T2_RESULT.md",
+        "//:ERISTA_T2_RUN.md",
         "//boot:diag/erista-d0-run.log",
         "//boot:diag/erista-d0sv2-run1.txt",
         "//boot:diag/erista-t1v3-run1.txt",
@@ -473,7 +503,13 @@ py_test(
         "//boot:diag/t2/t2.h",
         "//boot/diag/loader/test:t2_bus_test.cpp",
         "//boot/diag/loader/test:t2_measured_test.cpp",
+        "//:NOTES.md",
+        "//bazel/pinned:firmware/bl31.bin",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:diag/loader/u-boot-script.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
     ],
+    deps = ["//tools/package:diag_loader"],
 )
 
 # T2's static audit: the allowlist read from the sources, the linked image's accesses, and the negative cases (ERISTA_T2_RUN.md section 1).
