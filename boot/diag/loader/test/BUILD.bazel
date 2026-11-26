@@ -159,6 +159,23 @@ host_test(
     deps = [":t2"],
 )
 
+# D0-S v2's read logic: four allowlisted reads, SDMMC1 only behind its CAR clock and reset bits.
+host_library(
+    name = "s2",
+    srcs = [
+        "//boot:diag/loader/s2.c",
+        "//boot:diag/loader/s2.h",
+        "//boot:diag/loader/s2_regs.c",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "s2_test",
+    srcs = ["s2_test.cpp"],
+    deps = [":s2"],
+)
+
 # The T2 image's logic: prelude, bus layer, sensor sequence and screen lines, against a model of the CAR words, I2C1 and a TMP451.
 host_library(
     name = "t2_image",

@@ -1,6 +1,6 @@
 # D0-S: run sheet
 
-D0-S is not approved to run. This sheet is for the run once it is. One run, no retry, `boot` stays 0.
+D0-S ran once and hung after the framebuffer line (`boot/diag/erista-d0s-run1.txt`): FAIL / PARTIAL. Do not run it again. Its replacement is D0-S v2 (`ERISTA_D0S_V2_DESIGN.md`), which is not approved to run. One run, no retry, `boot` stays 0.
 
 D0-S is D0-R's loader behind a U-Boot script that adds one read-only block before the handoff. It prints the control FDT's
 framebuffer properties and reads four words: CAR `RST_DEVICES_L` (`0x60006004`) and `CLK_OUT_ENB_L` (`0x60006010`), then SDMMC1
