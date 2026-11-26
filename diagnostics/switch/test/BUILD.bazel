@@ -9,6 +9,8 @@
 #   stop_path_source_test     the facts ERISTA_STOP_PATHS.md rests on: the spin after halt, who installs the halt hook, the
 #                             PSCI conduit's conditions, which paths arm the watchdog reset
 #   random_seed_source_test   the order of the first random-seed consumers and the gates ERISTA_RANDOM_SEED.md rests on
+#   sd_audit_source_test      the SD driver facts ERISTA_FIRST_XNU_BOOT.md's audit rests on: PMIC writers, the HIDREV skip, the
+#                             partition gate, the extension-register writes
 #
 #   bazel test //diagnostics/switch/test:all
 #   bazel test --config=release //diagnostics/switch/test:switch_diag_link_test
@@ -106,3 +108,9 @@ py_test(
     ],
 )
 
+
+py_test(
+    name = "sd_audit_source_test",
+    srcs = ["sd_audit_source_test.py"],
+    data = ["//drivers/NativeSwitchBlock:NativeSwitchBlock.cpp"],
+)
