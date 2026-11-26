@@ -291,3 +291,67 @@ What it only prints as a note: empty segments, zerofill (`filesize` below `vmsiz
 If the two kernels differ, the explanation comes first: `early_trace` changes `start.s`'s object only.
 
 `__PRELINK_TEXT`'s file offset 25337856 is `0x182a000`: a multiple of `0x2000`, not of `0x4000`. That is why a file offset that is not 16 KiB aligned is a note and not an error in the tool; the reported kernel has one. Its file size 6963200 is `0x6a4000`, equal to its `vmsize`, so it has no zerofill.
+
+## 10. Mac results for `2a13ebdc2` (reported 2026-11-27 00:27 JST)
+
+Six of six regression tests passed: `macho_check_test`, `erista_seeded_build_test`, `first_xnu_check_test`, `diag_first_xnu_docs_test`, `board_header_test`, `boot_gate_rule_test`.
+
+`first_xnu_check.py macho` on the real `kernel.macho`, with `--base 0xfffffff00427c000 --phys-base 0xb207c000 --entry-phys 0xb53cc4c8`:
+
+| Run | Result |
+| --- | --- |
+| `early_trace=true` | exit 0 |
+| `early_trace=false`, `--compare` | no difference in segments or entry; exit 0 |
+| Header entry | `LC_UNIXTHREAD` pc `0xfffffff0075cc4c8`, equal to `__start`, inside `__TEXT_EXEC` |
+| Segments | all 18 pass on address, size, file range and permissions |
+
+Notes the tool printed, identical for true and false:
+
+- segments exist after `__LINKEDIT`, in virtual address and in file range
+- `__LINKEDIT` ends at `0x1829ce8`, the file at `0x386a000`
+- 3 empty segments
+- `__DATA` zerofill `0x1f4000`, `__LINKEDIT` zerofill `0x2318`
+- 5 segments have file offsets that are not multiples of `0x4000`
+
+The linker configuration was not changed. These are measurements of one kernel build; they are not a boot check, and the notes are why those cases are notes and not errors.
+
+From the list of open checks in section 9, now measured: the entry against `__start`, the same result on the plain build, and the virtual to physical entry (`0xb53cc4c8`). Still open: the builds with action counts and hashes, the loader margin, and the seeded build below.
+
+## 11. The seeded boot=0 package: what to run and report
+
+The package is built with the real board table (Erista boot 0). Its loader stops at `0x306` and its script says `WRONG_BOARD`, so it cannot boot the Erista. This checks the seed handling, the cache flags, the hashes and the scan. Run from the repository root. Report the fingerprint, exit codes and hashes only.
+
+```
+python3 tools/package/erista_seed.py generate                 # fingerprint only; --force replaces an existing seed
+python3 tools/package/erista_seed.py check                    # exit 0: set, private, not the pinned seed
+stat -f %Lp local/erista-seed.hex                             # 600
+git check-ignore -v local/erista-seed.hex                     # prints the .gitignore rule
+git ls-files --error-unmatch local/erista-seed.hex            # must fail: not tracked
+python3 tools/package/erista_seeded_build.py build            # no extra flags
+```
+
+The wrapper analyses its own command first (`bazel aquery` with `BootScript|BoardHeader|BoardAgree`) and refuses unless `BootScript` is listed and the other two are not. That query reads the `Mnemonic:` lines of `--output=text`, which the Mac has not confirmed. If the build says "could not analyse", send the stderr; the boot row is not on, the check failed closed. To see the same query by hand:
+
+```
+bazel aquery --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true --//boot:erista_boot_run=false \
+  'mnemonic("BootScript|BoardHeader|BoardAgree", //boot:erista_first_xnu_seeded)' --output=text | grep Mnemonic
+```
+
+Then, after the build:
+
+```
+bazel aquery --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true --//boot:erista_boot_run=false \
+  //boot:erista_first_xnu_seeded --output=text | grep -ci "no-cache"           # format unverified: report the count and 3 lines of context
+python3 tools/package/erista_seeded_build.py build            # second run: the seeded actions must run again, not come from a cache
+shasum -a 256 bazel-bin/boot/erista-first-xnu-seeded/switchroot/*/*
+python3 tools/package/erista_seeded_build.py scan             # then once more with --also FILE for any saved output
+python3 tools/package/first_xnu_check.py margin bazel-bin/boot/erista_first_xnu_seeded_work/loader.uboot.bin
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/kernel.macho
+python3 tools/package/first_xnu_check.py macho bazel-bin/kernel/kernel.macho \
+  --base 0xfffffff00427c000 --phys-base 0xb207c000 --entry-phys 0xb53cc4c8
+cat bazel-bin/boot/erista_first_xnu_seeded_work/early-trace.ok     # early_trace
+python3 tools/package/erista_seeded_build.py clean            # after the hashes are recorded
+python3 tools/package/erista_seeded_build.py clean --seed     # last; a rebuild needs a new seed
+```
+
+On the second build, "executed" action counts in bazel's summary for the seeded targets are the evidence; a cache hit there is a failure to report. The `bazel-bin/boot/erista_first_xnu_seeded_work/` path is `name + "_work"` from `boot/defs.bzl`; send the error if the file is not there.

@@ -193,6 +193,28 @@ class BootGate(unittest.TestCase):
         self.assertTrue((ROOT / 'tools/package/board_header.py').exists())
 
 
+class MacResultsMacho(unittest.TestCase):
+    def test_the_macho_report_and_the_seeded_commands_are_recorded(self) -> None:
+        text = read('ERISTA_FIRST_XNU_MAC.md')
+        for phrase in (
+            '2a13ebdc2',
+            '`__LINKEDIT` ends at `0x1829ce8`, the file at `0x386a000`',
+            '3 empty segments',
+            '`0x1f4000`',
+            '`0x2318`',
+            '5 segments have file offsets',
+            'erista_seed.py generate',
+            'git ls-files --error-unmatch local/erista-seed.hex',
+            'erista_seeded_build.py build',
+            'erista_seeded_build.py clean --seed',
+            'erista_first_xnu_seeded_work/loader.uboot.bin',
+            'cannot boot the Erista',
+            'Report the fingerprint, exit codes and hashes only',
+        ):
+            self.assertIn(phrase, text, phrase)
+        self.assertNotIn('--erista_boot_run=true\npython3', text)
+
+
 class MacResults(unittest.TestCase):
     def test_the_mac_report_and_the_graph_check_are_recorded(self) -> None:
         for phrase in (
@@ -302,17 +324,19 @@ class MeasuredKernel(unittest.TestCase):
         self.assertIn('0xb53cc4c8', MAC)
         self.assertIn('0x182a000', MAC)
 
-    def test_the_t3_t4_reuse_review_keeps_the_holds_and_its_caveat(self) -> None:
+    def test_the_t3_t4_reuse_review_keeps_the_holds_and_the_tag(self) -> None:
         text = read('ERISTA_T3T4_REUSE.md')
         for phrase in (
             'stay on HOLD',
             'undecided',
-            'master',
-            'not the 6.5.5 tag',
+            'v6.5.5',
+            'Not read: `soc/timer.h`',
+            'SOC_THERM and hang protection, evaluated separately',
             'BDK_HW_EXTRA_DEINIT',
             '0x9802D131',
             '0x049102CA',
             'not a system reset',
+            'is not treated as a safety guarantee',
             'Neither is a precondition of the other',
             'both stay on HOLD',
         ):
