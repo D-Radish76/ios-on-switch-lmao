@@ -43,6 +43,16 @@ seconds later (`n` is `vm_reset_seconds`, 15 unless the owner sets it, 1 to 60),
 arrive slower than every 30 s are not bounded by these rules; the person may stop earlier at any time. The record gets the selection-to-hekate time, which no run has measured, so the next sheet can use a measured figure.
 A shorter `n` shortens the parked time and costs the time to photograph the screen; that setting is the owner's.
 
+### Marks that keep trickling in
+
+The 30 s rule restarts at every mark, so a kernel that advances slowly is never stopped by it. The only bound is arithmetic: there are 21 marks, so the longest the rules allow
+before the VM text is 21 x 30 s, 10.5 minutes, plus the 30 s after mark 21, then `n + 10` s. That is a figure about the rules, not about the console: no run has measured the time between marks, whether marks can repeat or come back,
+or how hot the console gets in that time, and the fan is not running. It is not a safety limit and must not be used as one.
+
+What protects the console is the person at it, and that is not shown to be enough either. Nothing in the package reads a temperature, watches the fan or detects a hang inside the VM setup, and
+the PSCI reset after XNU owns the core is untried. So the operator rule is to hold POWER at the first reading that is not on this sheet: a pause that looks long, a mark out of order or repeated, the screen redrawing,
+a mark that arrives much later than the ones before it. The marks' timing is for the report: write down when each mark appears (a phone video with the clock does it), so the next sheet can use measured gaps.
+
 ## Seed
 
 The run uses the per-install seed (owner's stated priority): `//boot:erista_first_xnu_seeded`, built only through `erista_seeded_build.py`

@@ -181,10 +181,60 @@ class BootGate(unittest.TestCase):
         self.assertIn('stop_after_vm needs require_early_trace', DEFS)
 
     def test_the_document_says_what_is_not_built(self) -> None:
-        phrases = ('implemented offline', 'is unchanged', 'is not approved', 'it does not approve a run', 'Neither is given')
+        phrases = (
+            'implemented offline',
+            'is unchanged',
+            'is not approved',
+            'it does not approve a run',
+            'Neither is given',
+        )
         for phrase in phrases:
             self.assertIn(phrase.lower(), GATE.lower(), phrase)
         self.assertTrue((ROOT / 'tools/package/board_header.py').exists())
+
+
+class MacResults(unittest.TestCase):
+    def test_the_mac_report_and_the_graph_check_are_recorded(self) -> None:
+        for phrase in (
+            'c8f428d0b',
+            'Six tests passed',
+            'No boot=1 package was built',
+            'Action graph check',
+            'LoaderCompile',
+            'boards.ok',
+            'early-trace.ok',
+            'first_xnu_check.py',
+            'bazel-bin/kernel/prelinked',
+        ):
+            self.assertIn(phrase, MAC, phrase)
+        for mnemonic in (
+            'BoardHeader',
+            'BoardAgree',
+            'BootScript',
+            'LoaderCompile',
+            'BootBl33',
+            'BootPackage',
+            'EarlyTraceCheck',
+        ):
+            self.assertIn(f'"{mnemonic}"', DEFS, mnemonic)
+            self.assertIn(mnemonic, MAC, mnemonic)
+
+    def test_the_gap_and_the_unknown_warning_are_stated_not_guessed(self) -> None:
+        self.assertIn('Its text is not in this repository', MAC)
+        self.assertIn('Gap found in this review, not changed', MAC)
+        self.assertIn('board_checks', DEFS)
+        self.assertNotIn('early_trace_check', DEFS.split('board_checks = []')[1].split('BootBl33')[0])
+        self.assertIn('Open gap', GATE)
+
+    def test_trickling_marks_are_not_called_a_safety_limit(self) -> None:
+        run = read('ERISTA_FIRST_XNU_RUN.md')
+        for phrase in (
+            'Marks that keep trickling in',
+            '21 x 30 s',
+            'It is not a safety limit',
+            'the PSCI reset after XNU owns the core is untried',
+        ):
+            self.assertIn(phrase, run, phrase)
 
 
 class Blockers(unittest.TestCase):

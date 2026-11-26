@@ -117,3 +117,71 @@ Do not build with `--//boot:erista_boot_run=true`: that makes a bootable Erista 
 
 The two `must fail` builds are the check; their error text is worth sending. Report the action counts, the kernel window size (17543168 bytes in 87
 blocks, entry `0xb53cc4c8` at the last report), the margin, and every hash. Building the package is not running it.
+
+## 8. Mac results for `c8f428d0b` (reported 2026-11-26 23:41 JST)
+
+Six tests passed: `board_header_test`, `boot_gate_rule_test`, `boot_script_board_test`, `erista_package_test`, `diag_first_xnu_docs_test`, `diag_t2_measured_test`.
+Four `bazel aquery` runs, analysis only, all as expected:
+
+| `--//boot:erista_boot_run` | Target | Result |
+| --- | --- | --- |
+| false | `//boot:erista_first_xnu` | no `BoardHeader`, no `BoardAgree` |
+| true | `//boot:erista_first_xnu` | `BoardHeader` with `--early-trace --stop-after-vm --single-core --profile debug`; `BoardAgree` with the derived `SwitchBoard.h` and `boot-script.txt` as inputs and `boards.ok` as output |
+| true, `--config=release` | `//boot:erista_first_xnu` | refused at analysis, for the intended reason |
+| true | `//boot:erista_package` | no `BoardHeader`, no `BoardAgree` |
+
+No boot=1 package was built. The reported text of the refusal is not in the repository; the rule's own messages are in `boot/defs.bzl` (`_derive_boards`).
+
+### Action graph check
+
+The aquery results above show the actions exist. This checks what they read. Analysis only, nothing is built. Run with the flag on, once with the trace kernel option and once without it:
+
+```
+F='--config=ios17 --//install:prebuilt=local --//kernel:early_trace=true --//boot:erista_boot_run=true'
+bazel aquery $F --output=text 'mnemonic("BoardHeader|BoardAgree|BootScript|LoaderCompile|LoaderLink|BootBl33|BootPackage|EarlyTraceCheck", //boot:erista_first_xnu)' > aq.txt
+for m in BoardHeader BoardAgree BootScript BootBl33 BootPackage EarlyTraceCheck; do echo "== $m"; awk -v RS= "/Mnemonic: $m/" aq.txt | grep -o 'kits/SwitchBoard/SwitchBoard.h\|[a-z_]*_work/boards/SwitchBoard.h\|[a-z_]*_work/boards.ok\|[a-z_]*_work/early-trace.ok' | sort | uniq -c; done
+echo "== LoaderCompile: include order"; awk -v RS= '/Mnemonic: LoaderCompile/' aq.txt | grep -o -- '-I [^ ]*' | sort | uniq -c
+```
+
+Expected:
+
+| Action | Real `kits/SwitchBoard/SwitchBoard.h` | Derived `..._work/boards/SwitchBoard.h` | `boards.ok` | `early-trace.ok` |
+| --- | --- | --- | --- | --- |
+| `BoardHeader` | input | output | none | none |
+| `BoardAgree` | none | input | output | none |
+| `BootScript` | none | input | none | none |
+| `LoaderCompile` (every source) | none | in the inputs, and its directory is the `-I` | none | none |
+| `BootBl33` | none | none | input | none |
+| `BootPackage` | none | none | none | input |
+
+A real-header count above 0 in `BootScript`, `LoaderCompile` or `BootBl33` is a finding: some reader would still see boot 0 (or the loader and script would disagree). `LoaderCompile` also must show no `-I` directory
+that holds the real `SwitchBoard.h` ahead of the derived one (`loader.c` and `carveout.h` include it as `"SwitchBoard.h"`). Run the same listing without the flag: no derived header, no `BoardAgree`, the real header everywhere.
+
+### Why `early_trace` off is refused, and where the files are
+
+| Case | Where it stops | Message | Files |
+| --- | --- | --- | --- |
+| `require_early_trace` unset on a boot-row target | analysis | `... enables boot rows but has no require_early_trace` | `boot/defs.bzl` `_derive_boards` |
+| release profile | analysis | `... needs the debug profile: the early marks exist only in DEVELOPMENT or DEBUG kernels` | `boot/defs.bzl` |
+| `stop_after_vm` without the trace build | analysis | `... stop_after_vm needs require_early_trace` | `boot/defs.bzl` |
+| the kernel was built with `--//kernel:early_trace=false` | build, action `EarlyTraceCheck` | `<kernel>: no SWITCH_EARLY_TRACE start.s found (early_trace=false or a release kernel)`, exit 1 | `tools/package/first_xnu_check.py`; kernel `bazel-bin/kernel/prelinked` (the file `//kernel:prelinked` builds, `ctx.file.kernel` of the package); stamp `bazel-bin/boot/erista_first_xnu_work/early-trace.ok` |
+| a compressed or foreign kernel | build, same action | `start.s early-rendering enable not found` | same |
+
+The binary the check reads is the one in the package: the kernel's `start.s` must hold the 16-byte sequence `ENABLE_SEQUENCE + TRACE_SEQUENCE` (`first_xnu_check.py`). The stamp `early-trace.ok` is an input of `BootPackage` only.
+
+Gap found in this review, not changed: `BoardHeader`, `BoardAgree` and `BootBl33` do not depend on `early-trace.ok`. The `--early-trace` the derive command carries comes from the `require_early_trace`
+attribute, not from the kernel binary. With the flag on and a kernel without the trace, `EarlyTraceCheck` fails and no package is made, but the loader and `bl33.bin` with `boot` 1 could still be built if someone asked for those outputs
+directly (`--output_groups` or a single action's output). Making `early-trace.ok` an input of `BoardHeader` would close it. That is a change to the rule, so it waits for the owner's approval.
+
+### The XNU linker warning
+
+Its text is not in this repository, the earlier reports or this session, so its effect cannot be judged from here. To get it and the three facts that decide its effect:
+
+```
+bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked 2>&1 | tee kernel-link-trace.log | grep -i warning
+bazel build --config=ios17 --//kernel:early_trace=false //kernel:prelinked 2>&1 | tee kernel-link-plain.log | grep -i warning
+diff <(grep -i warning kernel-link-trace.log) <(grep -i warning kernel-link-plain.log)
+```
+
+Send the exact lines, whether the plain build shows them too, and whether the kernel's size, entry (`0xb53cc4c8` at the last report) and window (17543168 bytes in 87 blocks) differ from the last report. A warning that appears in both and leaves
+those figures alone predates the trace build; one only in the trace build is a finding for `start.s`.

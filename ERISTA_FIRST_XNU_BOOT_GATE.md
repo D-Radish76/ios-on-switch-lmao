@@ -46,6 +46,10 @@ Not covered by any host test: Starlark itself, which only the Mac's analysis run
 What B does not do: it does not approve a run, change what the first XNU package runs (single core, features 0, trace kernel, VM stop) or add protection against a hang. Whoever holds the flagged package holds a bootable Erista package,
 so the card stays labelled and the run stays attended. The OLED row and the iOS 27 tree are untouched.
 
+Mac analysis of `c8f428d0b` (2026-11-26): flag false gives no `BoardHeader` or `BoardAgree`; flag true gives both with the four conditions on the command line; release is refused; `//boot:erista_package` is unaffected. Details in `ERISTA_FIRST_XNU_MAC.md` section 8.
+
+Open gap: `early-trace.ok` feeds `BootPackage` only, so the derived header and `bl33.bin` do not depend on the kernel check (section 8 of the Mac sheet). Closing it changes the rule and needs the owner's approval.
+
 ## What is still the owner's
 
 Passing `--//boot:erista_boot_run=true` to a build that is meant for a card, and the written decision of the run. Neither is given.

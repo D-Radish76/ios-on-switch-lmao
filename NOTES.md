@@ -117,6 +117,8 @@ No boot test until code review and a Bazel build are done.
 
 `tools/package/board_header.py` derives a copy of `SwitchBoard.h` in which only the Erista row's `boot` is 1; `SwitchBoard.h` itself stays at boot 0, features 0. `boot_package` takes it through `enable_boot_rows`, allowed only for `erista_first_xnu` and `erista_first_xnu_seeded`, and only behind `--//boot:erista_boot_run` (default false, nothing sets it). U-Boot's script, the loader's include path and its header inputs all use the derived file, and a `BoardAgree` stamp compares the script with it. Analysis fails for release, a prebuilt loader, no early_trace, no stop_after_vm or more than one core. Tests: `board_header_test`, `boot_gate_rule_test`; Starlark itself is only exercised by the Mac (`bazel aquery`, see `ERISTA_FIRST_XNU_MAC.md` section 7). No boot=1 package was built; no run is approved.
 
+Mac result for `c8f428d0b`: six tests passed, four analysis runs as expected, no boot=1 package built (`ERISTA_FIRST_XNU_MAC.md` section 8). Review finding: `early-trace.ok` is an input of `BootPackage` only, not of `BoardHeader` or `BootBl33`. The XNU linker warning's text is not recorded anywhere, so its effect is unassessed. The stop rules do not bound slowly trickling marks (`ERISTA_FIRST_XNU_RUN.md`).
+
 The T2 Mac card hashes are recorded in `boot/diag/erista-t2-run1.txt`. The ini, script and bl31 hashes reproduce on Linux; `bl33.bin` does not. The 120 s stop limit is withdrawn (no measured basis); see `ERISTA_FIRST_XNU_RUN.md`.
 
 ## Before the first boot test
