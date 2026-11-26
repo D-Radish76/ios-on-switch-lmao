@@ -4,6 +4,7 @@ start.s reads the boot args with the MMU off and enables early marks only for an
 gate on the values tools/package produces, so a change on either side shows here. Nothing is built.
 """
 
+import hashlib
 import re
 import struct
 import unittest
@@ -16,6 +17,7 @@ START = (ROOT / 'kernel/xnu-10063.141.1/osfmk/arm64/start.s').read_text()
 LAYOUT = (ROOT / 'kernel/switch/include/switch/boot_layout.h').read_text()
 MEMORY = (ROOT / 'boot/diag/erista-memory-bdinfo.log').read_text()
 
+PLAIN_GATE_SHA256 = 'f36aa651206ecdd6ca0005fe905a16866ba7a57e5b7107cd6977faa0935be1e4'
 FIELD = {'virt': 0x8, 'phys': 0x10, 'size': 0x18, 'top': 0x20, 'base': 0x28, 'display': 0x30, 'stride': 0x38,
          'width': 0x40, 'height': 0x48, 'depth': 0x50}
 BOOT_ARGS_FORMAT = '<HHI4Q6Q'
@@ -32,6 +34,24 @@ def start_gate_source():
     return START[begin : START.index('Lswitch_early_disabled:', begin)]
 
 
+def gate_instructions(trace):
+    """start_first_cpu's gate as the assembler sees it: comments out, SWITCH_EARLY_TRACE conditionals resolved."""
+    out, keep = [], [True]
+    for raw in start_gate_source().splitlines():
+        line = re.sub(r'//.*', '', raw).strip()
+        if line.startswith('#if SWITCH_EARLY_TRACE'):
+            keep.append(trace)
+        elif line.startswith('#if'):
+            keep.append(True)
+        elif line.startswith('#else'):
+            keep[-1] = not keep[-1]
+        elif line.startswith('#endif'):
+            keep.pop()
+        elif line and all(keep):
+            out.append(re.sub(r'\s+', ' ', line))
+    return out
+
+
 def packed_args(virt, phys, size, video):
     return struct.pack(BOOT_ARGS_FORMAT, 2, 2, 0, virt, phys, size, 0, *video)
 
@@ -40,7 +60,7 @@ def field(args, name):
     return struct.unpack_from('<Q', args, FIELD[name])[0]
 
 
-def early_enabled(args, virt_base):
+def early_enabled(args, virt_base, trace=False):
     """The branches of start_first_cpu's gate, in the order start.s takes them (the SCTLR test is a live register)."""
     phys, size, virt = (field(args, k) for k in ('phys', 'size', 'virt'))
     if phys == define('SWITCH_KERNEL_PHYS_BASE'):
@@ -55,7 +75,7 @@ def early_enabled(args, virt_base):
     ):
         return False
     display, depth = field(args, 'display'), field(args, 'depth')
-    return (display == 1 and depth == 32) or (display == 0 and depth == 0x320)
+    return (display == 1 and (depth == 32 or (trace and depth == 0x320))) or (display == 0 and depth == 0x320)
 
 
 class BootArgsContractTest(unittest.TestCase):
@@ -121,19 +141,55 @@ class BootArgsContractTest(unittest.TestCase):
         self.assertIn('0xf5a00000 | ARM_TTE_VALID', START)
         self.assertIn('CACHE_ATTRINDX_DISABLE', START[START.index('0xf5a00000 | ARM_TTE_VALID'):][:300])
 
-    def test_packaged_video_against_the_start_gate(self):
-        """Recorded finding, not an endorsement. The packager's Video is display 1 with depth 0x320; start.s accepts
-        0x320 only for display 0 and 32 only for display 1, so early rendering stays off on a package built from it.
-        Changing either side must also change ERISTA_FIRST_XNU_BOOT.md."""
+    def packaged(self, video=VIDEO):
         virt = 0xFFFFFFEFD2200000
-        full = packed_args(virt - define('SWITCH_KERNEL_PHYS_BASE') + define('SWITCH_BOOT_PHYS_BASE'),
-                           define('SWITCH_BOOT_PHYS_BASE'), define('SWITCH_BOOT_MEM_SIZE'), VIDEO)
-        self.assertEqual(VIDEO[1], 1)
-        self.assertEqual(VIDEO[5], 0x320)
-        self.assertFalse(early_enabled(full, virt))
-        for video in (VIDEO[:1] + [1] + VIDEO[2:5] + [32], VIDEO[:1] + [0] + VIDEO[2:]):
-            args = packed_args(field(full, 'virt'), field(full, 'phys'), field(full, 'size'), video)
-            self.assertTrue(early_enabled(args, virt))
+        args = packed_args(virt - define('SWITCH_KERNEL_PHYS_BASE') + define('SWITCH_BOOT_PHYS_BASE'),
+                           define('SWITCH_BOOT_PHYS_BASE'), define('SWITCH_BOOT_MEM_SIZE'), video)
+        return args, virt
+
+    def test_packaged_video_is_accepted_only_by_the_trace_build(self):
+        """The loader's Video is display 1 with depth 0x320 (32 bpp, rotate 3: pe_init.c's decode). The plain build
+        keeps its contract (display 1 needs the bare 32) and draws nothing; the trace build also takes the exact word."""
+        args, virt = self.packaged()
+        self.assertEqual((VIDEO[1], VIDEO[5]), (1, 0x320))
+        self.assertFalse(early_enabled(args, virt, trace=False))
+        self.assertTrue(early_enabled(args, virt, trace=True))
+
+    def test_the_trace_build_refuses_every_other_video(self):
+        for index, bad in ((1, 2), (1, 0xFF), (2, 2884), (2, 2876), (3, 719), (4, 1281), (0, 0xF5A00004)):
+            video = list(VIDEO)
+            video[index] = bad
+            args, virt = self.packaged(video)
+            with self.subTest(field=index, value=bad):
+                self.assertFalse(early_enabled(args, virt, trace=True))
+        for depth in (0x1F, 0x21, 0x120, 0x321, 0x320 | 1 << 16, 0x320 | 1 << 24, 0x300, 0x20 | 0x300, 800 + 4096):
+            video = list(VIDEO)
+            video[5] = depth
+            args, virt = self.packaged(video)
+            with self.subTest(depth=hex(depth)):
+                self.assertEqual(early_enabled(args, virt, trace=True), depth in (0x20, 0x320))
+
+    def test_the_trace_build_changes_nothing_else_in_the_gate(self):
+        for physical in (0x80000001, 0x90000000):
+            args, virt = self.packaged()
+            mutable = bytearray(args)
+            struct.pack_into('<Q', mutable, 0x10, physical)
+            self.assertFalse(early_enabled(bytes(mutable), virt, trace=True))
+
+    def test_start_s_adds_the_exact_word_only_under_the_trace_flag(self):
+        gate = start_gate_source()
+        at = gate.index('cmp x16, #32\n#if SWITCH_EARLY_TRACE')
+        added = gate[at : gate.index('#endif', at)]
+        self.assertEqual(re.findall(r'cmp x16, (#0x[0-9a-f]+|#\d+)', added), ['#32', '#0x320'])
+        self.assertEqual(added.count('b.eq Lswitch_early_video_ready'), 1)
+        self.assertNotIn('and ', added)
+        self.assertNotIn('ubfx', added)
+
+    def test_without_the_trace_flag_the_gate_is_the_one_before_the_change(self):
+        """With SWITCH_EARLY_TRACE 0 the gate's instructions hash as they did before N7-G."""
+        self.assertEqual(hashlib.sha256('\n'.join(gate_instructions(trace=False)).encode()).hexdigest(), PLAIN_GATE_SHA256)
+        self.assertEqual(gate_instructions(trace=False).count('cmp x16, #0x320'), 1)  # display 0's
+        self.assertEqual(gate_instructions(trace=True).count('cmp x16, #0x320'), 2)
 
 
 if __name__ == '__main__':

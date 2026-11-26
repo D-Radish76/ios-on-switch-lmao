@@ -83,13 +83,13 @@ logical 1280x720 frame) inside the 0x384000-byte framebuffer. A mark clobbers on
 and draws physical `0xF5A00000` addresses: identity-mapped as Device by the stage 3 block before the MMU is enabled, and
 through that same TTBR0 block after.
 
-**One mismatch.** The packager's Video is display 1 with depth `0x320` (`loader_abi.py VIDEO`). start.s accepts depth 32
-for display 1 and `0x320` for display 0 only, so on a package built from today's values the gate falls to
-`Lswitch_early_disabled` and no mark is drawn, trace build or not. XNU's own decode reads the low byte as bits per pixel
-(`pe_init.c`), so `0x320` is a valid depth word. The test records the mismatch instead of hiding it. Two ways to close
-it, neither done: make start.s accept the low byte 32 for display 1 (this also enables early rendering on the OLED, whose
-behaviour with it was not checked), or change `VIDEO` (changes the loader image hash and XNU's console rotation). Needs
-a decision.
+**The mismatch, closed for the trace build (N7-G).** The packager's Video is display 1 with depth `0x320`. XNU decodes that word as depth 32 (bits 0 to 7),
+rotate 3 (bits 8 to 15), scale 1 and no extra boot rotation (`pe_init.c`, `kBootVideoDepth*Shift`), which is the landscape orientation the marks
+are drawn in. start.s accepted display 1 with the bare 32 only, so the gate stayed shut. Under `SWITCH_EARLY_TRACE` it now also accepts exactly `0x320`
+for display 1 (a compare with the whole word, no mask, so other rotate, scale or boot-rotate bits are refused). Without the flag the gate's instructions
+are the same as before (`boot_args_contract_test` hashes them), so the plain and release kernels keep their contract. `VIDEO` and the console rotation
+are unchanged. Display, stride, width, height, base and the memory geometry are still checked exactly; the test refuses each altered value. xnu-12377 is untouched.
+The draw target is unchanged: physical `0xF5A00000`, identity-mapped as Device by the stage 3 block before the MMU is on and by that same block after.
 
 ## Mac results (204662a7f, iPadOS 17)
 
@@ -190,7 +190,7 @@ is last and needs `boot` 1, which this tree does not set.
 | --- | --- | --- |
 | D0-S | D0-R's report, then the framebuffer properties (address `F5A00000`, 720x1280, a8b8g8r8, rot 3) and two SDMMC1 words (`0x700b0024`, `0x700b002c`) | the same report lines D0-R printed, plus both words and the CAR reset and clock bits |
 | D1-min | D0-R's report, `D1-MIN SECTOR 0 READ TO 0xA001F200`, a CRC32 line, then `SIGNATURE 55 AA PRESENT` or `ABSENT` | a CRC for 512 bytes, the loader still `CLEAR` for the SD reference range |
-| First XNU | green marks 1 to 21 at y 280 (if the display/depth mismatch is closed), then the HUD, then the panic screen | marks in order, a readable panic, no heat |
+| First XNU | green marks 1 to 21 at y 280 (with the trace build), then the HUD, then the panic screen | marks in order, a readable panic, no heat |
 
 **Run time and stop conditions.** D0-S and D1-min end by themselves (15 s, then `reset`, as D0). Their basis is D0's own run. The first-XNU limits (30 s with no new mark, 120 s after
 `XNU VM INITIALIZED`) are provisional: no run measured a stage time and no temperature limit is known. Hold POWER on any stop condition.
@@ -205,7 +205,7 @@ All of these, none of which is done:
 
 - The owner approves the run and changes the row's `boot` to 1 for the build under test only. This document does not.
 - The Mac builds the target above and the loader's linked margin is reported (`ERISTA_XNU_HANDOFF.md` lists the Mac commands).
-- The display/depth mismatch above is closed, or marks are not expected.
+- The trace build is used: only it draws marks.
 - A seed decision (`ERISTA_RANDOM_SEED.md`): the pinned seed is public, which does not matter for an observation boot.
 - A stop procedure the person has read: POWER held, then Nyx for temperature.
 - T2 run, or the run waived, so that a temperature before and after is available.

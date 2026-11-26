@@ -1074,6 +1074,11 @@ Lswitch_early_ram_ready:
 	b.ne Lswitch_early_disabled
 	ldr x16, [x20, #0x50]
 	cmp x16, #32
+#if SWITCH_EARLY_TRACE
+	// The loader's graphics Video word: depth 32 | rotate 3 << 8 (kBootVideoDepth*Shift); only that exact word.
+	b.eq Lswitch_early_video_ready
+	cmp x16, #0x320
+#endif
 	b.ne Lswitch_early_disabled
 	b Lswitch_early_video_ready
 Lswitch_early_text_video:
