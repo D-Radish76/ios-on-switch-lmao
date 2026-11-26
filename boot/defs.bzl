@@ -193,7 +193,7 @@ def _boot_package_impl(ctx):
     boot_args = out("boot-args.txt")
     if ctx.attr.stop_after_vm and not ctx.attr.require_early_trace:
         fail("%s: stop_after_vm needs require_early_trace (the stop is the trace build's)" % ctx.label)
-    if ctx.attr.stop_after_vm and not 1 <= ctx.attr.vm_reset_seconds <= 60:
+    if ctx.attr.stop_after_vm and (ctx.attr.vm_reset_seconds < 1 or ctx.attr.vm_reset_seconds > 60):
         fail("%s: vm_reset_seconds is 1 to 60" % ctx.label)
     flags = (["--smp"] if smp else []) + (["--release"] if release else []) + (["--stop-after-vm=%d" % ctx.attr.vm_reset_seconds] if ctx.attr.stop_after_vm else [])
     _run(ctx, ctx.executable._boot_args, [boot_args.path] + flags, [], [boot_args], "BootArgs", "Writing the boot-args")
