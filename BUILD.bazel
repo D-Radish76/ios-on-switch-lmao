@@ -45,6 +45,7 @@ exports_files([
     "ERISTA_D0S_V2_RESULT.md",
     "ERISTA_D0S_V2_RUN.md",
     "ERISTA_D1MIN_RESULT.md",
+    "ERISTA_D1_DESIGN.md",
     "ERISTA_D1MIN_REVIEW.md",
     "ERISTA_FIRST_XNU_BLOCKERS.md",
     "ERISTA_FIRST_XNU_BOOT_GATE.md",

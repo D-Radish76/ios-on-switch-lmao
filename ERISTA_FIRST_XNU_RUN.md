@@ -53,6 +53,18 @@ What protects the console is the person at it, and that is not shown to be enoug
 the PSCI reset after XNU owns the core is untried. So the operator rule is to hold POWER at the first reading that is not on this sheet: a pause that looks long, a mark out of order or repeated, the screen redrawing,
 a mark that arrives much later than the ones before it. The marks' timing is for the report: write down when each mark appears (a phone video with the clock does it), so the next sheet can use measured gaps.
 
+## Held: the run condition for trickling marks
+
+The owner holds back using "ten minutes or more with the fan stopped" as a condition of the first run. Three ways to change that, none adopted, none a safety guarantee:
+
+| Option | Risk | What it takes |
+| --- | --- | --- |
+| A total time limit (for example from the first mark) | Any number is a guess: no run has measured the marks' timing, XNU's early heat or the fan-off time the console tolerates. It would be a rule for a person to follow, not a protection: a hang does not look at a clock, and a person who misses it misses the limit. A limit also cuts a diagnosis short that was only slow | Sheet text only. Making the package enforce it needs a timer that works while the kernel is hung: the watchdog (T4) or a reset source, both unbuilt, unproved and not approved |
+| A shorter wait after VM done (`vm_reset_seconds` below 15) | Shortens only the time between the VM text and the reset. A hang before the text and trickling marks are untouched, and the reset after XNU owns the core is untried, so a short `n` fails the same way a long one does. A very short `n` leaves no time to read or photograph the screen | A boot-args value (`switch_stop_after_vm`, 1 to 60); no code. The setting is the owner's; filming the screen replaces reading it |
+| Fan control, or a hang protection independent of the kernel | The only one of the three that acts when nobody does. Also the one with hardware risk: a fan or watchdog write that is wrong on an Erista is itself a failure. Fan state at hekate's handoff is not recorded; Nyx's launch ran `fan_set_duty(0)` | T3 (fan) and T4 (watchdog) as designed in `ERISTA_D1_DESIGN.md`: new register code in the loader, a new MMIO allowlist entry, a design review, a run on the console for each. All on HOLD, unbuilt and unapproved. THERMTRIP, WDT, fan and voltage operations stay forbidden until then |
+
+None of these is chosen here. Until the owner chooses, the sheet's stop rules stand as written and carry the limit stated above: the person is the only protection, and the run is not approved.
+
 ## Seed
 
 The run uses the per-install seed (owner's stated priority): `//boot:erista_first_xnu_seeded`, built only through `erista_seeded_build.py`

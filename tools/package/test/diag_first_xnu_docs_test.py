@@ -219,12 +219,49 @@ class MacResults(unittest.TestCase):
             self.assertIn(f'"{mnemonic}"', DEFS, mnemonic)
             self.assertIn(mnemonic, MAC, mnemonic)
 
-    def test_the_gap_and_the_unknown_warning_are_stated_not_guessed(self) -> None:
-        self.assertIn('Its text is not in this repository', MAC)
-        self.assertIn('Gap found in this review, not changed', MAC)
-        self.assertIn('board_checks', DEFS)
-        self.assertNotIn('early_trace_check', DEFS.split('board_checks = []')[1].split('BootBl33')[0])
-        self.assertIn('Open gap', GATE)
+    def test_the_stamp_gap_is_closed_and_said_so(self) -> None:
+        self.assertIn('is closed in the next commit', MAC)
+        self.assertIn('--trace-stamp', MAC)
+        self.assertIn('closed offline', GATE)
+        self.assertIn('--trace-stamp', DEFS)
+        self.assertIn('early_trace_check]', DEFS)
+
+    def test_the_linker_warning_is_explained_from_the_flags_and_nothing_is_changed(self) -> None:
+        for phrase in (
+            '-new_linker is obsolete',
+            '__PLK_LINKEDIT',
+            'MakeInc.def',
+            'Eight of the eight match',
+            'the link flags are not changed',
+            'xcrun ld -v',
+        ):
+            self.assertIn(phrase, MAC, phrase)
+        recipe = read('kernel/xnu-10063.141.1/config/recipes_development.bzl')
+        for segment in (
+            '__PRELINK_TEXT',
+            '__PRELINK_INFO',
+            '__PLK_TEXT_EXEC',
+            '__PRELINK_DATA',
+            '__PLK_DATA_CONST',
+            '__PLK_LLVM_COV',
+            '__PLK_LINKEDIT',
+            '__LINKINFO',
+        ):
+            self.assertRegex(recipe, rf'-sectcreate,"?{segment}"?,', segment)
+            self.assertNotIn(segment, re.search(r'-Wl,-segment_order,(\S+)"', recipe).group(1), segment)
+        self.assertIn('-Wl,-new_linker', recipe)
+
+    def test_the_held_options_are_listed_with_their_risk(self) -> None:
+        run = read('ERISTA_FIRST_XNU_RUN.md')
+        for phrase in (
+            'Held: the run condition for trickling marks',
+            'A total time limit',
+            'A shorter wait after VM done',
+            'Fan control, or a hang protection independent of the kernel',
+            'none a safety guarantee',
+            'THERMTRIP, WDT, fan and voltage operations stay forbidden',
+        ):
+            self.assertIn(phrase, run, phrase)
 
     def test_trickling_marks_are_not_called_a_safety_limit(self) -> None:
         run = read('ERISTA_FIRST_XNU_RUN.md')

@@ -60,6 +60,7 @@ class Conditions(unittest.TestCase):
         for condition, reason in (
             ('not release and not prebuilt', 'a release profile or prebuilt loader'),
             ('ctx.attr.require_early_trace', 'no require_early_trace'),
+            ('early_trace_check != None', 'no early-trace stamp'),
             ('ctx.attr.stop_after_vm', 'no stop_after_vm'),
             ('not smp', 'more than one core'),
         ):
@@ -79,6 +80,7 @@ class Conditions(unittest.TestCase):
             'args.add_all(["--early-trace", "--stop-after-vm", "--single-core", "--profile", "debug"])', DERIVE
         )
         self.assertIn('args.add("--board", rows[0])', DERIVE)
+        self.assertIn('args.add("--trace-stamp", early_trace_check)', DERIVE)
 
     def test_only_a_debug_profile_is_ever_passed(self) -> None:
         self.assertNotIn('"release"', DERIVE.replace('a release profile', ''))
@@ -112,7 +114,8 @@ class OneTableForAllThree(unittest.TestCase):
     def test_the_agreement_check_is_an_input_of_bl33(self) -> None:
         self.assertIn('args.add("--derived", boards)', IMPL)
         self.assertIn('args.add("--script", script_text)', IMPL)
-        self.assertIn('+ loader_constants + board_checks, [bl33]', IMPL)
+        self.assertIn('+ loader_constants + board_checks + ', IMPL)
+        self.assertIn('board_checks.append(agreed)', IMPL)
 
     def test_the_swap_needs_the_real_table_exactly_once(self) -> None:
         swap = function('_swap')
@@ -124,7 +127,31 @@ class OneTableForAllThree(unittest.TestCase):
         self.assertIn('prebuilt = bool(ctx.attr.prebuilt_loader)', IMPL)
 
     def test_the_derive_action_reads_only_the_real_table(self) -> None:
-        self.assertIn('[real], [derived], "BoardHeader"', DERIVE)
+        self.assertIn('[real, early_trace_check], [derived], "BoardHeader"', DERIVE)
+
+
+class TheTraceStampGatesEverything(unittest.TestCase):
+    def test_the_stamp_is_made_before_the_table_and_passed_to_it(self) -> None:
+        self.assertLess(IMPL.index('"EarlyTraceCheck"'), IMPL.index('_derive_boards('))
+        self.assertIn('_derive_boards(ctx, out, release, smp, prebuilt, early_trace_check)', IMPL)
+        self.assertEqual(1, IMPL.count('"EarlyTraceCheck"'))
+
+    def test_bl33_reads_the_stamp_directly_only_when_it_enables_rows(self) -> None:
+        self.assertIn('board_checks + ([early_trace_check] if ctx.attr.enable_boot_rows else []), [bl33]', IMPL)
+
+    def test_the_package_still_reads_the_stamp(self) -> None:
+        self.assertIn('([early_trace_check] if early_trace_check else [])', IMPL)
+
+    def test_no_other_action_gains_the_stamp(self) -> None:
+        mnemonics = sorted(
+            m for line in DEFS.splitlines() if 'early_trace_check' in line for m in re.findall(r'"([A-Z]\w+)"', line)
+        )
+        self.assertEqual(['BoardHeader', 'BootBl33', 'EarlyTraceCheck'], mnemonics)
+        self.assertEqual(1, IMPL.count('[early_trace_check] if early_trace_check else []'))
+
+    def test_the_derive_action_fails_when_the_stamp_action_fails(self) -> None:
+        self.assertIn('[real, early_trace_check], [derived]', DERIVE)
+        self.assertIn('"--stamp", early_trace_check.path], [ctx.file.kernel], [early_trace_check]', IMPL)
 
 
 if __name__ == '__main__':

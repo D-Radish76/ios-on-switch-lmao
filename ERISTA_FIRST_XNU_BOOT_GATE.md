@@ -48,7 +48,7 @@ so the card stays labelled and the run stays attended. The OLED row and the iOS 
 
 Mac analysis of `c8f428d0b` (2026-11-26): flag false gives no `BoardHeader` or `BoardAgree`; flag true gives both with the four conditions on the command line; release is refused; `//boot:erista_package` is unaffected. Details in `ERISTA_FIRST_XNU_MAC.md` section 8.
 
-Open gap: `early-trace.ok` feeds `BootPackage` only, so the derived header and `bl33.bin` do not depend on the kernel check (section 8 of the Mac sheet). Closing it changes the rule and needs the owner's approval.
+The gap the review found (`early-trace.ok` fed `BootPackage` only) is closed offline with the owner's approval: `BoardHeader` and `BootBl33` read the stamp, and the tool refuses a derive without it (`ERISTA_FIRST_XNU_MAC.md` section 8). The Mac has not yet checked this commit.
 
 ## What is still the owner's
 

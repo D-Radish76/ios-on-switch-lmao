@@ -55,7 +55,7 @@ Assumed: the run is attended, the package is `//boot:erista_first_xnu` with `swi
 
 Reading: deferring T3 and T4 means a hang or a failed reset has no autonomous stop and no fan, and the person is the only mechanism. That is the stated condition
 of the run. T2 measured one temperature at the loader (remote 34.3125 C) and shows nothing about XNU's early heat. The full D1 adds nothing to this run's safety, so deferring it costs nothing here. What the owner decides, in writing, is whether a person's POWER
-hold is accepted as the sole protection against a hang with the fan off, with start below the provisional 40 C and the 30 s and n + 10 s rules (and their limit: marks that trickle in are not bounded, `ERISTA_FIRST_XNU_RUN.md`). Those figures are not
+hold is accepted as the sole protection against a hang with the fan off, with start below the provisional 40 C and the 30 s and n + 10 s rules (and their limit: marks that trickle in are not bounded; the owner holds the run condition, `ERISTA_FIRST_XNU_RUN.md`). Those figures are not
 official limits. No part of this document lowers the HOLD.
 
 A stronger statement is not available: nothing measured shows XNU's early heat or the reset after XNU.

@@ -448,10 +448,12 @@ py_test(
         "//boot:loader/carveout.h",
         "//kits/SwitchBoard:SwitchBoard.h",
         "//tools/package:board_header",
+        "//tools/package:first_xnu_check",
     ],
     deps = [
         "//tools/package:board_header_lib",
         "//tools/package:boot_script",
+        "//tools/package:first_xnu_check_lib",
     ],
 )
 
@@ -470,6 +472,7 @@ py_test(
     name = "diag_first_xnu_docs_test",
     srcs = ["diag_first_xnu_docs_test.py"],
     data = [
+        "//:ERISTA_D1_DESIGN.md",
         "//:ERISTA_FIRST_XNU_BLOCKERS.md",
         "//:ERISTA_FIRST_XNU_BOOT.md",
         "//:ERISTA_FIRST_XNU_BOOT_GATE.md",
@@ -480,6 +483,7 @@ py_test(
         "//boot:loader/loader.c",
         "//diagnostics/switch:SwitchVmDone.c",
         "//kits/SwitchBoard:SwitchBoard.h",
+        "//kernel/xnu-10063.141.1/config:recipes_development.bzl",
         "//kits/SwitchBoard:SwitchBoardKernel.h",
         "//tools/package:board_header",
         "//tools/package:boot_script",

@@ -2,13 +2,14 @@
 """Derives the board table one package boots a row from, while kits/SwitchBoard/SwitchBoard.h keeps that row at boot 0.
 
     board_header.py derive --board erista --header SwitchBoard.h --out OUT \
-        --early-trace --stop-after-vm --single-core --profile debug
+        --early-trace --stop-after-vm --single-core --profile debug --trace-stamp early-trace.ok
     board_header.py verify --board erista --header SwitchBoard.h --derived OUT
     board_header.py agree --derived OUT --script boot-script.txt --stamp OK
 
 derive writes a copy of the header whose only difference is that row's boot field, 0 to 1. It refuses unless every
 condition of the first-XNU diagnostic is stated on the command line, so a package that cannot state them cannot get a
-booting row. The row's other fields are pinned here: a header that changed them is refused until this file changes too.
+booting row. The stamp is the one first_xnu_check.py writes after finding the trace in the kernel, and derive refuses
+without it. The row's other fields are pinned here: a header that changed them is refused until this file changes too.
 """
 
 import argparse
@@ -80,6 +81,10 @@ def derive(header: str, board: str, *, early_trace: bool, stop_after_vm: bool, s
     return header[:at] + '1' + header[at + 1 :]
 
 
+def trace_stamp(path: Path | None) -> bool:
+    return path is not None and path.is_file() and path.read_text() == 'early_trace\n'
+
+
 def verify(original: str, derived: str, board: str) -> None:
     at = checked_row(original, board)['boot_at']
     if len(original) != len(derived) or original[:at] != derived[:at] or original[at + 1 :] != derived[at + 1 :]:
@@ -106,10 +111,13 @@ def main() -> None:
     parser.add_argument('--script', type=Path)
     parser.add_argument('--stamp', type=Path)
     parser.add_argument('--profile', default='')
+    parser.add_argument('--trace-stamp', type=Path)
     for flag in ('early-trace', 'stop-after-vm', 'single-core'):
         parser.add_argument(f'--{flag}', action='store_true')
     args = parser.parse_args()
     if args.command == 'derive':
+        if not trace_stamp(args.trace_stamp):
+            refuse('no early-trace stamp: the kernel was not shown to carry the trace')
         text = derive(
             args.header.read_text(),
             args.board,

@@ -169,19 +169,55 @@ that holds the real `SwitchBoard.h` ahead of the derived one (`loader.c` and `ca
 
 The binary the check reads is the one in the package: the kernel's `start.s` must hold the 16-byte sequence `ENABLE_SEQUENCE + TRACE_SEQUENCE` (`first_xnu_check.py`). The stamp `early-trace.ok` is an input of `BootPackage` only.
 
-Gap found in this review, not changed: `BoardHeader`, `BoardAgree` and `BootBl33` do not depend on `early-trace.ok`. The `--early-trace` the derive command carries comes from the `require_early_trace`
-attribute, not from the kernel binary. With the flag on and a kernel without the trace, `EarlyTraceCheck` fails and no package is made, but the loader and `bl33.bin` with `boot` 1 could still be built if someone asked for those outputs
-directly (`--output_groups` or a single action's output). Making `early-trace.ok` an input of `BoardHeader` would close it. That is a change to the rule, so it waits for the owner's approval.
+The gap this review found, `early-trace.ok` feeding `BootPackage` only, is closed in the next commit (below).
+
+### `early-trace.ok` on the derived table and on bl33
+
+`_boot_package_impl` now declares `EarlyTraceCheck` before the derived table. `BoardHeader` reads `early-trace.ok` and passes it to the tool as `--trace-stamp`; the tool refuses unless the file
+holds exactly `early_trace`, which only `first_xnu_check.py kernel` writes and only for a kernel that has the trace. `BootBl33` takes the stamp directly when the target enables a row, `BoardAgree` stays an input of `BootBl33`,
+and `BootPackage` still reads it. The script, the loader's compile and the loader's header inputs read the derived table, so they depend on the stamp through `BoardHeader`.
+Whatever output is asked for (`boards/SwitchBoard.h`, `loader.uboot.bin`, `bl33.bin` or the package), a kernel without the trace stops the build at `EarlyTraceCheck`. The check graph now expects:
+
+| Action | Reads `early-trace.ok` |
+| --- | --- |
+| `BoardHeader` | yes (input) |
+| `BootBl33` | yes (input, only with a boot row) |
+| `BootPackage` | yes (as before) |
+| every other action, and every action of the normal and diagnostic packages | no |
+
+Because the stamp is made before the derived table, a release or prebuilt-loader build with the flag on now stops at `... needs the debug profile: the early marks exist only in DEVELOPMENT or DEBUG kernels`
+(`_boot_package_impl`). The Mac reported `... enables boot rows but has a release profile or prebuilt loader` for the old order; `_derive_boards` still carries that check as a second guard. Both are refusals.
+
+Mac check for this commit, analysis only: repeat the four `aquery` runs of the table above; add `BoardHeader` to the `early-trace.ok` column of the loop (it must list the stamp), and confirm the normal packages' listings did not change.
 
 ### The XNU linker warning
 
-Its text is not in this repository, the earlier reports or this session, so its effect cannot be judged from here. To get it and the three facts that decide its effect:
+The warnings (Mac, `early_trace=true`, build succeeded): `-new_linker is obsolete`; `-segment_order should list all segments, <segment> is missing` for `__PRELINK_TEXT`, `__PRELINK_INFO`, `__PLK_TEXT_EXEC`,
+`__PRELINK_DATA`, `__PLK_DATA_CONST`, `__PLK_LLVM_COV`, `__PLK_LINKEDIT`, `__LINKINFO`; and `-segment_order of __LINKEDIT is ignored, the segment must be ordered last`. Read from the sources, nothing re-run:
+
+| Question | Finding |
+| --- | --- |
+| Whose flags | Apple's. `kernel/xnu-10063.141.1/config/recipes_development.bzl` repeats `makedefs/MakeInc.def`: `-Wl,-new_linker` (recipe line 5596, MakeInc.def 663) and `-Wl,-segment_order,__TEXT:__DATA_CONST:__DATA_SPTM:__LINKEDIT:__TEXT_EXEC:...:__BOOTDATA` (recipe 5636, MakeInc.def 824). This repository did not add them |
+| Why those eight segments | They are the ones the same link line creates with `-sectcreate` (`__PRELINK_TEXT`, `__PRELINK_INFO` at recipe 5593 and 5595, `__PLK_TEXT_EXEC`, `__PRELINK_DATA`, `__PLK_DATA_CONST`, `__PLK_LLVM_COV`, `__PLK_LINKEDIT` at 5630 to 5634, `__LINKINFO` at 5648). The order list does not name them. Eight of the eight match, so the list of warnings is explained by the flags and by nothing else |
+| `__LINKEDIT` | The list names it fourth; the linker wants it last and ignores the entry |
+| `-new_linker` | The flag selects Apple's newer linker; a current Xcode linker accepts and ignores it, which is the "obsolete" message. Which Xcode the Mac has is not recorded: `xcrun ld -v` |
+| `early_trace` | No link. `kernel/BUILD.bazel` (lines 62 to 64) says only `start.s` reads `SWITCH_EARLY_TRACE`, so only its object changes; the link line is the same with the flag off. The plain build should print the same ten lines. Not yet seen |
+| Erista | Nothing board specific: these flags are the same for the OLED build and for the Erista package, which differ in ADT, DTB and boot files, not in the kernel link |
+| iOS 27 tree | `xnu-12377.121.6/config/recipes_*.bzl` has the same `-segment_order` (line 6611, 5548); whether it warns is not known |
+
+What this could change, and what no evidence here settles: the linker places named segments in list order and the rest by its own rule, so a newer linker may order the unnamed segments differently from the linker Apple built with.
+`__PRELINK_TEXT` has its own address (`-segaddr 0xfffffff004004000`), so it is not moved by that. Whether the built kernel's segment order matters to this repository's tools (prelink, window layout, `first_xnu_check.py`,
+which matches 16 bytes of `start.s`) depends on the order the kernel has, which a build output shows and the sources do not. Nothing said here is a finding about the boot; the link flags are not changed.
+
+To close it on the Mac (no change to any flag):
 
 ```
 bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked 2>&1 | tee kernel-link-trace.log | grep -i warning
 bazel build --config=ios17 --//kernel:early_trace=false //kernel:prelinked 2>&1 | tee kernel-link-plain.log | grep -i warning
-diff <(grep -i warning kernel-link-trace.log) <(grep -i warning kernel-link-plain.log)
+diff <(grep -i warning kernel-link-trace.log) <(grep -i warning kernel-link-plain.log)       # expected: no difference
+xcrun ld -v 2>&1 | head -2; xcodebuild -version
+for k in trace plain; do xcrun otool -l <that kernel> | awk '/segname/{s=$2} /vmaddr/{print s, $2}' > seg-$k.txt; done   # the kernel before prelink, from `//kernel:kernel`
 ```
 
-Send the exact lines, whether the plain build shows them too, and whether the kernel's size, entry (`0xb53cc4c8` at the last report) and window (17543168 bytes in 87 blocks) differ from the last report. A warning that appears in both and leaves
-those figures alone predates the trace build; one only in the trace build is a finding for `start.s`.
+Report the diff, the Xcode version and the two segment lists. In the segment list, check that `__LINKEDIT` is last, that the order of the named segments is the list's, and that the 17543168-byte, 87-block window and entry
+`0xb53cc4c8` of the last report are unchanged. If the old builds printed the same warnings, the toolchain did not change them.

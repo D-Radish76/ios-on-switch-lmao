@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import first_xnu_check as scan
 from board_header import agree, derive, rows, verify
 from boot_script import board_gate
 
@@ -182,6 +183,15 @@ class ScriptAndLoaderAgree(unittest.TestCase):
         self.assertEqual(['oled 1 1', 'erista 1 1', 'detected erista 1'], outputs['derived'])
 
 
+FLAGS = ('--early-trace', '--stop-after-vm', '--single-core', '--profile', 'debug')
+
+
+def good_stamp(directory: str) -> Path:
+    path = Path(directory, 'early-trace.ok')
+    path.write_text('early_trace\n')
+    return path
+
+
 class CommandLine(unittest.TestCase):
     def run_tool(self, *arguments: str) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(TOOL), *arguments], capture_output=True, text=True, check=False)
@@ -189,7 +199,7 @@ class CommandLine(unittest.TestCase):
     def test_derive_verify_and_agree_through_the_command_line(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out, stamp = Path(tmp, 'SwitchBoard.h'), Path(tmp, 'ok')
-            flags = ['--early-trace', '--stop-after-vm', '--single-core', '--profile', 'debug']
+            flags = [*FLAGS, '--trace-stamp', str(good_stamp(tmp))]
             done = self.run_tool('derive', '--board', 'erista', '--header', str(HEADER_PATH), '--out', str(out), *flags)
             self.assertEqual(0, done.returncode, done.stderr)
             self.assertEqual(derive(HEADER, 'erista', **ALL), out.read_text())
@@ -206,11 +216,11 @@ class CommandLine(unittest.TestCase):
             self.assertTrue(stamp.exists())
 
     def test_every_missing_condition_is_a_refusal_with_no_output_file(self) -> None:
-        full = ['--early-trace', '--stop-after-vm', '--single-core', '--profile', 'debug']
+        full = list(FLAGS)
         for dropped in ('--early-trace', '--stop-after-vm', '--single-core'):
             with tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp, 'SwitchBoard.h')
-                flags = [f for f in full if f != dropped]
+                flags = [*(f for f in full if f != dropped), '--trace-stamp', str(good_stamp(tmp))]
                 done = self.run_tool(
                     'derive', '--board', 'erista', '--header', str(HEADER_PATH), '--out', str(out), *flags
                 )
@@ -219,10 +229,68 @@ class CommandLine(unittest.TestCase):
                 self.assertFalse(out.exists(), dropped)
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp, 'SwitchBoard.h')
-            flags = ['--early-trace', '--stop-after-vm', '--single-core', '--profile', 'release']
+            flags = [
+                '--early-trace',
+                '--stop-after-vm',
+                '--single-core',
+                '--profile',
+                'release',
+                '--trace-stamp',
+                str(good_stamp(tmp)),
+            ]
             done = self.run_tool('derive', '--board', 'erista', '--header', str(HEADER_PATH), '--out', str(out), *flags)
             self.assertNotEqual(0, done.returncode)
             self.assertFalse(out.exists())
+
+    def derive_with(self, *extra: str) -> tuple[subprocess.CompletedProcess, bool]:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, 'SwitchBoard.h')
+            done = self.run_tool(
+                'derive', '--board', 'erista', '--header', str(HEADER_PATH), '--out', str(out), *FLAGS, *extra
+            )
+            return done, out.exists()
+
+    def test_no_stamp_means_no_derived_header(self) -> None:
+        done, written = self.derive_with()
+        self.assertNotEqual(0, done.returncode)
+        self.assertRegex(done.stderr, 'refused: no early-trace stamp')
+        self.assertFalse(written)
+
+    def test_a_missing_or_wrong_stamp_means_no_derived_header(self) -> None:
+        for content in (None, '', 'early_trace', 'plain\n', 'early_trace\nextra\n'):
+            with tempfile.TemporaryDirectory() as tmp:
+                stamp = Path(tmp, 'early-trace.ok')
+                if content is not None:
+                    stamp.write_text(content)
+                done, written = self.derive_with('--trace-stamp', str(stamp))
+                self.assertNotEqual(0, done.returncode, content)
+                self.assertRegex(done.stderr, 'no early-trace stamp', content)
+                self.assertFalse(written, content)
+
+    def test_a_scan_that_fails_leaves_no_stamp_so_no_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            kernel, stamp = Path(tmp, 'kernel'), Path(tmp, 'early-trace.ok')
+            kernel.write_bytes(b'a kernel built with early_trace=false')
+            check = subprocess.run(
+                [sys.executable, str(TOOL.parent / 'first_xnu_check.py'), 'kernel', str(kernel), '--stamp', str(stamp)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(0, check.returncode)
+            self.assertFalse(stamp.exists())
+            done, written = self.derive_with('--trace-stamp', str(stamp))
+            self.assertNotEqual(0, done.returncode)
+            self.assertFalse(written)
+
+    def test_a_stamp_the_scan_wrote_for_a_trace_kernel_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            kernel, stamp = Path(tmp, 'kernel'), Path(tmp, 'early-trace.ok')
+            kernel.write_bytes(b'\0' * 16 + scan.TRACE_SEQUENCE + b'\0' * 16)
+            self.assertEqual(0, scan.main(['kernel', str(kernel), '--stamp', str(stamp)]))
+            done, written = self.derive_with('--trace-stamp', str(stamp))
+            self.assertEqual(0, done.returncode, done.stderr)
+            self.assertTrue(written)
 
     def test_no_boot_or_features_of_any_other_row_appears_in_the_output(self) -> None:
         derived = derive(HEADER, 'erista', **ALL)

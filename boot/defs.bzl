@@ -184,16 +184,19 @@ def _swap(files, real, derived):
         fail("the real board table %s must be in the list exactly once" % real.path)
     return [derived if f.path == real.path else f for f in files]
 
-def _derive_boards(ctx, out, release, smp, prebuilt):
+def _derive_boards(ctx, out, release, smp, prebuilt, early_trace_check):
     """The board table this package's script and loader are built from, with the rows it enables booting; fails closed.
 
-    Every condition is checked here and again by the tool that writes the file, which refuses without the matching flag."""
+    Every condition is checked here and again by the tool that writes the file, which refuses without the matching flag.
+    The action also reads early_trace_check, the stamp of the kernel scan, so the table cannot be made for a kernel without
+    the trace, whichever output is asked for."""
     rows = ctx.attr.enable_boot_rows
     if _BOOT_ENABLE_TARGETS.get(ctx.label.name) != rows or ctx.label.package != "boot":
         fail("%s may not enable boot rows %s: only %s can" % (ctx.label, rows, _BOOT_ENABLE_TARGETS))
     for ok, why in (
         (not release and not prebuilt, "a release profile or prebuilt loader"),
         (ctx.attr.require_early_trace, "no require_early_trace"),
+        (early_trace_check != None, "no early-trace stamp"),
         (ctx.attr.stop_after_vm, "no stop_after_vm"),
         (not smp, "more than one core"),
     ):
@@ -211,7 +214,8 @@ def _derive_boards(ctx, out, release, smp, prebuilt):
     args.add("--header", real)
     args.add("--out", derived)
     args.add_all(["--early-trace", "--stop-after-vm", "--single-core", "--profile", "debug"])
-    _run(ctx, ctx.executable._board_header, [args], [real], [derived], "BoardHeader", "Deriving the board table that boots %s" % rows[0])
+    args.add("--trace-stamp", early_trace_check)
+    _run(ctx, ctx.executable._board_header, [args], [real, early_trace_check], [derived], "BoardHeader", "Deriving the board table that boots %s" % rows[0])
     return derived
 
 def _boot_package_impl(ctx):
@@ -229,21 +233,21 @@ def _boot_package_impl(ctx):
     profile = "release" if prebuilt else ctx.attr._profile[BuildSettingInfo].value
     release = profile == "release"
 
-    # The board table the script and the loader share. Without enable_boot_rows it is the real one, and boot is what it says.
-    boards = ctx.file.boards
-    markers = ctx.files.loader_include_markers
-    loader_headers = ctx.files.loader_hdrs
-    if ctx.attr.enable_boot_rows:
-        boards = _derive_boards(ctx, out, release, smp, prebuilt)
-        markers = _swap(markers, ctx.file.boards, boards)
-        loader_headers = _swap(loader_headers, ctx.file.boards, boards)
-
     early_trace_check = None
     if ctx.attr.require_early_trace:
         if release:
             fail("%s needs the debug profile: the early marks exist only in DEVELOPMENT or DEBUG kernels" % ctx.label)
         early_trace_check = out("early-trace.ok")
         _run(ctx, ctx.executable._first_xnu_check, ["kernel", ctx.file.kernel.path, "--stamp", early_trace_check.path], [ctx.file.kernel], [early_trace_check], "EarlyTraceCheck", "Checking the kernel was built with --//kernel:early_trace=true")
+
+    # The board table the script and the loader share. Without enable_boot_rows it is the real one, and boot is what it says.
+    boards = ctx.file.boards
+    markers = ctx.files.loader_include_markers
+    loader_headers = ctx.files.loader_hdrs
+    if ctx.attr.enable_boot_rows:
+        boards = _derive_boards(ctx, out, release, smp, prebuilt, early_trace_check)
+        markers = _swap(markers, ctx.file.boards, boards)
+        loader_headers = _swap(loader_headers, ctx.file.boards, boards)
 
     # --- boot-args, overlay plan, ADT ------------------------------------------------------------------------------
     boot_args = out("boot-args.txt")
@@ -480,7 +484,7 @@ def _boot_package_impl(ctx):
     args.add("--dtb", ctx.file.dtb)
     args.add_all(loader_constants, before_each = "--loader-constants")
     args.add("--out", bl33)
-    _run(ctx, ctx.executable._bl33, [args], [u_boot, window, constants, script, loader, ctx.file.exporter, ctx.file.dtb] + loader_constants + board_checks, [bl33], "BootBl33", "Staging the boot files and the kernel window in bl33.bin")
+    _run(ctx, ctx.executable._bl33, [args], [u_boot, window, constants, script, loader, ctx.file.exporter, ctx.file.dtb] + loader_constants + board_checks + ([early_trace_check] if ctx.attr.enable_boot_rows else []), [bl33], "BootBl33", "Staging the boot files and the kernel window in bl33.bin")
 
     # --- the overlay and the directory -----------------------------------------------------------------------------
     overlay = ctx.actions.declare_directory(name + "_work/overlay")
