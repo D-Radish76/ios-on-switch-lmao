@@ -42,6 +42,7 @@ exports_files([
     ".swiftlint.yml",
     "ERISTA_D0S_RUN.md",
     "ERISTA_D0S_V2_DESIGN.md",
+    "ERISTA_D0S_V2_RUN.md",
     "ERISTA_FIRST_XNU_BOOT.md",
     "dprint.json",
     "ruff.toml",

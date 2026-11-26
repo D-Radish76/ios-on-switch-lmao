@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the D0 loader's binary may contain, read from its link map and its disassembly.
 
-    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r | --t1v3 | --t1t | --t2]
+    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r | --t1v3 | --t1t | --t2 | --s2]
 
 Exits nonzero, naming every violation, when the link pulled in the normal loader's kernel path, when code writes a CPU
 system register that WRITES does not list, or when an instruction outside the reviewed set is present. WRITES is the
@@ -124,6 +124,21 @@ T1T_GATE = 'switch_t1t_access'
 T1T_RAW = 'switch_t1t_read32'
 T1T_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t1t_read32>')
 T1T_ADDRESS_HOLDERS = ('switch_t1t_address', 'switch_t1t_may_read', 'switch_t1t_read32')
+# D0-S v2 (boot/diag/loader/s2*.c) reads four words and has no store counterpart of its raw read. It links nothing of the
+# other stages and none of their allowlists.
+S2_SYMBOLS = (
+    'switch_s2_run_on_hardware',
+    'switch_s2_run',
+    'switch_s2_access',
+    'switch_s2_read32',
+    'switch_s2_may_read',
+    'switch_s2_address',
+    'switch_s2_settle',
+)
+S2_GATE = 'switch_s2_access'
+S2_RAW = 'switch_s2_read32'
+S2_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_s2_read32>')
+S2_ADDRESS_HOLDERS = ('switch_s2_address', 'switch_s2_may_read', 'switch_s2_read32')
 STORE = re.compile(r'^(?:str|stp|stur|stlr|stxr|stnp|st[1-4])[a-z]*\b')
 STACK_STORE = re.compile(r'\[(?:sp|x29)\b')
 COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
@@ -157,6 +172,11 @@ T1T_ADDRESSES = frozenset(
 )  # fmt: skip
 
 
+# D0-S v2's allowlist (boot/diag/loader/s2_regs.c) as the linker laid it out: two CAR words and two SDMMC1 words.
+S2_PAGES = ((0x60006000, 0x60007000), (0x700B0000, 0x700B1000))
+S2_ADDRESSES = frozenset({0x60006004, 0x60006010, 0x700B0024, 0x700B002C})
+
+
 def inspect_map(  # noqa: PLR0913
     text: str,
     sd: bool = False,
@@ -166,6 +186,7 @@ def inspect_map(  # noqa: PLR0913
     t1v3: bool = False,
     t1t: bool = False,
     t2: bool = False,
+    s2: bool = False,
 ) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
@@ -177,6 +198,7 @@ def inspect_map(  # noqa: PLR0913
         *(T1V3_SYMBOLS if t1v3 else ()),
         *(T1T_SYMBOLS if t1t else ()),
         *(T2_SYMBOLS if t2 else ()),
+        *(S2_SYMBOLS if s2 else ()),
     )
     problems += [f'the link lacks {name}' for name in wanted if name not in text]
     problems += [f'the link has {name} outside T1' for name in T1_SYMBOLS if not t1 and name in text]
@@ -184,6 +206,13 @@ def inspect_map(  # noqa: PLR0913
     problems += [f'the link has {name} outside T1 v3' for name in T1V3_SYMBOLS if not t1v3 and name in text]
     problems += [f'the link has {name} outside T1-T' for name in T1T_SYMBOLS if not t1t and name in text]
     problems += [f'the link has {name} outside T2' for name in T2_SYMBOLS if not t2 and name in text]
+    problems += [f'the link has {name} outside D0-S v2' for name in S2_SYMBOLS if not s2 and name in text]
+    if s2:
+        problems += [
+            f'D0-S v2 links {name}'
+            for name in ('switch_t1_', 'switch_t1r_', 'switch_t1v3_', 'switch_t1t_', 'switch_t2_', 'switch_s2_write')
+            if name in text
+        ]
     if t2:
         problems += [
             f'T2 links {name}'
@@ -341,15 +370,21 @@ def inspect_t1t(code: dict[str, list[str]]) -> list[str]:
     return inspect_read_only(code, T1T_GATE, T1T_RAW, T1T_CALL, T1T_ADDRESS_HOLDERS)
 
 
-def inspect_image(flat: bytes, *, t1v3: bool = False, t1t: bool = False, t2: bool = False) -> list[str]:
+def inspect_s2(code: dict[str, list[str]]) -> list[str]:
+    return inspect_read_only(code, S2_GATE, S2_RAW, S2_CALL, S2_ADDRESS_HOLDERS)
+
+
+def inspect_image(flat: bytes, *, t1v3: bool = False, t1t: bool = False, t2: bool = False, s2: bool = False) -> list[str]:
     """Return what is wrong with the linked flat image: the register addresses it holds as data, each once."""
-    if not (t1v3 or t1t or t2):
+    if not (t1v3 or t1t or t2 or s2):
         return []
     name, pages, listed = (
         ('T1 v3', T1V3_PAGES, T1V3_ADDRESSES)
         if t1v3
         else ('T2', T1V3_PAGES, T1V3_ADDRESSES)
         if t2
+        else ('D0-S v2', S2_PAGES, S2_ADDRESSES)
+        if s2
         else ('T1-T', T1T_PAGES, T1T_ADDRESSES)
     )
     found = [
@@ -378,6 +413,7 @@ def inspect_disassembly(  # noqa: C901, PLR0913
     t1v3: bool = False,
     t1t: bool = False,
     t2: bool = False,
+    s2: bool = False,
 ) -> list[str]:
     code = functions(disassembly)
     writes, special, problems = count_instructions(code, sd)
@@ -404,6 +440,8 @@ def inspect_disassembly(  # noqa: C901, PLR0913
         problems += inspect_t1t(code)
     if t2:
         problems += inspect_t1(code, 'switch_t2_')
+    if s2:
+        problems += inspect_s2(code)
     return problems
 
 
@@ -425,8 +463,9 @@ def main() -> int:
     parser.add_argument('--t1v3', action='store_true', help='the T1 v3 image: the divisor test is linked')
     parser.add_argument('--t1t', action='store_true', help='the T1-T image: the timing register reads are linked')
     parser.add_argument('--t2', action='store_true', help='the T2 image: the divisor write and one TMP451 conversion are linked')
+    parser.add_argument('--s2', action='store_true', help='the D0-S v2 image: the CAR and SDMMC1 reads are linked')
     args = parser.parse_args()
-    flags = {'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t, 't2': args.t2}
+    flags = {'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t, 't2': args.t2, 's2': args.s2}
     problems = inspect_map(args.map.read_text(), **flags) + inspect_disassembly(args.disassembly.read_text(), **flags)
     if args.report:
         args.report.write_text('\n'.join(problems or ['D0 loader inspection passed']) + '\n' + report() + '\n')

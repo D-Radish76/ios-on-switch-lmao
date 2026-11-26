@@ -1,6 +1,6 @@
 # D0-S first hardware run: FAIL / PARTIAL. Erista, hekate 6.5.5, started from Nyx "More configs".
 # Reported by the user 2026-11-26 20:06 JST. Start 29 C, end 30 C (Nyx, one reading each). The photograph is not stored here.
-# The run hung after the framebuffer line. POWER held, hekate reached by hand. No reset, no loader report, no CAR line.
+# The run hung after the framebuffer line. POWER held, hekate reached by hand (end 30 C). No reset, no loader report, no CAR line.
 reached: BOARD OK
 reached: FRAMEBUFFER OK
 reached: DTB COPIED AND FRAMEBUFFER RESERVED
@@ -15,4 +15,5 @@ framebuffer_size_property_length=4
 framebuffer_reserved_size=0x400000
 last_line: D0-S FRAMEBUFFER PROPERTIES: ADDRESS ...
 not reached: D0-S CAR line, SDMMC1 line, HANDOFF TO THE LOADER, the loader report, the timed reset
-next_command: setexpr.l state_car_reset *0x60006004
+next_script_line: if setexpr.l state_car_reset *0x60006004 && setexpr.l state_car_clock *0x60006010; then
+hung_instruction: not identified. The script's next line is not shown to be the one that hung (no UART, and the video console may lag the script).

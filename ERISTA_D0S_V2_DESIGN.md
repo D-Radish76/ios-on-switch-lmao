@@ -1,12 +1,12 @@
 # D0-S v2
 
-D0-S (the first one) hung on the first U-Boot MMIO read. `boot/diag/erista-d0s-run1.txt` has the run. D0-S stays as it is and is
+D0-S (the first one) hung after its framebuffer line. The instruction that hung is not identified. `boot/diag/erista-d0s-run1.txt` has the run. D0-S stays as it is and is
 not run again. v2 is a separate image and a separate script. Nothing is approved to run: `boot` 0, feature mask 0, every HOLD.
 
 ## What the run shows
 
-The script printed the framebuffer line, then the next command was `setexpr.l state_car_reset *0x60006004`. The screen never
-moved on. Three places fit that: the read of `0x60006004`, the read of `0x60006010`, or a later step whose text the video console had
+The script printed the framebuffer line. The next lines were two U-Boot loads of CAR words, the SDMMC1 gate, `sleep 5` and the
+handoff. The screen never moved on. Several places fit that, and none is shown to be the cause: the load of `0x60006004`, of `0x60006010`, of an SDMMC1 word, or a later step whose text the video console had
 not drawn yet. The run cannot tell them apart, and there is no UART.
 
 What is known:
@@ -22,12 +22,12 @@ What is known:
 ## Design
 
 The U-Boot script keeps the steps that ran (board gate, FDT framebuffer properties, DTB copy, loader write, `bootm prep`, the
-`D0-S FRAMEBUFFER PROPERTIES` echo) and has no `*ADDR` load at all. The reads move to the loader, in `boot/diag/loader/s2*.c`:
+`D0-S FRAMEBUFFER PROPERTIES` echo) and makes no load from a device address (D0's RAM reads stay). The reads move to the loader, in `boot/diag/loader/s2*.c`:
 
 - `switch_s2_run` reads `RST_DEVICES_L` and `CLK_OUT_ENB_L` first, then `0x700B0024` and `0x700B002C` only if bit 14 says the clock is on
   and the reset is off.
 - The allowlist is those four addresses. There is no write function in the stage, the same shape as T1-T.
-- The loader screen shows the four words, or why SDMMC1 was skipped, before the D0-R report and the 15 s reset.
+- The loader screen shows each read as a BEGIN line and a RESULT line, then the 15 s countdown and the PSCI reset of every diagnostic loader. It has no D0-R reservation or memory report.
 
 SDMMC1 is the new risk. A present-state read of a clocked controller is ordinary, but nothing here has done it at EL1. The v2 screen
 prints the CAR words before the SDMMC1 reads so that a hang there still leaves the CAR result on the screen.
@@ -37,5 +37,11 @@ hold. Not planned.
 
 ## Done offline
 
-`s2.h`, `s2.c`, `s2_regs.c` and `s2_test` (7 tests: order, SDMMC1 only behind the clock and reset bits, the T1-T words, the exact
-allowlist). Not done: the image, its screen lines, the script, the inspection mode and the hash line. Each needs approval and a Mac build.
+`//boot:diag_state_v2` (iOS Diag State V2, entry `ios-diag-state-v2`, `diag_state_v2` line of `erista-diag-image-hashes.txt`),
+its script `boot/diag/state/u-boot-script-state-v2.txt` and the loader files `s2.c`, `s2_regs.c`, `s2_gate.c`, `s2_access.c`,
+`s2_report.c`, `s2_settle.c`. The script is D0's plus the title line and the framebuffer echo; it makes no load from a device address
+and keeps D0's RAM reads. The loader draws a BEGIN line before each read and a RESULT line after it, each followed by `dsb sy` and a
+100 ms wait on the counter, 11 lines in all; a line that did not settle (no screen, a counter that is not 19.2 MHz or does not advance)
+stops the run before the next read with stop `0802`. The SDMMC1 words are read only behind the CAR bits. Host tests: `s2_test` (15),
+`diag_state_v2_test` (script, inspection, real link, hashes); the static audit is `boot/diag/erista-s2-mmio-audit.txt`. The run sheet
+is `ERISTA_D0S_V2_RUN.md`. Not run: Bazel, the Mac build, any hardware. D0-S v2 stays HOLD.

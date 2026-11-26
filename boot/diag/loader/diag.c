@@ -29,9 +29,12 @@
 #ifdef SWITCH_DIAG_T2
 #include "t2_report.h"
 #endif
+#ifdef SWITCH_DIAG_S2
+#include "s2_report.h"
+#endif
 
 #if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3) || \
-    defined(SWITCH_DIAG_T1T) || defined(SWITCH_DIAG_T2)
+    defined(SWITCH_DIAG_T1T) || defined(SWITCH_DIAG_T2) || defined(SWITCH_DIAG_S2)
 #define SWITCH_DIAG_SINGLE_CHECK 1
 #endif
 
@@ -85,6 +88,11 @@ enum {
     D_T2_NEW_SAMPLE,
     D_T2_TIMES,
 #endif
+#ifdef SWITCH_DIAG_S2
+    D_S2_STOP_READS,
+    D_S2_CAR,
+    D_S2_SDMMC1,
+#endif
 #ifdef SWITCH_DIAG_T1T
     D_T1T_STOP_READS,
     D_T1T_CLOCKS_L,
@@ -103,6 +111,9 @@ _Static_assert(D_T1V3_ID_STATUS < R_RECORD_WORDS, "T1 v3 results fit the probe r
 #endif
 #ifdef SWITCH_DIAG_T2
 _Static_assert(D_T2_TIMES < R_RECORD_WORDS, "T2 results fit the probe record");
+#endif
+#ifdef SWITCH_DIAG_S2
+_Static_assert(D_S2_SDMMC1 < R_RECORD_WORDS, "S2 results fit the probe record");
 #endif
 
 /* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
@@ -548,6 +559,29 @@ static void report_t2(void)
 }
 #endif
 
+#ifdef SWITCH_DIAG_S2
+/* A step is on the screen only when it was drawn and the settle ran; with no screen nothing may be read. */
+static int show_s2(void *context, unsigned step, const struct switch_s2_result *result)
+{
+    (void)context;
+    if (!diag.screen)
+        return 0;
+    struct switch_s2_line line;
+    switch_s2_screen_line(step, result, &line);
+    put(LEFT, 9 + step, &line.text, line.bad ? DISPLAY_RED : DISPLAY_WHITE);
+    return switch_s2_settle();
+}
+
+static void report_s2(void)
+{
+    struct switch_s2_result result;
+    switch_s2_run_on_hardware(&result, show_s2);
+    probe_record[D_S2_STOP_READS] = (uint64_t)result.stop << 32 | result.reads;
+    probe_record[D_S2_CAR] = (uint64_t)result.rst_devices_l << 32 | result.clk_out_enb_l;
+    probe_record[D_S2_SDMMC1] = (uint64_t)result.sd_present_state << 32 | result.sd_word_2c;
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1
 /* Rows 9 to 16, full width: T1 draws no register column. */
 static void report_t1(void)
@@ -580,6 +614,8 @@ void switch_diag_after_transition(void)
     put_text(0, "LOAD DIAG T1V3. I2C1 DIVISOR WRITE AND ONE TMP451 ID READ. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T2)
     put_text(0, "LOAD DIAG T2. I2C1 DIVISOR WRITE AND ONE TMP451 ONE-SHOT CONVERSION. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_S2)
+    put_text(0, "LOAD DIAG S2. CAR AND SDMMC1 REGISTER READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1T)
     put_text(0, "LOAD DIAG T1T. CAR AND I2C1/I2C5 REGISTER READS ONLY. NO I2C TRANSFER. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1R)
@@ -614,6 +650,11 @@ void switch_diag_after_transition(void)
             report_t2();
         else
             put_text(9, "NOT AN ERISTA. NO T2 REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_S2)
+        if (known && board->t210b01 == 0)
+            report_s2();
+        else
+            put_text(9, "NOT AN ERISTA. NO S2 REGISTER TOUCHED", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_T1T)
         if (known && board->t210b01 == 0)
             report_t1t();
@@ -645,6 +686,8 @@ void switch_diag_after_transition(void)
     put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T2)
     put_text(24, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_S2)
+    put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1T)
     put_text(26, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1R)

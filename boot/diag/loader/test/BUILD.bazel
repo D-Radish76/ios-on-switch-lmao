@@ -159,13 +159,17 @@ host_test(
     deps = [":t2"],
 )
 
-# D0-S v2's read logic: four allowlisted reads, SDMMC1 only behind its CAR clock and reset bits.
+# D0-S v2's read logic: four allowlisted reads, each between two shown steps, SDMMC1 only behind its CAR clock and reset bits.
 host_library(
     name = "s2",
     srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
         "//boot:diag/loader/s2.c",
         "//boot:diag/loader/s2.h",
         "//boot:diag/loader/s2_regs.c",
+        "//boot:diag/loader/s2_report.c",
+        "//boot:diag/loader/s2_report.h",
     ],
     copts = ["-O1"],
 )

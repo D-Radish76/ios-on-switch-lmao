@@ -2,7 +2,7 @@ r"""List the device-window addresses a diagnostic loader forms in code and where
 
 Input is the loader's disassembly (llvm-objdump -d --no-show-raw-insn), `loader.dis` in the Bazel output:
     diag_mmio_audit.py --disassembly bazel-bin/boot/diag_t1t/loader.dis \\
-        [--uboot-image bazel-bin/boot/diag_t1t/loader.uboot.bin --t1t | --t1v3]
+        [--uboot-image bazel-bin/boot/diag_t1t/loader.uboot.bin --t1t | --t1v3 | --s2]
 It reads text only, so the Mac file works as well as a Linux one. The exit status is 1 for a window address that reaches
 a load, a store, a copy or a call other than the identity register reads. What a linear scan cannot show is in
 ERISTA_T1T_RUN.md, section 8.
@@ -141,7 +141,7 @@ def callers(code: dict[str, list[tuple[str, str]]], target: str) -> list[str]:
 
 def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
     lines = []
-    for name in ('switch_diag_read32', 'switch_t1t_read32'):
+    for name in ('switch_diag_read32', 'switch_t1t_read32', 'switch_s2_read32'):
         if name in code:
             loads = [t for _, t in code[name] if MEMORY.match(t)]
             lines.append(
@@ -151,6 +151,11 @@ def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
         lines.append(
             '   T1-T: static table (switch_t1t_address) -> switch_t1t_access -> switch_t1t_read32 -> one load; '
             f'switch_t1t_address called by {", ".join(callers(code, "switch_t1t_address"))}'
+        )
+    if 'switch_s2_access' in code:
+        lines.append(
+            '   D0-S v2: static table (switch_s2_address) -> switch_s2_access -> switch_s2_read32 -> one load; '
+            f'switch_s2_address called by {", ".join(callers(code, "switch_s2_address"))}'
         )
     if 'switch_t1v3_access' in code:
         lines.append(
@@ -178,6 +183,9 @@ def judge(found: Findings, code: dict[str, list[tuple[str, str]]]) -> list[str]:
         f'switch_t1t_read32 is called by {c}' for c in callers(code, 'switch_t1t_read32') if c != 'switch_t1t_access'
     ]
     problems += [
+        f'switch_s2_read32 is called by {c}' for c in callers(code, 'switch_s2_read32') if c != 'switch_s2_access'
+    ]
+    problems += [
         f'{raw} is called by {c}'
         for raw in ('switch_t1v3_read32', 'switch_t1v3_write32')
         for c in callers(code, raw)
@@ -187,7 +195,7 @@ def judge(found: Findings, code: dict[str, list[tuple[str, str]]]) -> list[str]:
 
 
 def audit(
-    disassembly: str, flat: bytes | None = None, *, t1t: bool = False, t1v3: bool = False
+    disassembly: str, flat: bytes | None = None, *, t1t: bool = False, t1v3: bool = False, s2: bool = False
 ) -> tuple[list[str], list[str]]:
     """Return the report lines and the problems."""
     code = parse(disassembly)
@@ -211,15 +219,16 @@ def audit(
     report.append('5. Memory accesses by base: ' + ', '.join(f'{k} x{v}' for k, v in sorted(found.bases.items())))
     problems = judge(found, code)
     if flat is not None:
-        listed = inspect_image(flat, t1t=t1t, t1v3=t1v3)
-        name = 'T1-T' if t1t else 'T1 v3'
+        listed = inspect_image(flat, t1t=t1t, t1v3=t1v3, s2=s2)
+        name = 'D0-S v2' if s2 else 'T1-T' if t1t else 'T1 v3'
+        checked = t1t or t1v3 or s2
         report.append(
             '6. Flat image: '
             + (
                 f'register address words match the {name} list'
-                if (t1t or t1v3) and not listed
+                if checked and not listed
                 else 'MISMATCH'
-                if (t1t or t1v3)
+                if checked
                 else 'not checked'
             )
         )
@@ -233,6 +242,7 @@ def main() -> int:
     parser.add_argument('--uboot-image', type=Path, help='loader.uboot.bin; its flat image is checked as well')
     parser.add_argument('--t1t', action='store_true', help='the image is T1-T: check its register address words')
     parser.add_argument('--t1v3', action='store_true', help='the image is T1 v3: check its register address words')
+    parser.add_argument('--s2', action='store_true', help='the image is D0-S v2: check its register address words')
     args = parser.parse_args()
     flat = None
     if args.uboot_image:
@@ -241,7 +251,7 @@ def main() -> int:
             print('not a legacy U-Boot image', file=sys.stderr)
             return 2
         flat = raw[UIMAGE_HEADER:]
-    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t, t1v3=args.t1v3)
+    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t, t1v3=args.t1v3, s2=args.s2)
     print('\n'.join(report))
     if problems:
         print('\nPROBLEMS:\n' + '\n'.join(problems), file=sys.stderr)
