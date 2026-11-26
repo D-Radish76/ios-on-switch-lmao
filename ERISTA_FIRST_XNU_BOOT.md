@@ -26,6 +26,27 @@ bazel build --config=ios17 --//install:prebuilt=local --//kernel:early_trace=tru
 
 Under the release's prebuilt parts the bl33 stage refuses the target (constants differ), so `prebuilt=local` is required.
 
+The target sets `require_early_trace`. Analysis fails under `--config=release`, and an action reads the built kernel
+(`tools/package/first_xnu_check.py kernel`) for start.s's trace enable sequence, so a build without
+`--//kernel:early_trace=true` stops there and writes no package. The scan is for four instruction words in the kernel's
+text. It is host-tested on synthetic bytes only. On the Mac, once, to see it work on real kernels:
+
+```
+bazel build --config=ios17 --//kernel:early_trace=true //kernel:prelinked
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/<the prelinked kernel>   # exit 0
+bazel build --config=ios17 //kernel:prelinked
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/<the prelinked kernel>   # exit 1
+```
+
+The loader's room below U-Boot's stamps slot (`0xa001ef00`) and the SD reference page, from the built image (the link
+already fails past either):
+
+```
+python3 tools/package/first_xnu_check.py margin bazel-bin/boot/erista-first-xnu_work/loader.uboot.bin
+```
+
+It reports the flat image only. Stacks are not in the file, so `loader_link.py`'s footprint check stays the authority on those.
+
 ## What the screen shows
 
 Each mark is a 16x16 green block at y 280, x `16 + 40 * (stage - 1)`. Stages 1 to 6 are drawn by `start.s`, 7 to 21 by

@@ -612,3 +612,14 @@ py_test(
     ],
     deps = ["//tools/package:loader_abi"],
 )
+
+# The first-XNU package's kernel and loader-margin checks, and that the package rule demands the kernel check.
+py_test(
+    name = "first_xnu_check_test",
+    srcs = ["first_xnu_check_test.py"],
+    data = [
+        "//boot:build_file",
+        "//boot:defs.bzl",
+    ],
+    deps = ["//tools/package:first_xnu_check_lib"],
+)

@@ -169,6 +169,7 @@ boot_entry(
     adt = ":erista_adt",
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu",
+    require_early_trace = True,
     smp = ":single_core",
     tags = ["manual"],
 )

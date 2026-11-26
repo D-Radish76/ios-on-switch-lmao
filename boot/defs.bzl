@@ -170,6 +170,13 @@ def _boot_package_impl(ctx):
     profile = "release" if prebuilt else ctx.attr._profile[BuildSettingInfo].value
     release = profile == "release"
 
+    early_trace_check = None
+    if ctx.attr.require_early_trace:
+        if release:
+            fail("%s needs the debug profile: the early marks exist only in DEVELOPMENT or DEBUG kernels" % ctx.label)
+        early_trace_check = out("early-trace.ok")
+        _run(ctx, ctx.executable._first_xnu_check, ["kernel", ctx.file.kernel.path, "--stamp", early_trace_check.path], [ctx.file.kernel], [early_trace_check], "EarlyTraceCheck", "Checking the kernel was built with --//kernel:early_trace=true")
+
     # --- boot-args, overlay plan, ADT ------------------------------------------------------------------------------
     boot_args = out("boot-args.txt")
     flags = (["--smp"] if smp else []) + (["--release"] if release else [])
@@ -429,7 +436,7 @@ def _boot_package_impl(ctx):
     ctx.actions.run_shell(
         command = "\n".join(commands),
         arguments = [package.path],
-        inputs = [overlay, ctx.file.ini, ctx.file.icon, ctx.file.bootstrap_payload, bootstrap_manifest, helper] + switchroot.values() + ([seed_pin] if seed_pin else []),
+        inputs = [overlay, ctx.file.ini, ctx.file.icon, ctx.file.bootstrap_payload, bootstrap_manifest, helper] + switchroot.values() + ([seed_pin] if seed_pin else []) + ([early_trace_check] if early_trace_check else []),
         outputs = [package],
         mnemonic = "BootPackage",
         progress_message = "Assembling the iOS boot entry",
@@ -537,6 +544,8 @@ boot_package = rule(
         "_loader_link": _tool("//tools/package:loader_link"),
         "_boot_script": _tool("//tools/package:boot_script"),
         "_bl33": _tool("//tools/package:bl33"),
+        "_first_xnu_check": _tool("//tools/package:first_xnu_check"),
+        "require_early_trace": attr.bool(doc = "refuse a release profile, and a kernel whose start.s was not built with early_trace"),
         # LLVM 23.1.4's linker and binutils.
         "_ld_lld": attr.label(default = "@llvm//:bin/ld.lld", cfg = "exec", allow_single_file = True),
         "_objcopy": attr.label(default = "@llvm//:bin/llvm-objcopy", cfg = "exec", allow_single_file = True),

@@ -16,7 +16,7 @@ BUILD = Path('boot/BUILD.bazel')
 PACKAGE_BZL = Path('boot/package.bzl')
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
 LOADER = Path('boot/loader/loader.c').read_text()
-OWN = {'name', 'adt', 'dtb', 'smp', 'out', 'loader_defines', 'tags', 'target_compatible_with', 'visibility'}
+OWN = {'name', 'adt', 'dtb', 'smp', 'out', 'loader_defines', 'tags', 'target_compatible_with', 'visibility', 'require_early_trace'}
 
 
 class Select:
@@ -95,10 +95,12 @@ class EristaPackageTest(unittest.TestCase):
         self.assertNotIn(ERISTA['out'], (OLED.get('out', 'ios'), ROWS['out']))
 
     def test_the_first_xnu_package_is_the_erista_package_under_its_own_directory(self):
-        self.assertEqual({k: v for k, v in FIRST.items() if k not in ('name', 'out')}, {k: v for k, v in ERISTA.items() if k not in ('name', 'out')})
+        self.assertEqual({k: v for k, v in FIRST.items() if k not in ('name', 'out', 'require_early_trace')}, {k: v for k, v in ERISTA.items() if k not in ('name', 'out')})
+        self.assertIs(FIRST['require_early_trace'], True)
+        self.assertNotIn('require_early_trace', ERISTA)
         self.assertEqual(FIRST['out'], 'erista-first-xnu')
         self.assertNotIn(FIRST['out'], (ERISTA['out'], ROWS['out'], OLED.get('out', 'ios')))
-        self.assertNotIn('early_trace', repr(FIRST))
+        self.assertEqual([k for k in FIRST if 'trace' in k], ['require_early_trace'])
 
     def test_the_oled_package_is_what_it_was(self):
         self.assertEqual(OLED['adt'], ':adt')
