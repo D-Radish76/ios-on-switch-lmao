@@ -6,6 +6,8 @@
 #                             unit, symbol or text, in every config the panic record and the root boot
 #   early_trace_test          start.s's SWITCH_EARLY_MARK under --//kernel:early_trace: scratch registers, framebuffer
 #                             range, the flag reaching start.s only, WDT4 armed only in debug kernels
+#   stop_path_source_test     the facts ERISTA_STOP_PATHS.md rests on: the spin after halt, who installs the halt hook, the
+#                             PSCI conduit's conditions, which paths arm the watchdog reset
 #
 #   bazel test //diagnostics/switch/test:all
 #   bazel test --config=release //diagnostics/switch/test:switch_diag_link_test
@@ -75,3 +77,15 @@ py_test(
         "//kernel/xnu-12377.121.6/osfmk:arm64/start.s",
     ],
 )
+
+py_test(
+    name = "stop_path_source_test",
+    srcs = ["stop_path_source_test.py"],
+    data = [
+        "//kernel:lint_sources",
+        "//kernel/xnu-10063.141.1/iokit:Kernel/IOPlatformExpert.cpp",
+        "//kernel/xnu-10063.141.1/osfmk:arm64/machine_routines.c",
+        "//tools/package:sources",
+    ],
+)
+
