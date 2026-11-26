@@ -550,6 +550,7 @@ arm_init(
 	/* The panic screen and record (SwitchPanicSave.c): its mappings, made while io_map can, and the last boot's record. */
 	switch_panic_save_init();
 	boot_progress_stage("arm_vm_init returned");
+	switch_diag_vm_done();
 
 	if (debug_boot_arg) {
 		patch_low_glo();

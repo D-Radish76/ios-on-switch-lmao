@@ -190,6 +190,7 @@ boot_entry(
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu",
     require_early_trace = True,
+    stop_after_vm = True,
     smp = ":single_core",
     tags = ["manual"],
 )
@@ -201,6 +202,7 @@ boot_entry(
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu-seeded",
     require_early_trace = True,
+    stop_after_vm = True,
     smp = ":single_core",
     tags = ["manual"],
 )

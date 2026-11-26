@@ -179,7 +179,9 @@ def _boot_package_impl(ctx):
 
     # --- boot-args, overlay plan, ADT ------------------------------------------------------------------------------
     boot_args = out("boot-args.txt")
-    flags = (["--smp"] if smp else []) + (["--release"] if release else [])
+    if ctx.attr.stop_after_vm and not ctx.attr.require_early_trace:
+        fail("%s: stop_after_vm needs require_early_trace (the stop is the trace build's)" % ctx.label)
+    flags = (["--smp"] if smp else []) + (["--release"] if release else []) + (["--stop-after-vm"] if ctx.attr.stop_after_vm else [])
     _run(ctx, ctx.executable._boot_args, [boot_args.path] + flags, [], [boot_args], "BootArgs", "Writing the boot-args")
 
     # Manifest source -> file: the Mach-Os the trust module may name, then every other overlay file.
@@ -545,6 +547,7 @@ boot_package = rule(
         "_boot_script": _tool("//tools/package:boot_script"),
         "_bl33": _tool("//tools/package:bl33"),
         "_first_xnu_check": _tool("//tools/package:first_xnu_check"),
+        "stop_after_vm": attr.bool(doc = "bake switch_stop_after_vm=1 into the boot-args: the trace kernel parks once arm_vm_init returned"),
         "require_early_trace": attr.bool(doc = "refuse a release profile, and a kernel whose start.s was not built with early_trace"),
         # LLVM 23.1.4's linker and binutils.
         "_ld_lld": attr.label(default = "@llvm//:bin/ld.lld", cfg = "exec", allow_single_file = True),

@@ -63,12 +63,21 @@ __attribute__((no_stack_protector)) static void early_trace_mark(unsigned stage)
 
 // Records the last early stage reached (shown as LAST STAGE on an early exception or panic screen). A normal boot
 // draws nothing and leaves the screen to XNU's console.
+#if DEVELOPMENT || DEBUG
+// Set when a trace build reaches stage 21, which is before arm_vm_init has returned (SwitchVmDone.c tells the two apart).
+unsigned switch_diag_vm_stage21;
+#endif
+
 __attribute__((no_stack_protector)) void switch_diag_early_stage(unsigned stage, const char *message)
 {
     (void)message;
     if (!switch_early_record[0] || switch_early_record[2] || stage < 7 || stage > 21)
         return;
     switch_early_record[1] = stage;
+#if DEVELOPMENT || DEBUG
+    if (stage == 21 && switch_early_record[0] == 2)
+        switch_diag_vm_stage21 = 1;
+#endif
 #if DEVELOPMENT || DEBUG
     if (switch_early_record[0] == 2)
         early_trace_mark(stage);

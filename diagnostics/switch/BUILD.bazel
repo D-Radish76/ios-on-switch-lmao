@@ -17,6 +17,11 @@ exports_files(glob(
 ))
 
 filegroup(
+    name = "build_file",
+    srcs = ["BUILD.bazel"],
+)
+
+filegroup(
     name = "all_files",
     srcs = glob(
         ["**"],
@@ -76,6 +81,7 @@ kernel_driver(
     name = "SwitchDiagDebug",
     srcs = [
         "SwitchDiagHud.c",
+        "SwitchVmDone.c",
         "SwitchPowerTrail.c",
         "SwitchPanicHeartbeat.c",
         "SwitchFiles.c",

@@ -46,7 +46,9 @@ void switch_diag_stage(const char *message);
 int switch_diag_console_active(void);
 void switch_diag_console_putc(char c);
 void switch_diag_process_event(int pid, const char *name, const char *event, int status);
+void switch_diag_vm_done(void);
 #else
+#define switch_diag_vm_done() ((void)0)
 #define switch_diag_user_syscall(code, error, pid, pc, cpsr, result) \
     ((void)sizeof((code) + (error) + (pid) + (pc) + (cpsr) + (result)))
 #define switch_diag_stage(message)   ((void)sizeof(message))

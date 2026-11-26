@@ -62,12 +62,12 @@ Each mark is a 16x16 green block at y 280, x `16 + 40 * (stage - 1)`. Stages 1 t
 | `PE_init_platform` | 9 |
 | CPU and clock bring-up | 10 to 15 |
 | Memory init | 16 `arm_vm_init` entered, 17 bounds, 18 random slide (the first use of the random seed), 19 and 20 final tables, 21 last |
-| Kernel startup steps | from here the HUD (debug, one CPU) clears the screen and prints each `kernel_bootstrap` step, `PE_init_iokit` included |
-| IOKit init | the HUD's `PE_init_iokit` line |
-| First storage access | `switch_root_event` records (the SD driver runs on every board). Whether the HUD draws them was not checked |
+| VM initialised | `XNU VM INITIALIZED` (below). The old HUD does not run in this configuration; the marks stay |
+| IOKit init | not reached: the diagnostic stops first (`switch_stop_after_vm`) |
+| First storage access | not reached for the same reason. Without the stop it would be the SD driver (`switch_root_event`), unchecked on screen |
 | GIC init | no mark. The nearest line is `platform interrupts initialized` after `PE_init_platform(TRUE)`. Whether that covers the GIC distributor setup is not verified |
 
-The HUD's clear wipes marks 1 to 21 once `arm_vm_init` has returned; its first line, `XNU VM INITIALIZED`, stands for all of them.
+The marks stay on screen: `SwitchVmDone.c` clears only a band at columns 20 to 150.
 
 If no mark appears at all, one of these holds, and the screen cannot tell them apart: the loader or XNU hung before mark 1, or start.s's
 contract (`BA_PHYS_BASE`, 4 GiB memory size, virtual base, `0xF5A00000`, stride 2880) did not match the Erista's boot args and early
@@ -142,13 +142,32 @@ turned off without a driver change (a boot-arg or a `DEVELOPMENT` flag). Not rea
 2. Keep the node and add `switch-no-sd-uhs` to the boot-args for the first-XNU package only. This changes one thing, the already-skipped 1.8 V path. It does not
    stop the CMD49 pair, so it is a second guard on a branch that the `HIDREV` test already skips.
 
-**Ending the diagnostic when VM initialisation completes (design).** The aim is to stop before IOKit, the SD driver and the root wait, with nothing to poll.
+**Ending the diagnostic at VM initialisation (N7-H, built, host-checked only).** The goal of the first boot is `arm_vm_init` returning. Two events are kept apart:
 
-- In a `DEVELOPMENT || DEBUG` kernel, after the HUD prints `XNU VM INITIALIZED` (the line stands for stages 1 to 21), `switch_diag_early_leave`'s caller
-  checks a boot-arg `switch-stop-after-vm` and then masks all interrupts and loops on `wfi`. No timer, no wake source, so the core idles instead of spinning.
-- The only exit is the power button held. Release kernels do not carry the code (`DEVELOPMENT || DEBUG` gate), which `switch_diag_release_test` should check.
-- The boot-arg belongs to the first-XNU package alone; `boot_args.py` gets a flag, so the normal package's boot-args and image hashes stay as they are.
-- Not built: it touches `arm_init.c` and the boot-args tool, and approval covered offline host tests only.
+| Event | Evidence | Where |
+| --- | --- | --- |
+| Stage 21 | green mark 21 and `switch_early_record[1] = 21`; it is set before `switch_diag_early_leave`, the TTBR switch and the TLB flush | `arm_vm_init.c`, `SwitchDiag.c` |
+| `arm_vm_init` returned | the text `XNU VM INITIALIZED` and `ARM_VM_INIT RETURNED AFTER STAGE 21` | `SwitchVmDone.c`, called right after `boot_progress_stage("arm_vm_init returned")` |
+
+Mark 21 without the text means the kernel died between stage 21 and the return. The old HUD never runs in this configuration: with Video display 1 and
+depth `0x320`, `switch_diag_init` takes the native-profile branch and leaves the framebuffer to the boot logo. `SwitchVmDone.c` maps the framebuffer with
+`ml_io_map` (usable once `arm_vm_init` returned), clears a 130-column band that does not touch the marks at column 280, and draws the text. Nothing else
+is mapped or written.
+
+With `switch_stop_after_vm=1` in the boot-args it then stops, before `PE_init_platform`, IOKit and the SD driver. `boot_args.py --stop-after-vm` writes the word and
+only `//boot:erista_first_xnu` and `..._seeded` pass it (`stop_after_vm`, which needs `require_early_trace`). The normal packages' boot-args are unchanged. Release
+kernels link none of it (`SwitchVmDone.c` is in `SwitchDiagDebug`, the call is an empty macro, `vm_done_source_test`).
+
+**Not a safe stop.** The stop is a parked core: interrupts masked, `wfi` in a loop. It uses no timer, so it does not spin, but nothing resets or powers the console
+off and only the power button ends it. PSCI does not help here:
+
+- The Erista ADT has no `/psci` node and `ArmCpu` takes the conduit from it, so the kernel has no PSCI call to make.
+- `SYSTEM_RESET` returned to hekate when measured from U-Boot (EL2). Whether it works from EL1 after XNU has the MMU and vectors is unverified, and a call to it would be a
+  new firmware call that is not approved.
+- On a single core with no PMIC, `PE_halt_restart` has no hook (`ERISTA_STOP_PATHS.md`).
+
+Hardware boot is not allowed on this basis until a stop path is established and approved: either a PSCI `SYSTEM_RESET` from EL1 shown to work (its own approved diagnostic), or the
+owner accepting the held power button as the stop, in writing. A bare loop is not counted as one. The row stays `boot 0` either way.
 
 ## Real-hardware preparation (N7 follow-up E)
 
@@ -190,7 +209,7 @@ is last and needs `boot` 1, which this tree does not set.
 | --- | --- | --- |
 | D0-S | D0-R's report, then the framebuffer properties (address `F5A00000`, 720x1280, a8b8g8r8, rot 3) and two SDMMC1 words (`0x700b0024`, `0x700b002c`) | the same report lines D0-R printed, plus both words and the CAR reset and clock bits |
 | D1-min | D0-R's report, `D1-MIN SECTOR 0 READ TO 0xA001F200`, a CRC32 line, then `SIGNATURE 55 AA PRESENT` or `ABSENT` | a CRC for 512 bytes, the loader still `CLEAR` for the SD reference range |
-| First XNU | green marks 1 to 21 at y 280 (with the trace build), then the HUD, then the panic screen | marks in order, a readable panic, no heat |
+| First XNU | green marks 1 to 21 at y 280 (with the trace build), then `XNU VM INITIALIZED` and the stop text, or a panic screen | marks in order, a readable panic, no heat |
 
 **Run time and stop conditions.** D0-S and D1-min end by themselves (15 s, then `reset`, as D0). Their basis is D0's own run. The first-XNU limits (30 s with no new mark, 120 s after
 `XNU VM INITIALIZED`) are provisional: no run measured a stage time and no temperature limit is known. Hold POWER on any stop condition.
