@@ -26,6 +26,7 @@ T4R_MAP = (
     MAP + ' switch_t4r_run_on_hardware switch_t4r_run switch_t4r_access switch_t4r_read32 switch_t4r_may_read'
     ' switch_t4r_address switch_t4r_classify switch_t4r_advanced switch_t4r_settle'
 )
+T4R_STEPS = 14
 EARLIER = {
     'diag_loader': '9f2bcd7e', 'diag_loader_r': 'c101d9c3', 'diag_loader_sd': '78c9d7a1', 'diag_t1': '51acd940',
     'diag_t1r': 'ab4651dc', 'diag_t1v3': 'de7ea6af', 'diag_t1t': 'c81b53ad', 'diag_t2': '7f5a91a4',
@@ -122,6 +123,7 @@ class Model(unittest.TestCase):
         result, events = self.run_stage({0: [1_000_000, 1_200_000], 1: [0], 2: [0], 3: [0]})
         self.assertEqual(0, result.stop)
         self.assertEqual(5, result.reads)
+        self.assertEqual(5, sum(e.startswith('read') for e in events))
         self.assertEqual(['read 0', 'read 1', 'read 2', 'read 3', 'read 0'], [e for e in events if e.startswith('read')])
         for index, event in enumerate(events):
             if event.startswith('read'):
@@ -130,7 +132,7 @@ class Model(unittest.TestCase):
         self.assertEqual(1, result.tmrus_advanced)
 
     def test_a_step_that_does_not_settle_stops_before_the_next_read(self) -> None:
-        for step in range(13):
+        for step in range(T4R_STEPS):
             result, events = self.run_stage({0: [5, 9], 1: [0], 2: [0], 3: [0]}, refuse=step)
             self.assertEqual(0x902, result.stop, step)
             later = events[events.index(f'show {step}') + 1 :]
@@ -147,9 +149,16 @@ class Model(unittest.TestCase):
         self.assertEqual((dormant, 0), classify(0, 0x8035, 1))
         self.assertEqual((busy, 0), classify(0xC003D08F, 0x8035, 1))
         self.assertEqual((busy, 0), classify(0, 0, 2))
+        self.assertEqual((busy, 0), classify(0xC003D08F, 0x8035, (200 << 4) | 1))
+        self.assertEqual((busy, 0), classify(0xC003D08F, 0x8035, (3 << 12) | (255 << 4) | 1))
         self.assertEqual((unknown, 3), classify(0x1234, 0, 0))
         self.assertEqual((unknown, 4), classify(0, 0x8036, 1))
-        self.assertEqual((unknown, 2), classify(0, 0, 0x1000))
+        self.assertEqual((unknown, 5), classify(0x80000000, 0, 0))
+        self.assertEqual((unknown, 6), classify(0, 0x8035, (5 << 4) | 1))
+        self.assertEqual((unknown, 7), classify(0, 0, 1 << 12))
+        self.assertEqual((unknown, 8), classify(0, 0, (1 << 12) | (1 << 4)))
+        for bit in (2, 3, 14, 20, 31):
+            self.assertEqual((unknown, 2), classify(0, 0, 1 << bit), bit)
         for words in ((0xFFFFFFFF, 0, 0), (0, 0xFFFFFFFF, 0), (0, 0, 0xFFFFFFFF)):
             self.assertEqual((unknown, 1), classify(*words))
 

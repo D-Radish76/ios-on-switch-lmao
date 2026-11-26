@@ -1,7 +1,7 @@
 1. Instructions that form an address in the device window 0x50000000 to 0x7fffffff
    switch_diag_after_transition a0000a58: movk w0, #0x7000, lsl #16  -> 0x70000804
    switch_diag_after_transition a0000a68: movk w0, #0x7000, lsl #16  -> 0x7000f9d8
-   loader_check_fdt_memory_ranges a0003084: mov w8, #0x7fd00000  -> 0x7fd00000
+   loader_check_fdt_memory_ranges a0003120: mov w8, #0x7fd00000  -> 0x7fd00000
 2. Where those registers go (loads, stores, copies, calls)
    switch_diag_after_transition a0000a5c: bl 0xa000023c <switch_diag_read32>  (bl switch_diag_read32 with x0=0x70000804)
    switch_diag_after_transition a0000a6c: bl 0xa000023c <switch_diag_read32>  (bl switch_diag_read32 with x0=0x7000f9d8)
@@ -24,16 +24,16 @@
    switch_diag_line_hex: load pointer x3, store pointer x3
    switch_diag_line_decimal: load pointer x3, store pointer x4
    switch_diag_register_line: load pointer x79, store pointer x114
-   switch_t4r_classify: store pointer x2
-   switch_t4r_run: load pointer x48, store pointer x62
-   switch_t4r_screen_line: load pointer x14, store pointer x2
+   switch_t4r_classify: store pointer x3
+   switch_t4r_run: load pointer x50, store pointer x63
+   switch_t4r_screen_line: load pointer x17, store pointer x2
    switch_t4r_read32: load pointer x1
    loader_check_fdt_memory_ranges: load pointer x67, store pointer x21
    be32: load pointer x5
    be64: load pointer x10
    overlaps_any: load pointer x3, store pointer x1
    name_is: load pointer x3
-5. Memory accesses by base: load pointer x290, load stack x125, load static data x30, store pointer x257, store stack x88, store static data x43
+5. Memory accesses by base: load pointer x295, load stack x125, load static data x30, store pointer x259, store stack x88, store static data x43
 6. Flat image: register address words match the T4-R list
 
 AUDIT PASSED (T4-R): the image holds exactly 0x60005010, 0x60005060, 0x60005100 and 0x60005104, each once; switch_t4r_access is the only caller of the one word load; no device store; in code only the two identity registers are formed.

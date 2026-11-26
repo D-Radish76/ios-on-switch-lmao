@@ -44,7 +44,11 @@ static const char *why_text(unsigned why)
 {
     switch (why) {
     case T4R_WHY_ALL_ONES: return ". A WORD READ AS ALL ONES";
-    case T4R_WHY_STATUS_BITS: return ". STATUS BITS NO SOURCE NAMES";
+    case T4R_WHY_STATUS_BITS: return ". A STATUS BIT NO SOURCE DEFINES";
+    case T4R_WHY_CONFLICT: return ". TIMER ENABLED WITH NO VALUE";
+    case T4R_WHY_COUNT_LEFT: return ". STOPPED, A COUNT IS LEFT";
+    case T4R_WHY_EXPIRY_LEFT: return ". STOPPED, AN EXPIRY COUNT IS LEFT";
+    case T4R_WHY_COUNT_AND_EXPIRY_LEFT: return ". STOPPED, COUNT AND EXPIRY LEFT";
     case T4R_WHY_TIMER_VALUE: return ". A STOPPED TIMER HOLDS A VALUE";
     case T4R_WHY_OTHER_SOURCE: return ". ENABLED WITH A SOURCE OTHER THAN TIMER 5";
     default: return "";
@@ -69,6 +73,13 @@ void switch_t4r_screen_line(unsigned step, const struct switch_t4r_result *r, st
     case T4R_STEP_STATUS_RESULT: result_line(out, "T4R WDT0 STATUS", r->status); break;
     case T4R_STEP_TMRUS2_BEGIN: begin(out, "T4R TMRUS 2", T4R_TMRUS); break;
     case T4R_STEP_TMRUS2_RESULT: second_tmrus(out, r); break;
+    case T4R_STEP_FIELDS:
+        switch_diag_line_add(&out->text, "T4R WDT0 STATUS COUNT ");
+        switch_diag_line_decimal(&out->text, SWITCH_T4R_STS_COUNT(r->status));
+        switch_diag_line_add(&out->text, " EXPIRY ");
+        switch_diag_line_decimal(&out->text, SWITCH_T4R_STS_EXPIRY(r->status));
+        switch_diag_line_add(&out->text, ". BITS 0 AND 1 NOT CONFIRMED");
+        break;
     case T4R_STEP_STATE:
         switch_diag_line_add(&out->text, "T4R WDT0 AFTER HEKATE INIT: ");
         switch_diag_line_add(&out->text, state_name(r->state));

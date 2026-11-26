@@ -16,15 +16,15 @@ D0's loader, then four allowlisted reads, each as a 32 bit word, each drawn on t
 
 Between the two `TMRUS` reads the screen settles run, so the second value should be later by well over 100 ms worth of microseconds. A second value that is not later is drawn in red.
 
-The three WDT0 words are classified, by the heartbeat's bit names (status bit 0 enabled, bit 1 interrupt, `PTV` bit 31 enable) and on the assumption, not a reading, that WDT0's status has WDT4's layout:
+The three WDT0 words are classified. Status bits 4 to 11 are the current count and bits 12 to 13 the expiry count (mainline Linux `tegra_wdt.c`, for WDT0); both are drawn on their own line. Status bits 0 (enabled) and 1 (interrupt), and `PTV` bit 31 (enable), are the heartbeat code's names. Bits 0 and 1 have never been measured on this console, and WDT0 having WDT4's layout is an assumption, not a reading: the line says `BITS 0 AND 1 NOT CONFIRMED`. The raw words stay on the screen.
 
 | State | Words |
 | --- | --- |
-| IDLE | timer stopped with value 0, not enabled, config 0 |
+| IDLE | timer stopped with no value, status clear, config 0 |
 | CONFIGURED, STOPPED | the same with a config that is not 0 |
-| DORMANT | enabled, timer stopped, config source 5 |
-| BUSY | timer 5 running, or an interrupt pending. Left alone |
-| UNKNOWN | a word of all ones; status bits other than 0 and 1; a stopped timer with a value; enabled with a source other than 5. The reason is on the line |
+| DORMANT | status bit 0 set, timer stopped, config source 5 |
+| BUSY | `TMR5_PTV` bit 31 set with a value (the count and expiry shown are read as they are), or status bit 1 set |
+| UNKNOWN, with its reason | a word of all ones; a status bit that no source defines (2, 3, 14 to 31); `PTV` enabled with no value; a stopped timer holding a value; a stopped timer with a count left, with an expiry count left, or with both (three reasons); bit 0 set with a source other than 5 |
 
 Nothing is stopped, set or cleared, whatever the words are. The image has no store to a device address. It ends the way every diagnostic does: the shared exit, a timed PSCI `SYSTEM_RESET` back to hekate.
 
@@ -57,13 +57,15 @@ bazel test --config=ios17 //tools/package/test:diag_t4r_test //boot/diag/loader/
 python3 tools/package/diag_mmio_audit.py --disassembly bazel-bin/boot/diag_t4r/loader.dis --uboot-image bazel-bin/boot/diag_t4r/loader.uboot.bin --t4r
 ```
 
-The audit must end with `AUDIT PASSED (T4-R)`. The Linux flat hash is `9418d085...` (`boot/diag/erista-diag-image-hashes.txt`); the Mac's `loader.uboot.bin` is a different file, as for every other image, and is recorded after the Mac build. The package entry is `ios-diag-t4r`, the hekate name `iOS Diag T4R`: it does not collide with the normal `ios` entry or with any other diagnostic.
+The audit must end with `AUDIT PASSED (T4-R)`. The Linux flat hash is `de467deb...` after the 2026-11-27 revision (`boot/diag/erista-diag-image-hashes.txt`; `9418d085...` before it); the Mac's `loader.uboot.bin` is a different file, as for every other image, and is recorded after the Mac build. The package entry is `ios-diag-t4r`, the hekate name `iOS Diag T4R`: it does not collide with the normal `ios` entry or with any other diagnostic.
 
-## Mac build record (reported 2026-11-27 03:41 JST, commit `d3aea29e7`)
+## Mac build record of the first build (reported 2026-11-27 03:41 JST, commit `d3aea29e7`)
+
+The T4-R image changed afterwards (the classification and the screen lines, below), so the Mac `loader.uboot.bin` and `diag_t4r` flat hashes in this section describe the first build only. The other nine flat hashes did not change. The revised build is to be run again on the Mac.
 
 | Item | Result |
 | --- | --- |
-| `bazel build --config=ios17 //boot:diag_t4r` | success, 37 actions, D0 loader inspection passed |
+| `bazel build --config=ios17 //boot:diag_t4r` (the first build, `d3aea29e7`; superseded by the revision below) | success, 37 actions, D0 loader inspection passed |
 | Mac `loader.uboot.bin` SHA256 | `a7a345250212f8ff2fa217919a6feaa966d25fdb8a7cd9e7ed934d71a9d515b0` |
 | Tests | 6 of 6: `diag_t4r_test`, `t4r_test` (the real gtest), `diag_state_v2_test`, `diag_t2_test`, `diag_mmio_audit_test`, `diag_first_xnu_docs_test` |
 | Audit | `AUDIT PASSED (T4-R)`: `0x60005010`, `0x60005060`, `0x60005100`, `0x60005104` once each; `switch_t4r_access` the only caller of the word load; no device store |
@@ -95,7 +97,7 @@ git worktree remove ../pre-t4r
 
 ## What the audit and the tests cannot show
 
-The audit reads the linked image and its disassembly. It shows which device words the image holds, which function loads from them and who calls it. It does not show that no other code path could form such an address at run time from data, that the compiler kept the read order, or what the hardware does on a read. The tests model the logic with a fake register file; the real bus is not in them. A read of a register that does not answer is not a case any test can reach. The classification rests on bit names whose sources differ in weight (`ERISTA_T4R_REVIEW.md`).
+The audit reads the linked image and its disassembly. It shows which device words the image holds, which function loads from them and who calls it. It does not show that no other code path could form such an address at run time from data, that the compiler kept the read order, or what the hardware does on a read. The tests model the logic with a fake register file; the real bus is not in them. A read of a register that does not answer is not a case any test can reach. The classification rests on bit names whose sources differ in weight, and the 2026-11-27 revision of it is in `ERISTA_T4R_REVIEW.md`.
 
 ## Every file of the package
 
@@ -118,15 +120,26 @@ ls -la /Volumes/<card>/bootloader/ini /Volumes/<card>/switchroot
 - The ini names `bootloader/res/icon_ios_hue.bmp` but the package does not ship it. A card with no icon shows hekate's default; that is not a collision and not an error.
 - Take the hashes of the card's `switchroot` and `bootloader/ini` before and after the copy and after a re-insert, as `ERISTA_FIRST_XNU_RUN.md` rows 5 and 6 do for the first run.
 
-## Stop and pass conditions, final
+## Stop and pass conditions, final (revised 2026-11-27)
 
-These apply only if the owner approves a run in writing, with the common conditions of `ERISTA_T2_RUN.md` (cold start, temperature written down and under the provisional 40 C, video on, a person with a hand on POWER, the card holding only this entry). The 30 s and 15 s figures are provisional and are not a safety guarantee.
+The earlier text said hekate must return within 15 s of the COMPLETE line. It cannot: the 15 s wait starts after COMPLETE, not at it. From `boot/diag/loader/diag.c` and `exit.c`:
+
+1. The five reads and their lines take 14 shown steps of about 100 ms each, so about 1.5 s plus drawing. The last is `T4R COMPLETE`. A step that does not settle ends the run.
+2. `switch_diag_exit` draws `RESET IN 15 S` after COMPLETE (a few draws later, well under 5 s).
+3. It sets a deadline 15 s after that line on the CPU counter (`SWITCH_DIAG_WAIT_SECONDS`, 19.2 MHz) and waits with `wfe`. The screen does not change during these 15 s.
+4. At the deadline it makes one PSCI `SYSTEM_RESET` call. The reset is therefore issued about 15 s plus the draw time after COMPLETE.
+5. If the call returns (it never did in D0, D0-R, T1-T, T1 v3, D0-S v2, D1-min and T2), the loader draws `PSCI SYSTEM_RESET RETURNED <x0>. HOLD THE POWER BUTTON` in red and halts. If the counter is not as expected or the core is not at EL1, it draws that and halts without a reset.
+6. Hekate's start after the reset is not timed on this path. The only figure in the repository is the D0 video: about 21 s in all for a 15 s wait, which leaves about 6 s from reset to hekate's menu (one video, a U-Boot reset, not PSCI).
+
+So hekate is expected about 22 s after COMPLETE. `ERISTA_T2_RUN.md` estimates about 40 s from the first U-Boot line to hekate and keeps 50 s from selecting the entry as the provisional cap for a longer stage than this one. The conditions below are consistent with all of that. Every figure is provisional. A time limit is not a safety guarantee: it tells the person when to act, and it does not stop a hang, a hot SoC or a bus fault on its own.
+
+Common conditions of a run, if one is ever approved in writing: those of `ERISTA_T2_RUN.md` (cold start, temperature written down and under the provisional 40 C, video on, a person with a hand on POWER, the card holding only this entry).
 
 | | Condition |
 | --- | --- |
-| Pass | all five reads return; `TMRUS` advances (a line in white with `ADVANCED BY`); the state line is drawn; `T4R COMPLETE. READS 5. STOP 0000`; the console returns to hekate by itself |
-| Stop, hold POWER | the screen stops on a BEGIN line (report the register named on it, photograph first); no screen change for 30 s; no return to hekate within 15 s of the COMPLETE line |
-| Stop, report | `DID NOT ADVANCE`, `STOP` not 0000, a refused or not shown step (`0901`, `0902`) |
+| Pass | all five reads return; `TMRUS` advances; the state and the count and expiry lines are drawn; `T4R COMPLETE. READS 5. STOP 0000`; `RESET IN 15 S`; hekate comes back by itself |
+| Hold POWER | the screen stops on a BEGIN line (photograph, report the register named on it); no screen change for 30 s before COMPLETE; `RESET IN 15 S` not drawn within 5 s of COMPLETE; hekate not back 30 s after COMPLETE (the 15 s wait and a 15 s margin for hekate); 50 s since selecting the entry, whichever of the last two comes first; `PSCI SYSTEM_RESET RETURNED`, `NO RESET`, `EXIT CALLED OUTSIDE EL1`, an exception, a black screen or garbage; the console feels hot |
+| Report, no stop | `DID NOT ADVANCE`; `STOP` not 0000 (`0901` a refused read, `0902` a line that did not settle); any state, UNKNOWN included, with its reason |
 | What a pass does not show | that a write works, that a watchdog resets the console, anything about the state right after a reset, or anything about XNU |
 
-A BUSY, DORMANT or CONFIGURED state is a result to report, not a stop: nothing is touched. UNKNOWN is reported with its reason and decides nothing by itself. Nothing was armed, so there is nothing to clean up, and the return to hekate carries no loop risk from this stage.
+A static screen is normal for the 15 s between `RESET IN 15 S` and the reset, so the 30 s no-change rule applies before COMPLETE only. BUSY, DORMANT, CONFIGURED and UNKNOWN are results: nothing is touched whatever they are. Nothing was armed, so there is nothing to clean up, and the return to hekate carries no loop risk from this stage.

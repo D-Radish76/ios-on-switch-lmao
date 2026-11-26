@@ -19,12 +19,12 @@ The classification took status bit 0 as enabled and bit 1 as an interrupt, from 
 | 12 to 13 | the expiry count (`WDT_STS_EXP_SHIFT 12`, mask `0x3`); the reset fires on the fourth | Linux, mainline, for WDT0 |
 | 0 (enabled), 1 (interrupt) | `kernel/switch/diag/heartbeat.h`, for WDT4; Linux does not define them | this tree only, never measured on this console |
 
-Two consequences, neither a risk:
+Two consequences of the first build, neither a risk, and the first now corrected:
 
 1. A running WDT0 has a nonzero count in bits 4 to 11. The current code reports that as UNKNOWN with the reason "status bits no source names". That text is wrong for bits 4 to 13: a source does name them. The state is still the safe one (UNKNOWN, nothing touched), but a running watchdog would be shown as UNKNOWN and not BUSY unless the status had no such bits.
 2. Bits 0 and 1 are an assumption twice over: that WDT0's status has the layout the heartbeat code uses for WDT4, and that the heartbeat's bit meanings are right. The screen says UNKNOWN for what it cannot place and prints the raw words, so the assumption cannot hide a value. It can only mislabel one.
 
-Proposed change, not made (the 2026-11-27 approval covers records and review): name bits 4 to 13 in `t4r.h`, treat a running timer (`TMR5_PTV` bit 31) as BUSY and print the count and expiry fields, make a nonzero count or expiry on a stopped timer UNKNOWN with its own reason, and keep any other status bit UNKNOWN. That changes the T4-R image and its hashes, so it needs its own approval and a new Mac build.
+Made on 2026-11-27 at the owner's approval (the T4-R hash may change within this scope): bits 4 to 11 and 12 to 13 are named in `t4r.h`; a running timer (`TMR5_PTV` bit 31 with a value) is BUSY; a count or an expiry count left on a stopped timer is UNKNOWN with its own reason (count, expiry, or both); an enabled timer with no value is UNKNOWN (conflict); any status bit no source defines (2, 3, 14 to 31) is UNKNOWN; the count and expiry have their own screen line, which also says that bits 0 and 1 are not confirmed. The state is still only drawn: no extra register access, the same four registers, the same five reads, and the image still has no store. Flat hash `de467deb...` (Linux); the Mac build is to be repeated.
 
 ## Limits that stay
 

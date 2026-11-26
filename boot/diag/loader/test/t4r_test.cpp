@@ -69,6 +69,7 @@ TEST(T4R, FiveReadsInOrderEachBetweenItsBeginAndResult)
         expected.push_back("show " + std::to_string(2 + 2 * i));
     }
     expected.push_back("show " + std::to_string(T4R_STEP_STATE));
+    expected.push_back("show " + std::to_string(T4R_STEP_FIELDS));
     expected.push_back("show " + std::to_string(T4R_STEP_TMRUS2_BEGIN));
     expected.push_back("read " + std::to_string(T4R_TMRUS));
     expected.push_back("show " + std::to_string(T4R_STEP_TMRUS2_RESULT));
@@ -116,10 +117,24 @@ TEST(T4R, ClassificationFollowsOnlyWhatTheSourcesNameAndNothingIsSet)
         {0, 0x8035, 1, T4R_STATE_DORMANT, T4R_WHY_NONE},
         {0xc003d08f, 0x8035, 1, T4R_STATE_BUSY, T4R_WHY_NONE},
         {0, 0, 2, T4R_STATE_BUSY, T4R_WHY_NONE},
-        {0x80000000u, 0, 0, T4R_STATE_BUSY, T4R_WHY_NONE},
+        {0xc0000001u, 0, 0, T4R_STATE_BUSY, T4R_WHY_NONE},
+        {0xc003d08f, 0x8035, (200u << 4) | 1u, T4R_STATE_BUSY, T4R_WHY_NONE},
+        {0xc003d08f, 0x8035, (3u << 12) | (255u << 4) | 1u, T4R_STATE_BUSY, T4R_WHY_NONE},
+        {0x80000000u, 0, 0, T4R_STATE_UNKNOWN, T4R_WHY_CONFLICT},
+        {0xc0000000u, 0x8035, 1, T4R_STATE_UNKNOWN, T4R_WHY_CONFLICT},
         {0x1234, 0, 0, T4R_STATE_UNKNOWN, T4R_WHY_TIMER_VALUE},
+        {0x40000000u, 0, 0, T4R_STATE_IDLE, T4R_WHY_NONE},
         {0, 0x8036, 1, T4R_STATE_UNKNOWN, T4R_WHY_OTHER_SOURCE},
-        {0, 0, 0x1000, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
+        {0, 0, 5u << 4, T4R_STATE_UNKNOWN, T4R_WHY_COUNT_LEFT},
+        {0, 0x8035, (255u << 4) | 1u, T4R_STATE_UNKNOWN, T4R_WHY_COUNT_LEFT},
+        {0, 0, 1u << 12, T4R_STATE_UNKNOWN, T4R_WHY_EXPIRY_LEFT},
+        {0, 0, 3u << 12, T4R_STATE_UNKNOWN, T4R_WHY_EXPIRY_LEFT},
+        {0, 0, (1u << 12) | (1u << 4), T4R_STATE_UNKNOWN, T4R_WHY_COUNT_AND_EXPIRY_LEFT},
+        {0, 0, 1u << 2, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
+        {0, 0, 1u << 3, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
+        {0, 0, 1u << 14, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
+        {0, 0, 1u << 31, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
+        {0xc003d08f, 0x8035, 1u << 20, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
         {0, 0, 0x8000001, T4R_STATE_UNKNOWN, T4R_WHY_STATUS_BITS},
         {0xffffffffu, 0, 0, T4R_STATE_UNKNOWN, T4R_WHY_ALL_ONES},
         {0, 0xffffffffu, 0, T4R_STATE_UNKNOWN, T4R_WHY_ALL_ONES},
@@ -168,6 +183,10 @@ TEST(T4R, ScreenLinesNameTheAddressAndWidthBeforeAndTheValueAfter)
     EXPECT_EQ(std::string(line.text.text), "T4R WDT0 CONFIG READ BEGIN. ADDRESS 60005100. 32 BIT");
     switch_t4r_screen_line(T4R_STEP_CONFIG_RESULT, &result, &line);
     EXPECT_EQ(std::string(line.text.text), "T4R WDT0 CONFIG READ RESULT 00008035");
+    result.status = (3u << 12) | (200u << 4) | 1u;
+    switch_t4r_screen_line(T4R_STEP_FIELDS, &result, &line);
+    EXPECT_EQ(std::string(line.text.text), "T4R WDT0 STATUS COUNT 200 EXPIRY 3. BITS 0 AND 1 NOT CONFIRMED");
+    EXPECT_FALSE(line.bad);
     result.state = T4R_STATE_UNKNOWN;
     result.why = T4R_WHY_ALL_ONES;
     switch_t4r_screen_line(T4R_STEP_STATE, &result, &line);

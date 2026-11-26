@@ -547,10 +547,19 @@ class T4Documents(unittest.TestCase):
         self.assertEqual(10, run.count('| `diag_') - run.count('| `diag_t4r_test`'))
         for phrase in ('different toolchain', 'Not shown by these numbers', 'What the audit and the tests cannot show', 'Before anything is put on a card', 'Stop and pass conditions, final'):
             self.assertIn(phrase, run, phrase)
-        for phrase in ('`WDT_STS_COUNT_SHIFT 4`', 'never measured on this console', 'Proposed change, not made', 'Nothing was changed by this review'):
+        for phrase in ('`WDT_STS_COUNT_SHIFT 4`', 'never measured on this console', 'Made on 2026-11-27 at the owner', 'Nothing was changed by this review'):
             self.assertIn(phrase, review, phrase)
         for doc in (run, review, BLOCKERS):
             self.assertNotRegex(doc, '[\\u2013\\u2014]')
+
+    def test_t4r_revision_and_the_corrected_stop_conditions(self) -> None:
+        run = read('ERISTA_T4R_RUN.md')
+        review = read('ERISTA_T4R_REVIEW.md')
+        for phrase in ('`BITS 0 AND 1 NOT CONFIRMED`', 'the 15 s wait starts after COMPLETE', 'about 22 s after COMPLETE', 'A time limit is not a safety guarantee', 'hekate not back 30 s after COMPLETE', '`de467deb...`', 'whichever of the last two comes first'):
+            self.assertIn(phrase, run, phrase)
+        self.assertNotIn('no return to hekate within 15 s of the COMPLETE line', run)
+        self.assertIn('Made on 2026-11-27 at the owner', review)
+        self.assertIn('de467deb', BLOCKERS)
 
     def test_the_two_unexplained_git_status_entries_are_recorded_and_untouched(self) -> None:
         mac = read('ERISTA_FIRST_XNU_MAC.md')

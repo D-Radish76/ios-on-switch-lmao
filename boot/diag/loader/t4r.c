@@ -48,16 +48,29 @@ unsigned switch_t4r_classify(uint32_t ptv, uint32_t config, uint32_t status, uns
         *why = T4R_WHY_ALL_ONES;
         return T4R_STATE_UNKNOWN;
     }
-    if (status & ~(SWITCH_T4R_STS_ENABLED | SWITCH_T4R_STS_INT)) {
+    if (status & ~SWITCH_T4R_STS_DEFINED) {
         *why = T4R_WHY_STATUS_BITS;
         return T4R_STATE_UNKNOWN;
     }
-    if ((ptv & SWITCH_T4R_PTV_ENABLE) || (status & SWITCH_T4R_STS_INT))
+    if (ptv & SWITCH_T4R_PTV_ENABLE) {
+        if (!(ptv & SWITCH_T4R_PTV_VALUE)) {
+            *why = T4R_WHY_CONFLICT;
+            return T4R_STATE_UNKNOWN;
+        }
         return T4R_STATE_BUSY;
-    if (ptv) {
+    }
+    if (ptv & SWITCH_T4R_PTV_VALUE) {
         *why = T4R_WHY_TIMER_VALUE;
         return T4R_STATE_UNKNOWN;
     }
+    if (SWITCH_T4R_STS_COUNT(status) || SWITCH_T4R_STS_EXPIRY(status)) {
+        *why = SWITCH_T4R_STS_COUNT(status) && SWITCH_T4R_STS_EXPIRY(status) ? T4R_WHY_COUNT_AND_EXPIRY_LEFT
+               : SWITCH_T4R_STS_COUNT(status)                               ? T4R_WHY_COUNT_LEFT
+                                                                            : T4R_WHY_EXPIRY_LEFT;
+        return T4R_STATE_UNKNOWN;
+    }
+    if (status & SWITCH_T4R_STS_INT)
+        return T4R_STATE_BUSY;
     if (status & SWITCH_T4R_STS_ENABLED) {
         if (SWITCH_T4R_CFG_SOURCE(config) != SWITCH_T4R_WDT0_TIMER) {
             *why = T4R_WHY_OTHER_SOURCE;
@@ -85,7 +98,7 @@ void switch_t4r_run(const struct switch_t4r_io *io, struct switch_t4r_result *re
         step_read(io, result, T4R_WDT0_CONFIG, &result->config, T4R_STEP_CONFIG_BEGIN) &&
         step_read(io, result, T4R_WDT0_STATUS, &result->status, T4R_STEP_STATUS_BEGIN)) {
         result->state = switch_t4r_classify(result->ptv, result->config, result->status, &result->why);
-        if (shown(io, result, T4R_STEP_STATE) &&
+        if (shown(io, result, T4R_STEP_STATE) && shown(io, result, T4R_STEP_FIELDS) &&
             step_read(io, result, T4R_TMRUS, &result->tmrus_second, T4R_STEP_TMRUS2_BEGIN))
             result->tmrus_advanced = switch_t4r_advanced(result->tmrus_first, result->tmrus_second);
     }
