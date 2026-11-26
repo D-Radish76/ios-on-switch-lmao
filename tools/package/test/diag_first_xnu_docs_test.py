@@ -218,7 +218,7 @@ class MacResultsMacho(unittest.TestCase):
 class SeededWrapperRecord(unittest.TestCase):
     def test_the_mac_measurements_and_the_wrapper_changes_are_recorded(self) -> None:
         text = read('ERISTA_FIRST_XNU_MAC.md')
-        section = text[text.index('## 12. Mac results for the seeded build') :]
+        section = text[text.index('## 12. Mac results for the seeded build') : text.index('## 13. ')]
         for phrase in (
             '`4b7779b2`',
             '652.589 s',
@@ -242,6 +242,44 @@ class SeededWrapperRecord(unittest.TestCase):
             self.assertIn(phrase, section, phrase)
         self.assertNotIn('erista_boot_run=true', section)
         self.assertIn('section 12', read('ERISTA_RANDOM_SEED.md'))
+
+
+class OptionsAndSeedClosure(unittest.TestCase):
+    def test_the_three_options_keep_every_hold_and_state_what_is_not_guaranteed(self) -> None:
+        text = read('ERISTA_T3T4_OPTIONS.md')
+        for phrase in (
+            'A: T3 and T4, then XNU',
+            'B: T3 only, T4 deferred',
+            'C: external cooling and a strict manual stop',
+            'the T3/T4 waiver is undecided',
+            '`boot` is 0, the feature mask is 0',
+            'no new MMIO is approved',
+            'this document recommends none',
+            'What cannot be guaranteed',
+            'That a time limit is a safety limit',
+            'That the PSCI `SYSTEM_RESET` works after XNU owns the core',
+            'restarts every period',
+        ):
+            self.assertIn(phrase, text, phrase)
+        self.assertNotIn('—', text)
+        self.assertIn('ERISTA_T3T4_OPTIONS.md', BLOCKERS)
+
+    def test_the_seed_closure_and_its_commands_are_recorded(self) -> None:
+        text = read('ERISTA_FIRST_XNU_MAC.md')
+        section = text[text.index('## 13. Mac results for `caa6b4fa7`') :]
+        for phrase in (
+            '158 actions executed',
+            '64863 files, no leak',
+            'mode 700',
+            'A seeded package that can boot the Erista',
+            'Run `scan` before `clean --seed`',
+            'erista_seeded_build.py clean --seed',
+            'erista_seed.py check',
+            'bazel test --config=ios17 //tools/package/test:all',
+            'Never build with `--//boot:erista_boot_run=true`',
+        ):
+            self.assertIn(phrase, section, phrase)
+        self.assertNotIn('boot_run=true\n', section.replace('Never build with `--//boot:erista_boot_run=true`', ''))
 
 
 class MacResults(unittest.TestCase):

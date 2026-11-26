@@ -395,3 +395,65 @@ python3 tools/package/erista_seeded_build.py scan --caches 2> scan.err   # exit 
 ```
 
 Report: the counts from `actions`, whether `build` accepted the output base, the process line of the rebuild (a "disk cache hit" or "remote cache hit" there is a failure), and the scan summary (files, places, unreadable count, exit code). Not seed bytes, not `scan.err` unless it names a path.
+
+## 13. Mac results for `caa6b4fa7` (reported 2026-11-27 01:17 JST), and what closes the seed work
+
+| Check | Result |
+| --- | --- |
+| Action-graph check (`actions`) | 12 actions hold the seed; all carry `no-cache` and `no-remote` (reported as a count; the per-mnemonic list was not sent) |
+| Rebuild after `clean` | 158 actions executed |
+| SHA256 of the package files before and after the rebuild | no difference, exit 0. The same seed gives the same package, so a rebuild does not change what goes on a card |
+| `output_base` | mode 700 |
+| `scan --caches` | 64863 files, no leak. Not reported: the number of places, unreadable files, the exit code and the control line (the seeded ADT holding the seed). Those fields decide whether the result counts |
+
+Compressed or encrypted data, other encodings, remote caches and the SD card are outside what that scan can see.
+
+What would close the seed work for the boot=0 stage:
+
+| Condition | State |
+| --- | --- |
+| Seed generated, private, git-ignored, not tracked; fingerprint `4b7779b2` | done |
+| Wrapper build with every cache and upload flag last, extra flags allow-listed | done |
+| Every action that holds the seed is `no-cache` and `no-remote` (12 of 12) | done; the 12 mnemonics are still to be listed |
+| Rebuild executes the seeded actions and gives the same hashes | done (158 actions, no difference) |
+| Output base mode 700 | done |
+| Scan of git, disk caches, logs and state | done as reported; the four unreported fields above are open |
+| `clean` and `clean --seed` run and checked | not run (below) |
+| The package copied to a card and its hashes compared | not done; needs no boot permission, the package is boot=0 |
+| The written decision to use the seed in the first run | open (row 6) |
+| A seeded package that can boot the Erista | does not exist, and the wrapper refuses to build one. That needs the boot=1 build under test (row 8), which is not approved, and its own design for the seed |
+
+So the seed handling is complete for what exists, and only for it. A boot-capable seeded package is not covered by any of the above.
+
+Closing commands. Run `scan` before `clean --seed`: it needs the seed. Do not run `clean --seed` while a rebuild or a card copy is still planned.
+
+```
+python3 tools/package/erista_seeded_build.py scan --caches        # last scan; send the summary lines and the exit code
+python3 tools/package/erista_seeded_build.py clean                # the three seeded outputs only
+ls bazel-bin/boot/erista_first_xnu_seeded_work bazel-bin/boot/erista-first-xnu-seeded bazel-bin/boot/erista-full-ram-seeded.adt   # each: No such file
+find "$(bazel info output_base)/execroot" -name 'erista-full-ram-seeded.adt' -o -name 'erista_first_xnu_seeded_work'                 # nothing
+ls bazel-bin/boot | head                                          # the ordinary outputs are still there
+ls -l local/erista-seed.hex                                       # still present after plain clean
+python3 tools/package/erista_seeded_build.py clean --seed         # the seed file as well
+ls local/erista-seed.hex                                          # No such file
+python3 tools/package/erista_seed.py check                        # must now fail: no seed
+git status --short                                                # no seed file, nothing new
+```
+
+`clean` does not touch the disk cache, the action cache or the logs. They hold digests, not the seed (`scan --caches` checked them); there is no `--deep` need unless that scan finds a hit.
+
+The full regression run on the latest commit, from the repository root. `bpmpfw_scan_test` is the one known failure under the Linux stand-in; report it by name if it fails on the Mac.
+
+```
+git pull && git log --oneline -1
+bazel test --config=ios17 //tools/package/test:all //boot/loader/test:carveout_gate_test //boot/diag/loader/test:all //diagnostics/switch/test:all
+bazel build --config=ios17 //boot:package //boot:erista_package //boot:diag_state //boot:diag_d1min //boot:diag_loader_r //boot:diag_t2
+python3 tools/package/diag_images.py                              # nine hashes; diag_t2 7f5a91a4..., diag_loader_r c101d9c3... must not change
+bazel build --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true //boot:erista_first_xnu
+bazel build --config=ios17 --//install:prebuilt=local //boot:erista_first_xnu                     # must fail: no early_trace
+bazel build --config=ios17 --config=release --//install:prebuilt=local //boot:erista_first_xnu    # must fail: release
+python3 tools/package/first_xnu_check.py kernel bazel-bin/kernel/kernel.macho
+python3 tools/package/first_xnu_check.py macho bazel-bin/kernel/kernel.macho --base 0xfffffff00427c000 --phys-base 0xb207c000 --entry-phys 0xb53cc4c8
+```
+
+Never build with `--//boot:erista_boot_run=true`. Report the commit, the pass count, every hash and the text of the two failing builds.

@@ -474,6 +474,7 @@ py_test(
     data = [
         "//:ERISTA_D1_DESIGN.md",
         "//:ERISTA_T3T4_MINIMAL.md",
+        "//:ERISTA_T3T4_OPTIONS.md",
         "//:ERISTA_T3T4_REUSE.md",
         "//:ERISTA_RANDOM_SEED.md",
         "//kernel/switch:include/switch/boot_layout.h",
