@@ -41,7 +41,7 @@ without approval):
    at y 300. Framebuffer stores only, the same ones the failure marks already make.
 2. Reading `switch_early_record` from RAM after the reset (hekate can dump DRAM; unverified for this layout).
 
-Release builds keep neither (`DEVELOPMENT || DEBUG` gate). Which stages a hang reaches therefore needs a DEVELOPMENT
+Design 1 is built as `--//kernel:early_trace` (`ERISTA_FIRST_XNU_BOOT.md`). Release builds keep neither (`DEVELOPMENT || DEBUG` gate). Which stages a hang reaches therefore needs a DEVELOPMENT
 kernel.
 
 ## N6-2: stop paths

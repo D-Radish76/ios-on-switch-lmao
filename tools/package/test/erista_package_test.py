@@ -82,6 +82,7 @@ TARGETS = targets()
 OLED = package_attributes(TARGETS['package'][1])
 ERISTA = package_attributes(TARGETS['erista_package'][1])
 ROWS = package_attributes(TARGETS['erista_rows_work'][1])
+FIRST = package_attributes(TARGETS['erista_first_xnu'][1])
 
 
 class EristaPackageTest(unittest.TestCase):
@@ -93,6 +94,12 @@ class EristaPackageTest(unittest.TestCase):
         self.assertEqual(TARGETS['single_core'], ('bool_setting', {'name': 'single_core', 'build_setting_default': False}))
         self.assertNotIn(ERISTA['out'], (OLED.get('out', 'ios'), ROWS['out']))
 
+    def test_the_first_xnu_package_is_the_erista_package_under_its_own_directory(self):
+        self.assertEqual({k: v for k, v in FIRST.items() if k not in ('name', 'out')}, {k: v for k, v in ERISTA.items() if k not in ('name', 'out')})
+        self.assertEqual(FIRST['out'], 'erista-first-xnu')
+        self.assertNotIn(FIRST['out'], (ERISTA['out'], ROWS['out'], OLED.get('out', 'ios')))
+        self.assertNotIn('early_trace', repr(FIRST))
+
     def test_the_oled_package_is_what_it_was(self):
         self.assertEqual(OLED['adt'], ':adt')
         self.assertTrue(OLED['dtb'].endswith('oled-sku3.dtb'))
@@ -103,7 +110,7 @@ class EristaPackageTest(unittest.TestCase):
         self.assertFalse([v for v in names if 'erista' in v.lower()])
 
     def test_everything_else_is_shared(self):
-        for other in (ERISTA, ROWS):
+        for other in (ERISTA, ROWS, FIRST):
             self.assertEqual({k: v for k, v in other.items() if k not in OWN}, {k: v for k, v in OLED.items() if k not in OWN})
 
     def test_no_call_in_a_build_file_unpacks_a_dictionary(self):
@@ -111,12 +118,12 @@ class EristaPackageTest(unittest.TestCase):
             self.assertIsNone(re.search(r'(?<![\w*"])\*\*\s*[A-Za-z_(\[{]', re.sub(r'"[^"\n]*"|#.*', '', build.read_text())), build)
 
     def test_all_three_packages_come_from_the_one_macro(self):
-        for name in ('package', 'erista_package', 'erista_rows_work'):
+        for name in ('package', 'erista_package', 'erista_rows_work', 'erista_first_xnu'):
             self.assertEqual(TARGETS[name][0], 'boot_entry')
             self.assertFalse({'kernel', 'bl31', 'loader_srcs'} & set(TARGETS[name][1]), name)
 
     def test_it_is_opt_in(self):
-        for attributes in (ERISTA, ROWS):
+        for attributes in (ERISTA, ROWS, FIRST):
             self.assertEqual(attributes['tags'], ['manual'])
             self.assertNotIn('target_compatible_with', attributes)
 

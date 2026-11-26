@@ -211,3 +211,12 @@ exporter is a separate pinned image.
 4. T4: who supplies the TRM's watchdog and SOC_THERM description, and whether the MAX77620 watchdog is acceptable given
    that its state across a restart is unknown.
 5. Whether D1 stays on hold until T3 and T4 exist, or until a smaller step.
+
+## First XNU boot (N7-D)
+
+Nothing in T1 to T4 protects a hung kernel yet: T3 and T4 are designs, and a release kernel arms no watchdog before userspace
+(`ERISTA_STOP_PATHS.md`). The observation package (`ERISTA_FIRST_XNU_BOOT.md`) therefore relies on the person at the console: a time
+limit, POWER held, Nyx's temperature before and after. T2's sequence is prepared on the host (`boot/diag/t2`) and its data sheet items are
+settled except the conversion time's maximum and BUSY during a one-shot (`ERISTA_T2_DESIGN.md`). What a hang-safe mechanism needs is listed
+in `ERISTA_STOP_PATHS.md`; which of them T4 supplies (MAX77620 watchdog, SOC_THERM trip, a TKE watchdog) is still the open question above.
+

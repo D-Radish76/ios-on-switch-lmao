@@ -161,6 +161,18 @@ boot_entry(
     tags = ["manual"],
 )
 
+# The Erista's first-XNU observation package (ERISTA_FIRST_XNU_BOOT.md): erista_package under a directory of its own, so a
+# build with --//kernel:early_trace=true cannot overwrite the plain one. The flag, not this target, makes the kernel draw
+# its stage marks. Still boot 0: both stages refuse an Erista console.
+boot_entry(
+    name = "erista_first_xnu",
+    adt = ":erista_adt",
+    dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
+    out = "erista-first-xnu",
+    smp = ":single_core",
+    tags = ["manual"],
+)
+
 # What the loader would link to once the Erista's row boots and brings its MC values (carveout.h, every row's values
 # in). Only its loader.uboot.bin is exposed, so there is no package to put on a card: a build that links is a loader
 # below the stamps slot (link.ld ASSERT).
