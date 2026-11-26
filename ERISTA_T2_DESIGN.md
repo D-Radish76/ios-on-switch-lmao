@@ -144,6 +144,20 @@ of the part: one write only, none before the entry checks pass, no completion be
 every position, an inconsistent pair, a cleared shutdown bit. No image links it and no BUILD target packages it: the I2C1
 controller steps are T1 v3's and would be reused as they are.
 
+## Bus layer (N8)
+
+`boot/diag/loader/t2_bus.c` turns T1 v3's register table into single sensor transfers: a read is a pointer write then a read,
+the one-shot is one two-byte write (`CMD_DATA1` `0F`, `CNFG` `2802`, go `2A02`). `switch_t2_may_write` is T1 v3's allowlist with
+the pointers and the two `CNFG` values added; `CLK_DIVISOR` is refused outright, since the prelude owns that one write.
+`t2_bus_test` runs the sequence over a model of I2C1 with the part behind it: one sensor write, no register outside `CNFG`,
+`CMD_ADDR0`, `CMD_DATA1` and `CONFIG_LOAD` written, the allowlist exhaustive over 16 bits, nothing written after a stop, NOACK,
+no BUSY and a sticky load each stopping the transfer. Stop codes `0730` to `0736`.
+
+Not done: the image. T1 v3's prelude (CAR checks, controller checks, idle samples, the divisor write) is static inside `t1v3.c`, and
+exposing it would change T1 v3's compiled bytes, whose hash is pinned. The image therefore needs either a copy of the prelude
+under `SWITCH_DIAG_T2` or a build flag in `t1v3.c`, then `diag.c`, `loader.bzl`, the audit tool's `--t2` mode, a script test and a new
+line in `erista-diag-image-hashes.txt`. Each of those needs a Mac build to check, so they wait for approval.
+
 ## Host tests, when approved
 
 A model of the sensor: shutdown, ID, the one-shot with a configurable conversion time, status BUSY, OPEN, range edges. Tests: normal run;

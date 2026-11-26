@@ -159,6 +159,26 @@ host_test(
     deps = [":t2"],
 )
 
+# T2's bus layer: single sensor transfers over T1 v3's register table with a wider allowlist. No image links it yet.
+host_library(
+    name = "t2_bus",
+    srcs = [
+        "//boot:diag/loader/t1v3.h",
+        "//boot:diag/loader/t1v3_regs.c",
+        "//boot:diag/loader/t2_bus.c",
+        "//boot:diag/loader/t2_bus.h",
+        "//boot:diag/t2/t2.c",
+        "//boot:diag/t2/t2.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t2_bus_test",
+    srcs = ["t2_bus_test.cpp"],
+    deps = [":t2_bus"],
+)
+
 exports_files([
     "t1t_measured_test.cpp",
     "t1v3_hardware_test.cpp",
