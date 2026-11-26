@@ -117,16 +117,32 @@ At 433 us per transaction the bus time is about 55 ms and the conversion wait ab
 The loader still reads no temperature stop of its own: the result is shown for a human, the 15 s countdown and the 50 s deadline apply,
 and the Nyx value before and after is reported as for T1 v3. T2 does nothing that cools or heats the console.
 
-## Not decided
+## Open items (N7-D)
 
-- Send-byte or write-byte for `0F`. This design picks write-byte; check the timing diagram.
-- Whether BUSY is set during a one-shot, and whether the 31 to 34 ms figure is the whole interval. Hence the 100 ms bound and the rule
-  that a missed BUSY is not a failure.
-- The remote offset registers' read addresses. hekate uses `11` and `12` for both reading and writing; the data sheet's pointer list was
-  not fully read here.
-- Whether the sensor ACKs reads at the changed divisor while in shutdown for more than the ID. T1 v3 shows the ID read only.
+Settled from the data sheet (TI SBOS686A, sections 7.4.2 and 7.6, read 2026-11-26):
+
+- Write-byte, as designed. Section 7.4.2: "a single conversion is started by writing any value to the one-shot start register,
+  pointer address 0Fh" and "the value of the data sent in the write command is irrelevant and is not stored". The text says
+  "writing" and names a data byte, so the write-byte form is the documented one. It never calls a pointer-only transfer a trigger.
+- The remote offset registers are read and written at the same pointers: high `11`, low `12`.
+- BUSY (status bit 7) is "1 = ADC is converting". The data sheet does not say it is set during a one-shot. Still an inference.
+
+Still open:
+
+- The conversion time's upper bound. 31 ms minimum and 34 ms typical come from the electrical characteristics; the pages read here
+  gave no maximum. The 100 ms bound stays a design choice.
+- Whether BUSY is set during a one-shot (needs a run, or the timing diagram).
+- Whether the sensor ACKs reads other than the ID at the changed divisor while in shutdown. T1 v3 shows the ID read only.
 - Who may run T2, and the rate. T2 does not use 100 kHz because 100 kHz has not run.
 - The polling in the loader: the bus is read by counter, as every loader stage is. A kernel driver would use the ALERT line or a timer.
+
+## Prepared on the host (N7-D)
+
+`boot/diag/t2/t2.c` is the sensor sequence over a bus of single register transfers (ID, configuration, offsets, status, old
+sample, the one write, the wait, configuration again, new sample with the repeated high read). `t2_test` runs it against a model
+of the part: one write only, none before the entry checks pass, no completion before 31 ms, the 100 ms bound, a failed read at
+every position, an inconsistent pair, a cleared shutdown bit. No image links it and no BUILD target packages it: the I2C1
+controller steps are T1 v3's and would be reused as they are.
 
 ## Host tests, when approved
 

@@ -144,6 +144,21 @@ host_test(
     deps = [":t1v3"],
 )
 
+host_library(
+    name = "t2",
+    srcs = [
+        "//boot:diag/t2/t2.c",
+        "//boot:diag/t2/t2.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t2_test",
+    srcs = ["t2_test.cpp"],
+    deps = [":t2"],
+)
+
 exports_files([
     "t1t_measured_test.cpp",
     "t1v3_hardware_test.cpp",
