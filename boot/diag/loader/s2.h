@@ -2,16 +2,23 @@
 #define SWITCH_DIAG_S2_H
 #include <stdint.h>
 
-/* Every register D0-S v2 may read, by name. There is no write: this stage has no store to a device address. */
+/* Every register D0-S v2 may read, by name, and the width it is read at. There is no write: this stage has no store to a
+ * device address. SDMMC1 Clock Control is the 16 bit register at 0x2C; the Timeout Control and Software Reset bytes next to it
+ * are not read. */
 enum switch_s2_reg {
     S2_CAR_RST_DEVICES_L,
     S2_CAR_CLK_OUT_ENB_L,
     S2_SDMMC1_PRESENT_STATE,
-    S2_SDMMC1_WORD_2C,
+    S2_SDMMC1_CLOCK_CONTROL,
     S2_REG_COUNT
 };
 
 #define SWITCH_S2_SDMMC1_CAR_BIT (1u << 14)
+
+enum {
+    S2_WIDTH_16 = 16,
+    S2_WIDTH_32 = 32,
+};
 
 enum {
     SWITCH_S2_DENIED = 0x801,      /* the allowlist refused a read: a loader bug */
@@ -28,8 +35,8 @@ enum switch_s2_step {
     S2_STEP_GATE,
     S2_STEP_PRESENT_BEGIN,
     S2_STEP_PRESENT_RESULT,
-    S2_STEP_CLOCK_WORD_BEGIN,
-    S2_STEP_CLOCK_WORD_RESULT,
+    S2_STEP_CLOCK_CONTROL_BEGIN,
+    S2_STEP_CLOCK_CONTROL_RESULT,
     S2_STEP_COMPLETE,
     S2_STEP_COUNT
 };
@@ -47,7 +54,7 @@ typedef int (*switch_s2_show_fn)(void *context, unsigned step, const struct swit
 
 struct switch_s2_io {
     void *context;
-    uint32_t (*read)(void *context, unsigned reg);
+    uint32_t (*read)(void *context, unsigned reg, unsigned width); /* a 16 bit read returns its value zero-extended */
     switch_s2_show_fn show; /* null: no screen, every step counts as shown */
 };
 
@@ -56,11 +63,13 @@ struct switch_s2_result {
     unsigned reads;
     uint32_t rst_devices_l, clk_out_enb_l;
     int sd_state; /* SWITCH_S2_SD_*: the two words below are valid only for SWITCH_S2_SD_READ */
-    uint32_t sd_present_state, sd_word_2c;
+    uint32_t sd_present_state, sd_clock_control;
 };
 
 uint32_t switch_s2_address(unsigned reg);
-int switch_s2_may_read(unsigned reg);
+unsigned switch_s2_width(unsigned reg); /* the access width of reg, or 0 when reg is not an S2 register */
+/* Nonzero only for a listed register at its listed width: 0x2C as 32 bit, or 0x24 as 16 bit, is refused. */
+int switch_s2_may_read(unsigned reg, unsigned width);
 
 /* Reads the two CAR words first, and the SDMMC1 words only when its clock is on and it is out of reset. Every read is
  * bracketed by shown steps: its BEGIN line is on the screen before the read, its RESULT line before the next step. */
@@ -75,8 +84,9 @@ uint64_t switch_s2_settle_ticks(uint64_t cntfrq);
  * ran; zero when the counter did not behave, and nothing may be read on the strength of the screen. s2_settle.c. */
 int switch_s2_settle(void);
 
-/* The one gate to the device: the allowlist decides, then the raw read runs. s2_gate.c; the raw read is in s2_access.c. */
-uint32_t switch_s2_access(unsigned reg);
+/* The one gate to the device: the allowlist decides on the register and the width, then the raw read of that width runs. A
+ * refused read is not made and returns 0. s2_gate.c; the raw reads are in s2_access.c. */
+uint32_t switch_s2_access(unsigned reg, unsigned width);
 
 /* s2_access.c, the only place an S2 device address is used. */
 void switch_s2_run_on_hardware(struct switch_s2_result *result, switch_s2_show_fn show);

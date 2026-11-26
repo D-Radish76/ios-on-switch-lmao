@@ -5,8 +5,9 @@ again: it hung (`boot/diag/erista-d0s-run1.txt`).
 
 D0-S v2 is D0's loader plus four read-only device reads, behind a U-Boot script that makes no load from a device address. The
 script prints the control FDT's framebuffer properties, as D0-S did, and hands over. The loader reads CAR `RST_DEVICES_L`
-(`0x60006004`) and `CLK_OUT_ENB_L` (`0x60006010`), then SDMMC1 `0x700B0024` and `0x700B002C` only if the CAR words say SDMMC1
-has its clock on and is out of reset. It writes no register. Before each read its BEGIN line is drawn on the screen and the loader
+(`0x60006004`, 32 bit) and `CLK_OUT_ENB_L` (`0x60006010`, 32 bit), then SDMMC1 Present State (`0x700B0024`, 32 bit) and SDMMC1
+Clock Control (`0x700B002C`, 16 bit) only if the CAR words say SDMMC1 has its clock on and is out of reset. It writes no register.
+Timeout Control (`0x700B002E`) and Software Reset (`0x700B002F`) are not read. Before each read its BEGIN line is drawn on the screen and the loader
 waits 100 ms, so a hang in a read leaves that read's BEGIN line as the last one.
 
 ## 1. Build and hash (Mac)
@@ -23,12 +24,18 @@ python3 tools/package/diag_mmio_audit.py --disassembly bazel-bin/boot/diag_state
   --uboot-image bazel-bin/boot/diag_state_v2/loader.uboot.bin --s2
 ```
 
+The Mac build of 2026-11-26 of the first v2 (32 bit Clock Control word) gave `9c41874e...`; the 16 bit build has another hash. Compare
+only builds of the same commit.
+
 The package has four files: `bootloader/ini/ios-diag-state-v2.ini` and `switchroot/ios-diag-state-v2/{bl31.bin,bl33.bin,script.txt}`.
 D0-S's `ios-diag-state` files and the other entries are not written by this build. `bl31.bin` equals the other diagnostics'
 (`dea0ecd4...34e2b4`).
 
-The audit must end with `AUDIT PASSED`, section 6 `register address words match the D0-S v2 list`, and section 3 naming one
-`switch_s2_read32` with one load. A saved Linux copy is `boot/diag/erista-s2-mmio-audit.txt`; the Mac addresses differ.
+The audit must end with `AUDIT PASSED (D0-S v2): the image holds exactly 0x60006004, 0x60006010, 0x700b0024 and 0x700b002c, each
+once ...`. That line is printed only by `--s2` and only after the D0-S v2 inspection of the disassembly (one `ldr w0` word load, one
+`ldrh w0` halfword load, each called only by `switch_s2_access`, no store on an address path) and of the flat image's address words
+passed; the generic `only the two identity registers` line is not used for it. Section 6 reads `register address words match the D0-S
+v2 list` and section 3 names `switch_s2_read32: ldr w0` and `switch_s2_read16: ldrh w0`. A saved Linux copy is `boot/diag/erista-s2-mmio-audit.txt`; the Mac addresses differ.
 
 This loader is not D0-R's: it has the S2 reads and no reservation check, so `loader.uboot.bin` differs from D0-R's and D0-S's. The
 three lines above make that visible. D0-S's and D0-R's hashes stay what the earlier Mac builds gave (`cdc52c65...`). The Linux flat
@@ -93,15 +100,15 @@ row 9 down, each one drawn, followed by a 100 ms wait, before the next step begi
 
 ```
 S2 START. EL1 STATE PASS
-S2 CAR RST READ BEGIN. ADDRESS 60006004
+S2 CAR RST READ BEGIN. ADDRESS 60006004. 32 BIT
 S2 CAR RST READ RESULT <8 hex digits>
-S2 CAR CLK READ BEGIN. ADDRESS 60006010
+S2 CAR CLK READ BEGIN. ADDRESS 60006010. 32 BIT
 S2 CAR CLK READ RESULT <8 hex digits>
 S2 SDMMC1 CLOCK/RESET GATE. CLOCK ON. RESET OFF. READ        (or CLOCK OFF. NOT READ / IN RESET. NOT READ)
-S2 SDMMC1 PRESENT STATE READ BEGIN. ADDRESS 700B0024
+S2 SDMMC1 PRESENT STATE READ BEGIN. ADDRESS 700B0024. 32 BIT
 S2 SDMMC1 PRESENT STATE READ RESULT <8 hex digits>
-S2 SDMMC1 CLOCK WORD READ BEGIN. ADDRESS 700B002C
-S2 SDMMC1 CLOCK WORD READ RESULT <8 hex digits>
+S2 SDMMC1 CLOCK CONTROL READ BEGIN. ADDRESS 700B002C. 16 BIT
+S2 SDMMC1 CLOCK CONTROL READ RESULT <4 hex digits>
 S2 COMPLETE. READS 4. STOP 0000
 ```
 
@@ -120,7 +127,7 @@ A different value is a finding, not a failure.
 | `S2 CAR RST READ BEGIN` | the read of `0x60006004` |
 | `S2 CAR CLK READ BEGIN` | the read of `0x60006010` |
 | `S2 SDMMC1 PRESENT STATE READ BEGIN` | the read of `0x700B0024` |
-| `S2 SDMMC1 CLOCK WORD READ BEGIN` | the read of `0x700B002C` |
+| `S2 SDMMC1 CLOCK CONTROL READ BEGIN` | the 16 bit read of `0x700B002C` |
 | a RESULT line | the code after that read, not the read |
 
 The loader draws a line, issues `dsb sy` and waits 100 ms before the read. The CPU cannot observe the display's scan-out, so this
@@ -140,7 +147,7 @@ first line. Return to hekate is expected, as in the D0 and D0-R runs.
 | The console feels hot or the screen shows garbage | Hold POWER at once. |
 | Any deadline in `boot/diag/loader/RUN_CHECKLIST.md` passes | Hold POWER. Do not retry on the spot. |
 
-Stop `0801` is a read the allowlist refused (a loader bug, nothing was read); `0802` is a line that did not settle (the counter or the
+Stop `0801` is a read the allowlist refused, by register or by width (a loader bug, nothing was read); `0802` is a line that did not settle (the counter or the
 screen was not usable), and no further read was made. Recovery is the held power button, then hekate as usual. There is no other
 stop: a hang has no hardware reset (`ERISTA_STOP_PATHS.md`).
 
@@ -154,22 +161,35 @@ list: assume everything above was written. A reset or power-off discards the RAM
 
 ## 7. What the SDMMC1 reads are
 
-Both are 32-bit aligned loads, one per word, as the CPU's `ldr w` at EL1 with the MMU off (Device memory).
+Present State is one 32 bit aligned load (`ldr w`). Clock Control is one 16 bit halfword load (`ldrh w`), the width the register has
+in the SD host controller layout. Both run at EL1 with the MMU off (Device memory). The loader's gate refuses a width other than the
+listed one, so `0x700B002C` cannot be read as 32 bit and `0x700B0024` cannot be read as 16 bit.
 
-| Address | SD host controller register (standard layout) | Read side effect |
-| --- | --- | --- |
-| `0x700B0024` | Present State, a 32-bit read-only status word | none in the standard; it reports the card, the data lines and the buffer flags |
-| `0x700B002C` | Clock Control (16 bit), Timeout Control (8 bit) and Software Reset (8 bit) in one word; byte 3 is software reset | none in the standard; the reset bits clear by themselves, not by being read |
+| Address | Register | Width | Read side effect |
+| --- | --- | --- | --- |
+| `0x700B0024` | Present State, read-only status | 32 bit | none in the standard; it reports the card, the data lines and the buffer flags |
+| `0x700B002C` | Clock Control (internal clock enable and stable, card clock enable, divider) | 16 bit | none in the standard |
 
-The data port at `0x700B0020` is the register whose read pops the buffer. It is not on the allowlist, and the inspection fails the
-image if its address appears as data. These descriptions come from the SD host controller layout and from the offsets D0-S named; the
-Tegra TRM is not in the repository, so the width the SoC accepts for the 16-bit and 8-bit registers when read as one word, and the
-absence of side effects on this controller, are not checked against the TRM. A read of a controller whose clock is off can hang the
-bus; the gate reads CAR first for that reason, and T1-T did not read SDMMC1, so these two reads have no EL1 result yet.
+Not read: Timeout Control (`0x700B002E`, 8 bit), Software Reset (`0x700B002F`, 8 bit) and the buffer data port (`0x700B0020`, whose
+read pops the buffer). None of the three is on the allowlist, and the inspection fails the image if one of those addresses appears as
+data. The 32 bit read of `0x700B002C` that the first v2 build made was dropped for lack of evidence.
+
+Sources for the layout and the widths:
+
+- hekate `bdk/storage/sdmmc_t210.h`: `0x24 prnsts` is `vu32`, `0x2C clkcon` is `vu16`, `0x2E timeoutcon` and `0x2F swrst` are `vu8`;
+  `bdk/storage/sdmmc_driver.c` reads and updates `clkcon` and `swrst` as those members and flushes writes with a read of `clkcon`.
+- Linux `drivers/mmc/host/sdhci-tegra.c`: reads go through `readw(ioaddr + reg)` and `sdhci_readw(host, SDHCI_CLOCK_CONTROL)`;
+  nothing there reads `0x2C` as a 32 bit word.
+
+Neither source states the width in words, hekate's from the member types. The Tegra TRM is not in the repository. **No read of SDMMC1
+by this loader has run at EL1 yet**: hekate and Linux read these registers in other settings (hekate bare metal with its own clock
+setup, Linux with the controller's driver), and T1-T never read SDMMC1. That the controller answers these two reads with the clock on,
+at EL1, with this loader, is what the run would show. A read of a controller whose clock is off can hang the bus; the gate reads CAR
+first for that reason.
 
 ## 8. Temperature
 
-The exposure is U-Boot's few seconds, the 5 s, about 2 s of settle waits (20 lines at 100 ms) and the loader's 15 s with the fan off.
+The exposure is U-Boot's few seconds, the 5 s, up to 1.1 s of settle waits (11 lines at 100 ms; 7 lines, about 0.7 s, when the SDMMC1 gate is closed) and the loader's 15 s with the fan off.
 Nothing in D0-S v2 manages the fan or reads a sensor. After the run: photograph first, then Nyx's temperature. Do not start another
 run until the console is below 40 C again. Above 50 C at the end: leave it off. Above 55 C: stop the session and report. All three are
 provisional.
@@ -183,7 +203,7 @@ provisional.
 | RAM | the D0 writes: the DTB copy at `0x8D000000`, one reserve-map entry, the loader at `0xA0000000` |
 | U-Boot variables | set, never `saveenv`, gone at reset |
 | Console flash, eMMC | not touched |
-| Registers | four reads, no write |
+| Registers | four reads (three 32 bit, one 16 bit), no write |
 
 After the run: remove `switchroot/ios-diag-state-v2/` and the `.ini`, then re-run the `find` for `._` files. D1-min, T2 and the first
 XNU boot stay held.

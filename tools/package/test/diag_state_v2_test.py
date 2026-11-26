@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import diag_images
+from diag_mmio_audit import audit
 from diag_loader import diag_script, entry_ini
 from diag_loader_inspect import S2_ADDRESSES, inspect_disassembly, inspect_image, inspect_map
 
@@ -28,8 +29,8 @@ V1 = diag_script((ROOT / 'boot/diag/state/u-boot-script-state.txt').read_text(),
 LINES = [ln.strip() for ln in RENDERED.splitlines() if ln.strip() and not ln.strip().startswith('#')]
 MAP = 'switch_diag_read32 switch_diag_exit switch_diag_after_transition probe_show_exception'
 S2_MAP = (
-    MAP + ' switch_s2_run_on_hardware switch_s2_run switch_s2_access switch_s2_read32 switch_s2_may_read'
-    ' switch_s2_address switch_s2_settle'
+    MAP + ' switch_s2_run_on_hardware switch_s2_run switch_s2_access switch_s2_read32 switch_s2_read16 switch_s2_width'
+    ' switch_s2_may_read switch_s2_address switch_s2_settle'
 )
 SOURCES = ('s2.c', 's2.h', 's2_regs.c', 's2_gate.c', 's2_access.c', 's2_report.c', 's2_report.h', 's2_settle.c')
 DEVICE_LITERAL = re.compile(r'0x[5-7][0-9a-f]{7}u?\b', re.IGNORECASE)
@@ -108,7 +109,7 @@ class Inspection(unittest.TestCase):
         self.assertTrue(inspect_image(flat(listed[1:]), s2=True))
         self.assertTrue(inspect_image(flat([*listed, listed[0]]), s2=True))
 
-    def test_the_raw_read_is_one_load_and_only_the_gate_calls_it(self) -> None:
+    def test_the_raw_reads_are_one_word_load_and_one_halfword_load_and_only_the_gate_calls_them(self) -> None:
         def function(name: str, *lines: str) -> str:
             body = '\n'.join(f'  {0x100 + 4 * i:x}: {line}' for i, line in enumerate(lines))
             return f'0000000000000100 <{name}>:\n{body}\n'
@@ -116,21 +117,52 @@ class Inspection(unittest.TestCase):
         good = (
             function('switch_diag_read32', 'ldr w0, [x0]', 'ret')
             + function('switch_s2_read32', 'ldr w0, [x0]', 'ret')
-            + function('switch_s2_access', 'bl 0x100 <switch_s2_read32>')
+            + function('switch_s2_read16', 'mov w8, w0', 'ldrh w0, [x8]', 'ret')
+            + function('switch_s2_access', 'bl 0x100 <switch_s2_read32>', 'bl 0x100 <switch_s2_read16>')
         )
         self.assertEqual([], [p for p in inspect_disassembly(good, s2=True) if 'switch_s2' in p])
-        rogue = good + function('rogue', 'b 0x100 <switch_s2_read32>')
-        self.assertTrue([p for p in inspect_disassembly(rogue, s2=True) if p.startswith('rogue: calls')])
+        for raw in ('switch_s2_read32', 'switch_s2_read16'):
+            rogue = good + function('rogue', f'b 0x100 <{raw}>')
+            self.assertTrue([p for p in inspect_disassembly(rogue, s2=True) if p.startswith('rogue: calls')], raw)
         stored = good.replace('ldr w0, [x0]\n  104: ret', 'str w1, [x0]\n  104: ret', 1)
         self.assertTrue(inspect_disassembly(stored, s2=True))
 
+    def test_a_width_that_is_not_the_listed_one_is_refused(self) -> None:
+        def function(name: str, *lines: str) -> str:
+            body = '\n'.join(f'  {0x100 + 4 * i:x}: {line}' for i, line in enumerate(lines))
+            return f'0000000000000100 <{name}>:\n{body}\n'
+
+        def build(read32: str, read16: str) -> str:
+            return (
+                function('switch_diag_read32', 'ldr w0, [x0]', 'ret')
+                + function('switch_s2_read32', read32, 'ret')
+                + function('switch_s2_read16', read16, 'ret')
+                + function('switch_s2_access', 'bl 0x100 <switch_s2_read32>', 'bl 0x100 <switch_s2_read16>')
+            )
+
+        ok = build('ldr w0, [x0]', 'ldrh w0, [x0]')
+        self.assertEqual([], [p for p in inspect_disassembly(ok, s2=True) if 'switch_s2' in p])
+        wide16 = [p for p in inspect_disassembly(build('ldr w0, [x0]', 'ldr w0, [x0]'), s2=True) if 'switch_s2_read16' in p]
+        self.assertTrue(wide16)
+        narrow32 = [p for p in inspect_disassembly(build('ldrh w0, [x0]', 'ldrh w0, [x0]'), s2=True) if 'switch_s2_read32' in p]
+        self.assertTrue(narrow32)
+        byte16 = [p for p in inspect_disassembly(build('ldr w0, [x0]', 'ldrb w0, [x0]'), s2=True) if 'switch_s2_read16' in p]
+        self.assertTrue(byte16)
+
 
 class Sources(unittest.TestCase):
-    def test_the_allowlist_is_four_addresses_and_only_s2_regs_holds_them(self) -> None:
+    def test_the_allowlist_is_four_addresses_with_their_widths_and_only_s2_regs_holds_them(self) -> None:
         text = (LOADER / 's2_regs.c').read_text()
         self.assertEqual(
-            ['0x60006004', '0x60006010', '0x700b0024', '0x700b002c'], re.findall(r'(0x[0-9a-f]{8})u', text)
-        )
+            [('S2_CAR_RST_DEVICES_L', '0x60006004', '32'), ('S2_CAR_CLK_OUT_ENB_L', '0x60006010', '32'),
+             ('S2_SDMMC1_PRESENT_STATE', '0x700b0024', '32'), ('S2_SDMMC1_CLOCK_CONTROL', '0x700b002c', '16')],
+            re.findall(r'\[(S2_\w+)\] = \{(0x[0-9a-f]{8})u, S2_WIDTH_(\d+)\}', text),
+        )  # fmt: skip
+        self.assertEqual(4, len(re.findall(r'0x[0-9a-f]{8}u', text)))
+        for name in ('0x700b0020', '0x700b002e', '0x700b002f'):
+            for source in SOURCES:
+                self.assertNotIn(name, (LOADER / source).read_text().lower(), source)
+        self.assertIn('width == table[reg].width', text)
         for name in (*SOURCES, 'diag.c'):
             if name == 's2_regs.c':
                 continue
@@ -145,7 +177,16 @@ class Sources(unittest.TestCase):
         sites = [
             ln.strip() for ln in (LOADER / 's2_access.c').read_text().splitlines() if '(uintptr_t)' in ln and 'volatile' in ln
         ]
-        self.assertEqual(['return *(const volatile uint32_t *)(uintptr_t)address;'], sites)
+        self.assertEqual(
+            [
+                'return *(const volatile uint32_t *)(uintptr_t)address;',
+                'return *(const volatile uint16_t *)(uintptr_t)address;',
+            ],
+            sites,
+        )
+        gate = (LOADER / 's2_gate.c').read_text()
+        self.assertLess(gate.index('switch_s2_may_read(reg, width)'), gate.index('switch_s2_read16(address)'))
+        self.assertIn('width == S2_WIDTH_16 ? switch_s2_read16(address) : switch_s2_read32(address)', gate)
 
     def test_every_read_is_preceded_by_a_shown_begin_and_followed_by_a_shown_result(self) -> None:
         text = (LOADER / 's2.c').read_text()
@@ -158,7 +199,7 @@ class Sources(unittest.TestCase):
         text = (LOADER / 's2.c').read_text()
         run = text[text.index('void switch_s2_run(') :]
         gate = run.index('S2_STEP_GATE')
-        for word in ('S2_SDMMC1_PRESENT_STATE', 'S2_SDMMC1_WORD_2C'):
+        for word in ('S2_SDMMC1_PRESENT_STATE', 'S2_SDMMC1_CLOCK_CONTROL'):
             self.assertGreater(run.index(word), gate)
             self.assertEqual(1, text.count(word))
         self.assertIn('result->sd_state == SWITCH_S2_SD_READ', run)
@@ -195,6 +236,9 @@ class SavedAudit(unittest.TestCase):
         self.assertIn('AUDIT PASSED', text)
         self.assertIn('6. Flat image: register address words match the D0-S v2 list', text)
         self.assertIn('switch_s2_read32: ldr w0, [x8]; called by switch_s2_access', text)
+        self.assertIn('switch_s2_read16: ldrh w0, [x8]; called by switch_s2_access', text)
+        self.assertIn('AUDIT PASSED (D0-S v2): the image holds exactly 0x60006004, 0x60006010, 0x700b0024 and 0x700b002c', text)
+        self.assertNotIn('only the two identity registers reach a call', text)
         self.assertNotIn('PROBLEMS', text)
         section2 = text[text.index('2. Where'):text.index('3. The path')]
         self.assertEqual(['0x70000804', '0x7000f9d8'], re.findall(r'with x0=(0x[0-9a-f]+)', section2))
@@ -290,6 +334,23 @@ class RealLink(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             _, dis, _ = self.link(scratch, [])
             self.assertEqual(1, len(re.findall(r'\bsmc\b', dis)))
+
+    def test_the_static_audit_passes_and_refuses_a_width_that_was_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            _, dis, flat = self.link(scratch, [])
+            report, problems = audit(dis, flat, s2=True)
+            self.assertEqual([], problems)
+            self.assertIn('6. Flat image: register address words match the D0-S v2 list', report)
+            self.assertTrue(any('switch_s2_read16: ldrh w0' in line for line in report))
+            body = dis[dis.index('<switch_s2_read16>:') :]
+            tampered = dis.replace(body[: body.index('ret')], body[: body.index('ret')].replace('ldrh', 'ldr'), 1)
+            self.assertNotEqual(dis, tampered)
+            self.assertTrue([p for p in audit(tampered, flat, s2=True)[1] if 'switch_s2_read16' in p])
+            head = dis[: dis.index('<switch_s2_read32>:')]
+            tail = dis[dis.index('<switch_s2_read32>:') :]
+            word = head + tail.replace('ldr\tw0, [x8]\n', 'ldrh\tw0, [x8]\n', 1)
+            self.assertNotEqual(dis, word)
+            self.assertTrue([p for p in audit(word, flat, s2=True)[1] if 'switch_s2' in p])
 
     def test_a_register_address_added_by_another_file_is_refused_in_the_linked_image(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:

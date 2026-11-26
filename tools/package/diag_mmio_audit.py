@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from diag_loader_inspect import inspect_image
+from diag_loader_inspect import inspect_disassembly, inspect_image
 
 WINDOW = (0x50000000, 0x80000000)
 ID_REGISTERS = (0x70000804, 0x7000F9D8)
@@ -141,7 +141,7 @@ def callers(code: dict[str, list[tuple[str, str]]], target: str) -> list[str]:
 
 def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
     lines = []
-    for name in ('switch_diag_read32', 'switch_t1t_read32', 'switch_s2_read32'):
+    for name in ('switch_diag_read32', 'switch_t1t_read32', 'switch_s2_read32', 'switch_s2_read16'):
         if name in code:
             loads = [t for _, t in code[name] if MEMORY.match(t)]
             lines.append(
@@ -154,7 +154,8 @@ def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
         )
     if 'switch_s2_access' in code:
         lines.append(
-            '   D0-S v2: static table (switch_s2_address) -> switch_s2_access -> switch_s2_read32 -> one load; '
+            '   D0-S v2: static table (switch_s2_address, switch_s2_width) -> switch_s2_access -> '
+            'switch_s2_read32 (one word load) or switch_s2_read16 (one halfword load); '
             f'switch_s2_address called by {", ".join(callers(code, "switch_s2_address"))}'
         )
     if 'switch_t1v3_access' in code:
@@ -183,7 +184,10 @@ def judge(found: Findings, code: dict[str, list[tuple[str, str]]]) -> list[str]:
         f'switch_t1t_read32 is called by {c}' for c in callers(code, 'switch_t1t_read32') if c != 'switch_t1t_access'
     ]
     problems += [
-        f'switch_s2_read32 is called by {c}' for c in callers(code, 'switch_s2_read32') if c != 'switch_s2_access'
+        f'{raw} is called by {c}'
+        for raw in ('switch_s2_read32', 'switch_s2_read16')
+        for c in callers(code, raw)
+        if c != 'switch_s2_access'
     ]
     problems += [
         f'{raw} is called by {c}'
@@ -218,6 +222,8 @@ def audit(
     report += pointers
     report.append('5. Memory accesses by base: ' + ', '.join(f'{k} x{v}' for k, v in sorted(found.bases.items())))
     problems = judge(found, code)
+    if s2:
+        problems += inspect_disassembly(disassembly, s2=True)
     if flat is not None:
         listed = inspect_image(flat, t1t=t1t, t1v3=t1v3, s2=s2)
         name = 'D0-S v2' if s2 else 'T1-T' if t1t else 'T1 v3'
@@ -256,6 +262,13 @@ def main() -> int:
     if problems:
         print('\nPROBLEMS:\n' + '\n'.join(problems), file=sys.stderr)
         return 1
+    if args.s2:
+        print(
+            '\nAUDIT PASSED (D0-S v2): the image holds exactly 0x60006004, 0x60006010, 0x700b0024 and 0x700b002c, each once; '
+            'switch_s2_access is the only caller of the one word load (the first three) and of the one halfword load '
+            '(0x700b002c); no device store; in code only the two identity registers are formed.'
+        )
+        return 0
     print('\nAUDIT PASSED: only the two identity registers reach a call or an access.')
     return 0
 

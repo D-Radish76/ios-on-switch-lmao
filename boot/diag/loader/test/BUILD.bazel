@@ -167,6 +167,7 @@ host_library(
         "//boot:diag/loader/report.h",
         "//boot:diag/loader/s2.c",
         "//boot:diag/loader/s2.h",
+        "//boot:diag/loader/s2_gate.c",
         "//boot:diag/loader/s2_regs.c",
         "//boot:diag/loader/s2_report.c",
         "//boot:diag/loader/s2_report.h",

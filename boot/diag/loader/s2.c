@@ -11,12 +11,13 @@ static int shown(const struct switch_s2_io *io, struct switch_s2_result *result,
 
 static uint32_t get(const struct switch_s2_io *io, struct switch_s2_result *result, unsigned reg)
 {
-    if (!switch_s2_may_read(reg)) {
+    const unsigned width = switch_s2_width(reg);
+    if (!switch_s2_may_read(reg, width)) {
         result->stop = SWITCH_S2_DENIED;
         return 0;
     }
     ++result->reads;
-    return io->read(io->context, reg);
+    return io->read(io->context, reg, width);
 }
 
 /* Shows BEGIN, reads, shows RESULT. Returns 0 when the run has to end: a refused read or a line that did not settle. */
@@ -54,7 +55,7 @@ void switch_s2_run(const struct switch_s2_io *io, struct switch_s2_result *resul
             result->sd_state = SWITCH_S2_SD_IN_RESET;
         if (shown(io, result, S2_STEP_GATE) && result->sd_state == SWITCH_S2_SD_READ &&
             step_read(io, result, S2_SDMMC1_PRESENT_STATE, &result->sd_present_state, S2_STEP_PRESENT_BEGIN))
-            step_read(io, result, S2_SDMMC1_WORD_2C, &result->sd_word_2c, S2_STEP_CLOCK_WORD_BEGIN);
+            step_read(io, result, S2_SDMMC1_CLOCK_CONTROL, &result->sd_clock_control, S2_STEP_CLOCK_CONTROL_BEGIN);
     }
     finish(io, result);
 }

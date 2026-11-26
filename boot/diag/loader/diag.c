@@ -578,7 +578,7 @@ static void report_s2(void)
     switch_s2_run_on_hardware(&result, show_s2);
     probe_record[D_S2_STOP_READS] = (uint64_t)result.stop << 32 | result.reads;
     probe_record[D_S2_CAR] = (uint64_t)result.rst_devices_l << 32 | result.clk_out_enb_l;
-    probe_record[D_S2_SDMMC1] = (uint64_t)result.sd_present_state << 32 | result.sd_word_2c;
+    probe_record[D_S2_SDMMC1] = (uint64_t)result.sd_present_state << 32 | result.sd_clock_control;
 }
 #endif
 

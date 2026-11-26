@@ -5,13 +5,16 @@ static void begin(struct switch_s2_line *out, const char *what, unsigned reg)
     switch_diag_line_add(&out->text, what);
     switch_diag_line_add(&out->text, " READ BEGIN. ADDRESS ");
     switch_diag_line_hex(&out->text, switch_s2_address(reg), 8);
+    switch_diag_line_add(&out->text, ". ");
+    switch_diag_line_decimal(&out->text, switch_s2_width(reg));
+    switch_diag_line_add(&out->text, " BIT");
 }
 
-static void result_line(struct switch_s2_line *out, const char *what, uint32_t value)
+static void result_line(struct switch_s2_line *out, const char *what, unsigned reg, uint32_t value)
 {
     switch_diag_line_add(&out->text, what);
     switch_diag_line_add(&out->text, " READ RESULT ");
-    switch_diag_line_hex(&out->text, value, 8);
+    switch_diag_line_hex(&out->text, value, switch_s2_width(reg) / 4);
 }
 
 static void gate(struct switch_s2_line *out, const struct switch_s2_result *r)
@@ -31,14 +34,16 @@ void switch_s2_screen_line(unsigned step, const struct switch_s2_result *r, stru
         switch_diag_line_add(&out->text, "S2 START. EL1 STATE PASS");
         break;
     case S2_STEP_CAR_RST_BEGIN: begin(out, "S2 CAR RST", S2_CAR_RST_DEVICES_L); break;
-    case S2_STEP_CAR_RST_RESULT: result_line(out, "S2 CAR RST", r->rst_devices_l); break;
+    case S2_STEP_CAR_RST_RESULT: result_line(out, "S2 CAR RST", S2_CAR_RST_DEVICES_L, r->rst_devices_l); break;
     case S2_STEP_CAR_CLK_BEGIN: begin(out, "S2 CAR CLK", S2_CAR_CLK_OUT_ENB_L); break;
-    case S2_STEP_CAR_CLK_RESULT: result_line(out, "S2 CAR CLK", r->clk_out_enb_l); break;
+    case S2_STEP_CAR_CLK_RESULT: result_line(out, "S2 CAR CLK", S2_CAR_CLK_OUT_ENB_L, r->clk_out_enb_l); break;
     case S2_STEP_GATE: gate(out, r); break;
     case S2_STEP_PRESENT_BEGIN: begin(out, "S2 SDMMC1 PRESENT STATE", S2_SDMMC1_PRESENT_STATE); break;
-    case S2_STEP_PRESENT_RESULT: result_line(out, "S2 SDMMC1 PRESENT STATE", r->sd_present_state); break;
-    case S2_STEP_CLOCK_WORD_BEGIN: begin(out, "S2 SDMMC1 CLOCK WORD", S2_SDMMC1_WORD_2C); break;
-    case S2_STEP_CLOCK_WORD_RESULT: result_line(out, "S2 SDMMC1 CLOCK WORD", r->sd_word_2c); break;
+    case S2_STEP_PRESENT_RESULT: result_line(out, "S2 SDMMC1 PRESENT STATE", S2_SDMMC1_PRESENT_STATE, r->sd_present_state); break;
+    case S2_STEP_CLOCK_CONTROL_BEGIN: begin(out, "S2 SDMMC1 CLOCK CONTROL", S2_SDMMC1_CLOCK_CONTROL); break;
+    case S2_STEP_CLOCK_CONTROL_RESULT:
+        result_line(out, "S2 SDMMC1 CLOCK CONTROL", S2_SDMMC1_CLOCK_CONTROL, r->sd_clock_control);
+        break;
     default:
         switch_diag_line_add(&out->text, "S2 COMPLETE. READS ");
         switch_diag_line_decimal(&out->text, r->reads);

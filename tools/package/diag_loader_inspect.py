@@ -124,26 +124,32 @@ T1T_GATE = 'switch_t1t_access'
 T1T_RAW = 'switch_t1t_read32'
 T1T_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t1t_read32>')
 T1T_ADDRESS_HOLDERS = ('switch_t1t_address', 'switch_t1t_may_read', 'switch_t1t_read32')
-# D0-S v2 (boot/diag/loader/s2*.c) reads four words and has no store counterpart of its raw read. It links nothing of the
-# other stages and none of their allowlists.
+# D0-S v2 (boot/diag/loader/s2*.c) reads four registers, three as 32 bit words and SDMMC1 Clock Control as 16 bit, and has no
+# store counterpart of either raw read. It links nothing of the other stages and none of their allowlists.
 S2_SYMBOLS = (
     'switch_s2_run_on_hardware',
     'switch_s2_run',
     'switch_s2_access',
     'switch_s2_read32',
+    'switch_s2_read16',
+    'switch_s2_width',
     'switch_s2_may_read',
     'switch_s2_address',
     'switch_s2_settle',
 )
 S2_GATE = 'switch_s2_access'
 S2_RAW = 'switch_s2_read32'
+S2_RAW16 = 'switch_s2_read16'
 S2_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_s2_read32>')
-S2_ADDRESS_HOLDERS = ('switch_s2_address', 'switch_s2_may_read', 'switch_s2_read32')
+S2_CALL16 = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_s2_read16>')
+S2_ADDRESS_HOLDERS = ('switch_s2_address', 'switch_s2_width', 'switch_s2_may_read', 'switch_s2_read32', 'switch_s2_read16')
 STORE = re.compile(r'^(?:str|stp|stur|stlr|stxr|stnp|st[1-4])[a-z]*\b')
 STACK_STORE = re.compile(r'\[(?:sp|x29)\b')
 COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
 # The one place a device register address is formed. It loads and returns.
 READ32_BODY = re.compile(r'\A(?:mov\s+w\d+, w0\s*\n)?ldr\s+w0, \[x\d+\]\s*\nret\s*\Z')
+# The 16 bit counterpart (D0-S v2's Clock Control): one halfword load, zero-extended into w0.
+READ16_BODY = re.compile(r'\A(?:mov\s+w\d+, w0\s*\n)?ldrh\s+w0, \[x\d+\]\s*\nret\s*\Z')
 # Device addresses built as an immediate in code: 0x5000xxxx to 0x7fffxxxx, except the identity registers (0x7000....).
 DEVICE_IMMEDIATE = re.compile(r'\b(?:movk|movz|mov)\s+[wx]\d+, #0x([0-9a-f]{4}), lsl #16')
 # The same, as one `mov` of a 32 bit value: 0x50000000 to 0x7fffffff. Only the D1 inspection looks for it.
@@ -341,13 +347,18 @@ def inspect_t1(code: dict[str, list[str]], prefix: str = 'switch_t1_') -> list[s
 
 
 def inspect_read_only(
-    code: dict[str, list[str]], gate: str, raw: str, call: re.Pattern[str], holders: tuple[str, ...]
+    code: dict[str, list[str]],
+    gate: str,
+    raw: str,
+    call: re.Pattern[str],
+    holders: tuple[str, ...],
+    body: re.Pattern[str] = READ32_BODY,
 ) -> list[str]:
     """Return what is wrong with a stage's device reads: one load, one caller, and no store on any address path."""
     problems = []
     read32 = code.get(raw)
-    if read32 is None or not READ32_BODY.match('\n'.join(read32)):
-        problems.append(f'{raw} is not a single load and a return')
+    if read32 is None or not body.match('\n'.join(read32)):
+        problems.append(f'{raw} is not a single {"halfword " if body is READ16_BODY else ""}load and a return')
     for function, body in code.items():
         if function != gate:
             problems += [f'{function}: calls {raw} outside {gate}' for line in body if call.search(line)]
@@ -371,7 +382,10 @@ def inspect_t1t(code: dict[str, list[str]]) -> list[str]:
 
 
 def inspect_s2(code: dict[str, list[str]]) -> list[str]:
-    return inspect_read_only(code, S2_GATE, S2_RAW, S2_CALL, S2_ADDRESS_HOLDERS)
+    """Both raw reads: a 32 bit word load and a 16 bit halfword load, each one instruction, each called only by the gate."""
+    return inspect_read_only(code, S2_GATE, S2_RAW, S2_CALL, S2_ADDRESS_HOLDERS) + inspect_read_only(
+        code, S2_GATE, S2_RAW16, S2_CALL16, S2_ADDRESS_HOLDERS, READ16_BODY
+    )
 
 
 def inspect_image(flat: bytes, *, t1v3: bool = False, t1t: bool = False, t2: bool = False, s2: bool = False) -> list[str]:

@@ -8,7 +8,8 @@
 3. The path from an address to its access
    switch_diag_read32: ldr w0, [x8]; called by switch_diag_after_transition
    switch_s2_read32: ldr w0, [x8]; called by switch_s2_access
-   D0-S v2: static table (switch_s2_address) -> switch_s2_access -> switch_s2_read32 -> one load; switch_s2_address called by switch_s2_access, switch_s2_screen_line
+   switch_s2_read16: ldrh w0, [x8]; called by switch_s2_access
+   D0-S v2: static table (switch_s2_address, switch_s2_width) -> switch_s2_access -> switch_s2_read32 (one word load) or switch_s2_read16 (one halfword load); switch_s2_address called by switch_s2_access, switch_s2_screen_line
 4. Functions that load or store through a pointer that is not a constant (not bounded by this scan)
    switch_diag_read32: load pointer x1
    probe_before_transition: load pointer x11, store pointer x8
@@ -30,9 +31,12 @@
    overlaps_any: load pointer x3, store pointer x1
    name_is: load pointer x3
    switch_s2_run: load pointer x38, store pointer x43
+   switch_s2_width: load pointer x1
+   switch_s2_may_read: load pointer x1
    switch_s2_screen_line: load pointer x8, store pointer x2
    switch_s2_read32: load pointer x1
-5. Memory accesses by base: load pointer x274, load stack x122, load static data x29, store pointer x235, store stack x88, store static data x43
+   switch_s2_read16: load pointer x1
+5. Memory accesses by base: load pointer x277, load stack x124, load static data x29, store pointer x235, store stack x88, store static data x43
 6. Flat image: register address words match the D0-S v2 list
 
-AUDIT PASSED: only the two identity registers reach a call or an access.
+AUDIT PASSED (D0-S v2): the image holds exactly 0x60006004, 0x60006010, 0x700b0024 and 0x700b002c, each once; switch_s2_access is the only caller of the one word load (the first three) and of the one halfword load (0x700b002c); no device store; in code only the two identity registers are formed.
