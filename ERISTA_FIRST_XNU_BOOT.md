@@ -111,8 +111,93 @@ Nothing resets a hang in this kernel: no watchdog is armed before userspace (`ER
 at the console is the only safety mechanism, so the run is never unattended. Before and after, Nyx's temperature readout is noted as
 for T1 v3.
 
-Where the boot ends is not decided. With an SD card that has no root partition the root mount should fail and panic, which stops it at a
-screen to photograph and exercises the first storage access. What the SD block driver does on a card with no root has not been read.
+Where the boot ends is decided in the next section.
+
+## The SD driver (N7 follow-up D)
+
+Read from `NativeSwitchBlock.cpp`, nothing run.
+
+**No root partition.** `setup()` reads the GPT and needs exactly one APFS or named partition. With none (or a bad GPT, or two) it logs and returns false,
+so the device is never published and `firstSector` and `sectorCount` stay 0. The write gate at `command()` then refuses every write (`panic` before it
+reaches the card). The kernel's root wait times out, calls `switch_raw_root_wait_diagnostic` ("not published") and panics `Failed to mount root device`
+(`IOKitBSDInit.cpp`). How long the wait lasts was not read. The panic screen is the stop.
+
+**Everything that writes to the card or its supply.**
+
+| Path | Reached on the Erista when | Gate |
+| --- | --- | --- |
+| Block writes (CMD24/25), `issue()` and the queue paths | a client writes (APFS mount, `bsd_init`) | refused outside the APFS partition, `panic` otherwise |
+| Extension registers 260 to 262 (cache, flush, CQ enable), CMD49 in `CqBus::control` | `checkCq` in `setup()`, when the card offers a performance function | only those bytes and values, anything else panics. Not behind a boot-arg |
+| SD initialisation (CMD0 and on), LDO2 to 1.8 V, PLLC4, tap and trim | `raiseBusSpeed` | skipped by `HIDREV` major below 2 (the Erista's `00022117` gives 1), before any PMIC read. `switch-no-sd-uhs` skips it earlier |
+| LDO2 off and on, card GPIO PE4, PMC SDMMC1 bits | system sleep only | no sleep without PMIC and sensors in this configuration (unverified) |
+| Live proofs (writes read back) | after real writes | no synthetic write exists; the driver reads the partition only for its own checks |
+
+The one unconditional card write is the CMD49 pair around `checkCq`: it changes the card's CQ and cache registers, never user data. It cannot be
+turned off without a driver change (a boot-arg or a `DEVELOPMENT` flag). Not read: `SwitchCryptex.cpp` and the root-boot code in `bsd_init.c`.
+
+**Storage-free configuration.** There is none today: the driver always runs `setup()` when the ADT node exists. Two ways to get less, neither built:
+
+1. Leave the SDMMC1 node out of the first-XNU ADT. No device, no GPT read, no CMD49. The root wait times out and panics, so the stop is the same screen. Cost: it
+   leaves the SD path unexercised, and the node's absence needs an ADT edit and `adt_check` change.
+2. Keep the node and add `switch-no-sd-uhs` to the boot-args for the first-XNU package only. This changes one thing, the already-skipped 1.8 V path. It does not
+   stop the CMD49 pair, so it is a second guard on a branch that the `HIDREV` test already skips.
+
+**Ending the diagnostic when VM initialisation completes (design).** The aim is to stop before IOKit, the SD driver and the root wait, with nothing to poll.
+
+- In a `DEVELOPMENT || DEBUG` kernel, after the HUD prints `XNU VM INITIALIZED` (the line stands for stages 1 to 21), `switch_diag_early_leave`'s caller
+  checks a boot-arg `switch-stop-after-vm` and then masks all interrupts and loops on `wfi`. No timer, no wake source, so the core idles instead of spinning.
+- The only exit is the power button held. Release kernels do not carry the code (`DEVELOPMENT || DEBUG` gate), which `switch_diag_release_test` should check.
+- The boot-arg belongs to the first-XNU package alone; `boot_args.py` gets a flag, so the normal package's boot-args and image hashes stay as they are.
+- Not built: it touches `arm_init.c` and the boot-args tool, and approval covered offline host tests only.
+
+## Real-hardware preparation (N7 follow-up E)
+
+Nothing here is approved. Each item is something the person at the console needs, or something a hold still blocks.
+
+**Artifacts.** Built on the Mac, then compared. The image hashes of D0 to T1 v3 are in `boot/diag/erista-diag-image-hashes.txt`; D0-R's is
+`c101d9c3ed21b8d62f1370e33871b857a41ffff64f8214092cece1d151b8105e`. D0-S and D1-min reuse D0-R's loader, so their `loader.uboot.bin` must equal it.
+
+```
+bazel build --config=ios17 //boot:diag_state //boot:diag_d1min //boot:diag_loader_r
+shasum -a 256 bazel-bin/boot/diag_state/loader.uboot.bin bazel-bin/boot/diag_d1min/loader.uboot.bin \
+  bazel-bin/boot/diag_loader_r/loader.uboot.bin                    # three equal lines, the D0-R value above
+shasum -a 256 bazel-bin/boot/diag_state/package/switchroot/*/* bazel-bin/boot/diag_d1min/package/switchroot/*/*
+```
+
+The package files are `bazel-bin/boot/diag_state/package` (entry `ios-diag-state`) and `bazel-bin/boot/diag_d1min/package` (entry `ios-diag-d1min`). Their
+SHA-256 values were not reported yet, so none are written here; the Mac fills them in.
+
+**U-Boot commands the two scripts use**, against the pinned `bl33.bin` (help text and strings only; none of this has run on an Erista unless marked):
+
+| Command | In `bl33.bin` | Ran on the Erista |
+| --- | --- | --- |
+| `setenv`, `test`, `echoe`, `fdt`, `cp.b`, `bootm`, `itest.l`, `reset` | yes | yes (D0, D0-R) |
+| `setexpr.l NAME *ADDR` | yes (the OLED's normal script uses it) | no |
+| `setexpr NAME ${A} \& MASK` | the help text found names the load form and `sub`/`gsub`; the operator form was not found | no |
+| `mmc dev 1`, `mmc read ADDR BLK CNT` | yes | `mmc dev` yes (`erista-sd-pages.log`); `mmc read` of this kind no |
+| `crc32 ADDR COUNT` | yes (prints `CRC32 for ... ==>`) | no |
+| `itest.w *ADDR == VALUE` | yes (`[.b, .w, .l, .s]`) | no |
+
+D0-S depends on `setexpr` with `&`. A failed step names its status and resets, so a missing operator shows as a named failure and not a hang.
+
+**Placement.** Copy `bootloader/ini/<entry>.ini` and `switchroot/<entry>/` from one package at a time onto the SD card's FAT, as `boot/diag/README.md`
+describes; nothing existing is overwritten. Remove them after the run. D0-S first, D1-min only after its output is reviewed. The first-XNU package
+is last and needs `boot` 1, which this tree does not set.
+
+**Expected output.**
+
+| Run | On screen | Pass |
+| --- | --- | --- |
+| D0-S | D0-R's report, then the framebuffer properties (address `F5A00000`, 720x1280, a8b8g8r8, rot 3) and two SDMMC1 words (`0x700b0024`, `0x700b002c`) | the same report lines D0-R printed, plus both words and the CAR reset and clock bits |
+| D1-min | D0-R's report, `D1-MIN SECTOR 0 READ TO 0xA001F200`, a CRC32 line, then `SIGNATURE 55 AA PRESENT` or `ABSENT` | a CRC for 512 bytes, the loader still `CLEAR` for the SD reference range |
+| First XNU | green marks 1 to 21 at y 280 (if the display/depth mismatch is closed), then the HUD, then the panic screen | marks in order, a readable panic, no heat |
+
+**Run time and stop conditions.** D0-S and D1-min end by themselves (15 s, then `reset`, as D0). Their basis is D0's own run. The first-XNU limits (30 s with no new mark, 120 s after
+`XNU VM INITIALIZED`) are provisional: no run measured a stage time and no temperature limit is known. Hold POWER on any stop condition.
+
+**T2 to T4.** Open and unchanged: T2's register `0F` form and offset registers (data sheet), BUSY and the ACK at the changed divisor (one T2 run), T3's fan
+and T4's protection design (`ERISTA_T2_DESIGN.md` has the loader's one-shot). The safety mechanisms that exist for a run are the person's power button and Nyx's temperature
+before and after. A hang has no hardware reset (`ERISTA_STOP_PATHS.md`). None of the three is a reason to run, and the owner may waive them in writing.
 
 ## Before anyone runs it
 
@@ -120,7 +205,7 @@ All of these, none of which is done:
 
 - The owner approves the run and changes the row's `boot` to 1 for the build under test only. This document does not.
 - The Mac builds the target above and the loader's linked margin is reported (`ERISTA_XNU_HANDOFF.md` lists the Mac commands).
-- The Erista's boot args are compared with start.s's contract.
+- The display/depth mismatch above is closed, or marks are not expected.
 - A seed decision (`ERISTA_RANDOM_SEED.md`): the pinned seed is public, which does not matter for an observation boot.
 - A stop procedure the person has read: POWER held, then Nyx for temperature.
 - T2 run, or the run waived, so that a temperature before and after is available.
