@@ -285,6 +285,8 @@ console cools only as far as the fan hekate left running. **Temperature protecti
 limit. No mechanism here acts on a temperature by itself. **Hang protection:** none acts without a person. So the run is attended, and the hardware boot stays held until the owner either approves one of the first three rows
 after its own proof or accepts the person as the stop in writing.
 
+The call from XNU's EL1 and a timed stop are worked out in `ERISTA_PROTECTION.md`; nothing there is built.
+
 ## From now to the first XNU boot
 
 In order; each line blocks the next unless the owner waives it in writing.
