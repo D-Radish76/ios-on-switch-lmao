@@ -98,6 +98,20 @@ All builds succeeded and the regression tests passed (8 of 8). The normal OLED a
 has a 17543168-byte kernel window in 87 blocks, entry `0xb53cc4c8`, written to `bazel-bin/boot/erista-first-xnu`. The
 linked loader margin was not reported and stays unmeasured.
 
+## Mac results, 2026-11-26 (iPadOS 17)
+
+The regression tests passed (24 of 24). The normal package and the first-XNU diagnostic package (58 actions) built, as did the
+early-trace build: kernel window 17543168 bytes in 87 blocks, entry `0xb53cc4c8`. The loader margin, now measured with
+`first_xnu_check.py margin`: `flat_bytes` 122880, `image_end` `0xa001e000`, `to_stamps_slot` `0xf00` (3840 bytes) and
+`to_sd_reference` `0x1000` (4096 bytes).
+
+`loader.uboot.bin` of `diag_state`, `diag_d1min` and `diag_loader_r` are one file,
+`cdc52c651a0ae8a8e21d1932f63813702131dc0e91db7a1d2883890ebd59cd2a`. It differs from the Linux flat hash `c101d9c3...` because the
+two are different artifacts: the Linux value is the flat image from `tools/package/diag_images.py` (clang 18.1.3), the Mac file adds
+the U-Boot header and comes from Xcode's toolchain. At this commit and at `5f474ed0d` (the tree of the D0-R hardware run) the
+Linux flat D0-R image is identical, and all seven pinned hashes still reproduce. No Mac hash of the earlier D0-R run is recorded
+in this repository, so a Mac-to-Mac comparison needs a build of `5f474ed0d` on the Mac (`ERISTA_D0S_RUN.md`, section 1).
+
 ## Stops
 
 | Condition | Action |
@@ -174,12 +188,13 @@ owner accepting the held power button as the stop, in writing. A bare loop is no
 Nothing here is approved. Each item is something the person at the console needs, or something a hold still blocks.
 
 **Artifacts.** Built on the Mac, then compared. The image hashes of D0 to T1 v3 are in `boot/diag/erista-diag-image-hashes.txt`; D0-R's is
-`c101d9c3ed21b8d62f1370e33871b857a41ffff64f8214092cece1d151b8105e`. D0-S and D1-min reuse D0-R's loader, so their `loader.uboot.bin` must equal it.
+`c101d9c3ed21b8d62f1370e33871b857a41ffff64f8214092cece1d151b8105e`, a flat image built on Linux. D0-S and D1-min reuse D0-R's loader, so their Mac `loader.uboot.bin` files equal each other and the Mac D0-R build.
+That file is a U-Boot image (a 64-byte header plus the flat image) from Xcode's clang, so it differs from the Linux value (see "Mac results, 2026-11-26").
 
 ```
 bazel build --config=ios17 //boot:diag_state //boot:diag_d1min //boot:diag_loader_r
 shasum -a 256 bazel-bin/boot/diag_state/loader.uboot.bin bazel-bin/boot/diag_d1min/loader.uboot.bin \
-  bazel-bin/boot/diag_loader_r/loader.uboot.bin                    # three equal lines, the D0-R value above
+  bazel-bin/boot/diag_loader_r/loader.uboot.bin                    # three equal lines
 shasum -a 256 bazel-bin/boot/diag_state/package/switchroot/*/* bazel-bin/boot/diag_d1min/package/switchroot/*/*
 ```
 
@@ -224,7 +239,7 @@ Both are read-only diagnostics over D0-R's loader. Neither is approved to run. B
 
 | Check | How |
 | --- | --- |
-| The three loader images are equal | the `shasum` command above: `diag_state`, `diag_d1min` and `diag_loader_r` give the D0-R value |
+| The three loader images are equal | the `shasum` command above: `diag_state`, `diag_d1min` and `diag_loader_r` give three equal lines. Compare with the Linux flat hash only on Linux |
 | The package holds only its own entry | `bootloader/ini/ios-diag-state.ini` (or `-d1min`) and `switchroot/ios-diag-state/` (or `-d1min`), nothing named `ios`, and the SHA-256 of each file recorded before copying |
 | No iOS entry is bootable | the Erista row is `boot 0`; `iOS` is not in hekate's list for this card, or the normal package is absent |
 | hekate is 6.5.5 and its entry list is photographed | the version the T1 v3 and D0 runs used |

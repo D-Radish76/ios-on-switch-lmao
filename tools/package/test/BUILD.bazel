@@ -601,6 +601,20 @@ py_test(
 )
 
 
+# D0-S's rendered script: every command, every device read, every store. Its failure statuses must be in the run sheet.
+py_test(
+    name = "diag_state_audit_test",
+    srcs = ["diag_state_audit_test.py"],
+    data = [
+        "//:ERISTA_D0S_RUN.md",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:all_sources",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = ["//tools/package:diag_loader"],
+)
+
+
 # The boot args the packager builds against start.s's early-rendering gate, the measured DRAM banks and the mark range.
 py_test(
     name = "boot_args_contract_test",
