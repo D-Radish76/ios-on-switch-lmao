@@ -70,6 +70,13 @@ it, neither done: make start.s accept the low byte 32 for display 1 (this also e
 behaviour with it was not checked), or change `VIDEO` (changes the loader image hash and XNU's console rotation). Needs
 a decision.
 
+## Mac results (204662a7f, iPadOS 17)
+
+All builds succeeded and the regression tests passed (8 of 8). The normal OLED and Erista packages took 76 actions,
+`diag_state` and `diag_d1min` 19, `//boot:erista_first_xnu` 159, and `kernel_unprelinked` succeeded. The first-XNU package
+has a 17543168-byte kernel window in 87 blocks, entry `0xb53cc4c8`, written to `bazel-bin/boot/erista-first-xnu`. The
+linked loader margin was not reported and stays unmeasured.
+
 ## Stops
 
 | Condition | Action |
