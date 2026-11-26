@@ -123,7 +123,7 @@ def _compile_loader(ctx, out, profile, layout_h, runs_h, constants):
         _xcode(
             ctx,
             "/usr/bin/clang",
-            LOADER_COPTS + [_VERBOSE_CONSOLE[profile]] + (["-I", layout_h.dirname] if reads_window else []) + includes +
+            LOADER_COPTS + [_VERBOSE_CONSOLE[profile]] + ctx.attr.loader_defines + (["-I", layout_h.dirname] if reads_window else []) + includes +
             ["-c", src.path, "-o", obj.path],
             [src] + ctx.files.loader_hdrs + ([layout_h, runs_h] if reads_window else []),
             [obj],
@@ -492,6 +492,7 @@ boot_package = rule(
         "overlay_files": attr.label_list(allow_files = True, doc = "overlay files the manifest names by tree path"),
         "loader_srcs": attr.label_list(allow_files = [".c", ".S"], mandatory = True, doc = "in link order"),
         "loader_window_srcs": attr.label_list(allow_files = True, doc = "those of loader_srcs that include layout.h/runs.h"),
+        "loader_defines": attr.string_list(doc = "-D flags for every loader compile, for a size check that is never packaged"),
         "loader_hdrs": attr.label_list(allow_files = True),
         "loader_include_markers": attr.label_list(allow_files = True, doc = "one file per -I directory, in order"),
         "linker_script": attr.label(mandatory = True, allow_single_file = True),

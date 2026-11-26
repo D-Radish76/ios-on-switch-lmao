@@ -117,5 +117,31 @@ What each answers, and what is expected:
 | the normal loader (`//boot:package`) | its `loader.bin` is expected to differ from `85757fc66`: `native_gate` now calls `carveout.h`. Compare the OLED's behaviour by `carveout_test`, not by hash |
 | `--//boot:smp=false` for the OLED | an OLED package without `--smp` must still build; it is the OLED's own single-core path |
 
-The `boot:package` rule takes its ADT from `//boot:adt` (the OLED's). Nothing builds a package from `//boot:erista_adt`:
-doing so is a later step and needs the Erista row at `boot 1`.
+## The Erista package (Phase N5)
+
+`//boot:erista_package` is `//boot:package`'s rule with the Erista's tree (`//boot:erista_adt`), its DTB, one core
+(`//boot:single_core`) and its own output directory `erista-ios`. Everything else comes from the same attribute set
+(`_PACKAGE` in `boot/BUILD.bazel`), so the two cannot drift apart unseen. It is `manual` and only builds under
+`--//install:prebuilt=local`: the release's prebuilt loader and window were made for the OLED.
+
+Building it does not let anything boot. The Erista row is `boot 0`: U-Boot's script has no clause for it (WRONG_BOARD) and
+the loader refuses at `loader.c:292` before `native_gate`. `erista_package_test` pins the target's attributes; the refusals
+are `boot_script_board_test` and `carveout_gate_test`.
+
+`//boot:erista_loader_all_rows` links the loader with every row's MC values (`-DSWITCH_CARVEOUT_ALL_ROWS=1`), as it would be
+once the Erista row boots. It exposes `loader.uboot.bin` only, built from a private `manual` package target, and exists
+for the linker's stamps ASSERT. Compiled here with a stub `layout.h`: +96 bytes over the normal loader (rodata +100, text
+-4). The linked margin is for the Mac to report.
+
+Mac commands, iOS 17 (`--config=ios17`):
+
+```
+bazel test --config=ios17 //tools/package/test:erista_package_test //kits/SwitchBoard/test:all \
+  //drivers/SwitchPower/test:switch_board_start_source_test //boot/loader/test:carveout_gate_test
+bazel build --config=ios17 //boot:package                  # the OLED's, as before
+bazel build --config=ios17 //boot:erista_package           # single core, Erista tree, bazel-bin/boot/erista-ios
+bazel build --config=ios17 //boot:erista_loader_all_rows   # links, or the stamps ASSERT fires
+shasum -a 256 bazel-bin/boot/full-ram.adt                  # the same as from 85757fc66
+```
+
+`--//boot:smp=false` for the OLED is still its own path. Nothing here sets `boot 1`.

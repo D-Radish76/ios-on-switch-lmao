@@ -429,6 +429,20 @@ py_test(
     ],
 )
 
+# //boot:erista_package: its own tree, DTB, directory and one core, shared with the OLED's package in nothing else, opt in
+# and local only; the size check that exposes a loader only; boot 0 refused by the script's board check and the loader.
+py_test(
+    name = "erista_package_test",
+    size = "small",
+    srcs = ["erista_package_test.py"],
+    data = [
+        "//boot:build_file",
+        "//boot:loader/loader.c",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = ["//tools/package:boot_script"],
+)
+
 # adt_check.py over both boards' trees, and what it names when a property is wrong.
 py_test(
     name = "adt_check_test",

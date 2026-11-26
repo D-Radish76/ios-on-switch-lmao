@@ -39,6 +39,12 @@ bool_setting(
     build_setting_default = SMP,
 )
 
+# The Erista's package is single core whatever --//boot:smp says.
+bool_setting(
+    name = "single_core",
+    build_setting_default = False,
+)
+
 # The GPU bundle's trust cache module, appended to the kernel's static trust cache so the plugin may run.
 # --//boot:gpu_trustcache=//boot:no_gpu packages without it (what the CMake flow did when out/gpu was absent).
 label_flag(
@@ -133,41 +139,38 @@ write_file(
 
 # --//install:prebuilt=release: the GitHub release's kernel (prelinked here), overlay Mach-Os, GPU trust cache, lz4 and
 # loader, with the release's --//boot:smp.
-boot_package(
-    name = "package",
-    adt = ":adt",
-    app_trust = "//ipsw:app_cryptex_trust",
-    bl31 = "//bazel/pinned:firmware/bl31.bin",
-    bl33 = "//bazel/pinned:firmware/bl33.bin",
-    bootlogo = "//boot/logo:bootlogo.bmp",
-    bootstrap_manifest = select({
+_PACKAGE = {
+    "app_trust": "//ipsw:app_cryptex_trust",
+    "bl31": "//bazel/pinned:firmware/bl31.bin",
+    "bl33": "//bazel/pinned:firmware/bl33.bin",
+    "bootlogo": "//boot/logo:bootlogo.bmp",
+    "bootstrap_manifest": select({
         "//install:from_release": "@switch_release//:bootstrap_manifest",
         "//conditions:default": "//bootstrap:manifest",
     }),
-    bootstrap_payload = select({
+    "bootstrap_payload": select({
         "//install:from_release": "@switch_release//:bootstrap_payload",
         "//conditions:default": "//bootstrap:payload",
     }),
-    bt_patch = "//bazel/pinned:firmware/BCM4356A3.hcd",
-    data_seed = "//bazel/pinned:data-seed/data-v10.dbr",
-    dtb = "//bazel/pinned:firmware/oled-sku3.dtb",
-    exporter = "//bazel/pinned:firmware/exporter.uimg",
-    icon = "//boot/logo:icon_ios_hue.bmp",
-    ini = ":ios_ini",
-    installer_entitlements = select({
+    "bt_patch": "//bazel/pinned:firmware/BCM4356A3.hcd",
+    "data_seed": "//bazel/pinned:data-seed/data-v10.dbr",
+    "exporter": "//bazel/pinned:firmware/exporter.uimg",
+    "icon": "//boot/logo:icon_ios_hue.bmp",
+    "ini": ":ios_ini",
+    "installer_entitlements": select({
         "//ipsw:21H461": "//apps/installer:SwitchInstaller.entitlements",
         "//ipsw:24B119": "//apps/installer:SwitchInstaller27.entitlements",
     }),
-    kernel = select({
+    "kernel": select({
         "//install:from_release": "//install:release_kernel",
         "//conditions:default": "//kernel:prelinked",
     }),
-    launchd_catalog_os = select({
+    "launchd_catalog_os": select({
         "//ipsw:21H461": "@ipsw//:os",
         "//conditions:default": None,
     }),
-    linker_script = ":loader/link.ld",
-    loader_hdrs = [
+    "linker_script": ":loader/link.ld",
+    "loader_hdrs": [
         ":loader/boot_args.h",
         ":loader/carveout.h",
         ":handoff/display.h",
@@ -183,14 +186,14 @@ boot_package(
         ":storage/sd_reference.h",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
-    loader_include_markers = [
+    "loader_include_markers": [
         "//kits/SwitchBoard:SwitchBoard.h",
         ":loader/stage.h",
         ":handoff/record.h",
         ":storage/sd_reference.h",
     ],
     # The cacheable-copy root-boot loader, in link order.
-    loader_srcs = [
+    "loader_srcs": [
         ":loader/entry.S",
         ":loader/loader.c",
         ":loader/memory.c",
@@ -203,19 +206,19 @@ boot_package(
         ":storage/sd_reference.c",
     ],
     # The sources that include the window's layout.h or runs.h: only these recompile when the kernel changes.
-    loader_window_srcs = [
+    "loader_window_srcs": [
         ":loader/entry.S",
         ":loader/loader.c",
         ":loader/copy.c",
         ":loader/copy.S",
     ],
-    lz4 = select({
+    "lz4": select({
         "//install:from_release": "@switch_release//:lz4",
         "//conditions:default": "//tools:lz4",
     }),
     # The overlay's Mach-Os (the trust module hashes those the manifest trusts) and its other files, each by the
     # source tree/overlay/manifest.json names it by.
-    overlay_binaries = select({
+    "overlay_binaries": select({
         "//install:from_release": {"@switch_release//:overlay/" + source: source for source in OVERLAY_BINARIES.values()},
         "//conditions:default": OVERLAY_BINARIES,
     }) | {
@@ -234,7 +237,7 @@ boot_package(
         },
         "//conditions:default": {},
     }),
-    overlay_data = {
+    "overlay_data": {
         "//boot/logo:apple-logo~ipad.png": "build/progressui/apple-logo~ipad.png",
     } | select({
         "//install:from_release": {
@@ -255,32 +258,82 @@ boot_package(
             "//bazel/pinned:overlay/wallpaper-1x/24B119/7560.Lake.plist": "build/wallpaper-1x/24B119/7560.Lake.plist",
         },
     }),
-    overlay_files = ["//overlay:overlay_sources"],
-    overlay_manifest = "//overlay:manifest.json",
-    portrait_header = "//drivers/NativeMobileDisplay:SwitchPortrait.h",
-    prebuilt_loader = select({
+    "overlay_files": ["//overlay:overlay_sources"],
+    "overlay_manifest": "//overlay:manifest.json",
+    "portrait_header": "//drivers/NativeMobileDisplay:SwitchPortrait.h",
+    "prebuilt_loader": select({
         "//install:from_release": "@switch_release//:loader",
         "//conditions:default": None,
     }),
-    prebuilt_loader_constants = select({
+    "prebuilt_loader_constants": select({
         "//install:from_release": "@switch_release//:loader_constants",
         "//conditions:default": None,
     }),
-    script_template = ":u-boot-script.txt",
+    "script_template": ":u-boot-script.txt",
+    "static_trust": "//ipsw:static_trust",
+    "system_trust": "//ipsw:system_cryptex_trust",
+    "xcode_env": select({
+        "//install:from_release": None,
+        "//conditions:default": "@xcode//:xcode.env",
+    }),
+    "xcode_identity": select({
+        "//install:from_release": None,
+        "//conditions:default": "@xcode//:identity",
+    }),
+}
+
+boot_package(
+    name = "package",
+    adt = ":adt",
+    dtb = "//bazel/pinned:firmware/oled-sku3.dtb",
     smp = select({
         "//install:from_release": ":release_smp",
         "//conditions:default": ":smp",
     }),
-    static_trust = "//ipsw:static_trust",
-    system_trust = "//ipsw:system_cryptex_trust",
-    xcode_env = select({
-        "//install:from_release": None,
-        "//conditions:default": "@xcode//:xcode.env",
+    **_PACKAGE
+)
+
+# The Erista's entry (ERISTA_NATIVE_PORT_PLAN.md, N5): its own ADT, DTB and directory, one core. Building it boots
+# nothing: the Erista row is boot 0, so the script and the loader refuse an Erista console, and its tree is checked by
+# //tools/package/test:erista_package_test. Opt in (manual), and never under the release's prebuilt parts, which were
+# made for the OLED's window.
+boot_package(
+    name = "erista_package",
+    adt = ":erista_adt",
+    dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
+    out = "erista-ios",
+    smp = ":single_core",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//install:from_local": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
-    xcode_identity = select({
-        "//install:from_release": None,
-        "//conditions:default": "@xcode//:identity",
+    **_PACKAGE
+)
+
+# What the loader would link to once the Erista's row boots and brings its MC values (carveout.h, every row's values
+# in). Only its loader.uboot.bin is exposed, so there is no package to put on a card: a build that links is a loader
+# below the stamps slot (link.ld ASSERT).
+boot_package(
+    name = "erista_rows_work",
+    adt = ":erista_adt",
+    dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
+    loader_defines = ["-DSWITCH_CARVEOUT_ALL_ROWS=1"],
+    out = "erista-rows-unused",
+    smp = ":single_core",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//install:from_local": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
+    visibility = ["//visibility:private"],
+    **_PACKAGE
+)
+
+filegroup(
+    name = "erista_loader_all_rows",
+    srcs = [":erista_rows_work"],
+    output_group = "loader",
 )
 
 # The loader and the window constants it was compiled for (constants.json: layout.h's and runs.h's), which the release
