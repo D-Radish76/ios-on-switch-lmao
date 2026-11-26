@@ -520,3 +520,31 @@ Report whether the card holds `ios.ini` or `switchroot/ios` already, and which d
 The 140 are the 12 mnemonics of section 13 with the 128 compress shards counted: the check the 01:29 request asked for is done on the Mac. The control passing before `clean` and reading NOT VERIFIED after it is the behaviour the exit codes were written for.
 
 Still open for the boot=0 stage: `clean --seed` (its final removal is to be reported separately), one run of the 13 tests together on `2cfa28d28`, the card copy (on hold), and the written decision on the seed (row 6). The seed of this verification is not used for a boot.
+
+## 16. Mac results for `d3aea29e7` and the seed's final removal (reported 2026-11-27 03:41 JST)
+
+| Item | Result |
+| --- | --- |
+| `diag_t4r` build, tests, audit, LLVM, hashes | recorded in `ERISTA_T4R_RUN.md`, with the Mac LLVM 23.1.6 flat hashes kept apart from the Linux ones |
+| `clean --seed` | exit 0, seed removed |
+| `erista_seed.py check` afterwards | exit 1. That is the expected result: no seed file, so `load` refuses. It is not a failure of the removal |
+| `git status` on the Mac | `M boot/diag/erista-first-run.log` and `?? build/` |
+
+The two `git status` lines are not explained yet. What the tree shows:
+
+- `boot/diag/erista-first-run.log` is the measured first-run record (31 lines). Nothing in the build or the tests writes it. The only tool that does is `diag_boot.py adopt ... --out`, an explicit command, and the two tests that read it only read it. So the change came from an `adopt` run, an editor or a line-ending change, and the diff says which.
+- A repository-root `build/` is not created by `diag_images.py` (it works in a temporary directory), the seed wrapper, or the package tests. Some tool or hand command wrote it. `.gitignore` does not list it, so it shows as untracked.
+
+Neither is touched. The log is a measured record: do not delete, restore or commit it before the diff is read. From the Mac:
+
+```
+git diff --stat boot/diag/erista-first-run.log
+git diff boot/diag/erista-first-run.log | head -60      # rows, or only whitespace and line endings?
+stat -f '%Sm %N' boot/diag/erista-first-run.log
+find build -maxdepth 2 | head -30; stat -f '%Sm %N' build
+git diff boot/diag/erista-first-run.log > ~/erista-first-run.log.diff   # kept outside the tree
+```
+
+Report the diff and the times. If the rows differ, the committed record stays as it is until the owner decides; if only whitespace, say so. `build/` is not deleted without a look at what is in it.
+
+Seed management, left: the 13 tests together on the fixed commit, the card copy (on hold), the written decision on the seed (row 6), and the two `git status` entries above. The verification seed is not used for a boot.

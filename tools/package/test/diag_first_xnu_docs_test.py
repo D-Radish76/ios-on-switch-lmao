@@ -539,6 +539,26 @@ class T4Documents(unittest.TestCase):
         self.assertIn('`//boot:diag_t4r` is built offline', BLOCKERS)
         self.assertIn('not approved to run', BLOCKERS)
 
+    def test_t4r_mac_record_and_review(self) -> None:
+        run = read('ERISTA_T4R_RUN.md')
+        review = read('ERISTA_T4R_REVIEW.md')
+        for value in ('a7a345250212f8ff2fa217919a6feaa966d25fdb8a7cd9e7ed934d71a9d515b0', 'd455378805f24c5ce15a09a8b57bbff8a5dae4db0b4b591aec88deef3240b772', 'LLVM 23.1.6'):
+            self.assertIn(value, run)
+        self.assertEqual(10, run.count('| `diag_') - run.count('| `diag_t4r_test`'))
+        for phrase in ('different toolchain', 'Not shown by these numbers', 'What the audit and the tests cannot show', 'Before anything is put on a card', 'Stop and pass conditions, final'):
+            self.assertIn(phrase, run, phrase)
+        for phrase in ('`WDT_STS_COUNT_SHIFT 4`', 'never measured on this console', 'Proposed change, not made', 'Nothing was changed by this review'):
+            self.assertIn(phrase, review, phrase)
+        for doc in (run, review, BLOCKERS):
+            self.assertNotRegex(doc, '[\\u2013\\u2014]')
+
+    def test_the_two_unexplained_git_status_entries_are_recorded_and_untouched(self) -> None:
+        mac = read('ERISTA_FIRST_XNU_MAC.md')
+        section = mac[mac.index('## 16. '):]
+        for phrase in ('erista-first-run.log', '`build/`', 'do not delete, restore or commit it', 'check` afterwards | exit 1'.replace('check` afterwards', 'erista_seed.py check` afterwards')):
+            self.assertIn(phrase, section, phrase)
+        self.assertIn('unexplained', BLOCKERS)
+
     def test_mac_record_of_the_seed_tools(self) -> None:
         mac = read('ERISTA_FIRST_XNU_MAC.md')
         for phrase in ('## 15. Mac results', '140 actions hold the seed', '`control: NOT VERIFIED`', 'KernelCompress 128', '`/var` is a link to `/private/var`'):
