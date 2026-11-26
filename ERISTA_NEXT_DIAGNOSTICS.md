@@ -25,13 +25,13 @@ diagnostic's own image is the risky part, so D1 can be cut into steps, each run 
 
 | Step | Adds | Executes outside the diagnostic's image | Shows |
 | --- | --- | --- | --- |
-| D1-min | the D0 image plus `mmc dev 1` and `mmc read` of sector 0 to `0xA001F200`; the loader prints only the CRC32 of those 512 bytes and the `0x55AA` signature test | no | the card read by U-Boot lands where the exporter's record will later live, and that range holds |
+| D1-min | the D0 image plus `mmc dev 1` and `mmc read` of sector 0 to `0xA001F200`; U-Boot's script prints the CRC32 of those 512 bytes and the result of the `0x55AA` signature test; the loader prints only D0-R's report | no | the card read by U-Boot lands where the exporter's record will later live, and that range holds |
 | D1-b | `bootm loados` of the exporter to `0xA7000000`; the loader checks its data CRC32 there | no | the exporter sits intact in RAM |
 | D1-c | the two helper calls (`go 0xAA001920`, `go 0xAA001A64`) | yes (U-Boot's own code) | each returns 1 |
 | D1 | `go 0xA7000000` and the record validation | yes (the exporter) | the record |
 
 D1-min and D1-b write nothing to the card and touch no MMIO outside the diagnostic's allowlist. The sector's contents are
-never printed (a disk signature identifies the card); only the CRC and the signature result are. Whether the script can
+never printed (a disk signature identifies the card); U-Boot's script prints only the CRC and the signature result. Whether the script can
 express D1-min and D1-b by dropping steps from the D1 template is unchecked.
 
 ## Framebuffer attributes and SD engine state

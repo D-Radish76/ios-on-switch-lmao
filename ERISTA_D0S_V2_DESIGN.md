@@ -49,4 +49,4 @@ is `ERISTA_D0S_V2_RUN.md`. Not run: Bazel, the Mac build, any hardware. D0-S v2 
 ## Result
 
 The first run passed: `S2 COMPLETE. READS 4. STOP 0000`, hekate back by itself, 35 C at the end (`ERISTA_D0S_V2_RESULT.md`). The register values
-were not reported. D0-S v1's hung instruction stays unidentified.
+were first reported without values; the values followed at 21:40 JST (`ERISTA_D0S_V2_RESULT.md`). D0-S v1's hung instruction stays unidentified.

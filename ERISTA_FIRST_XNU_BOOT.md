@@ -247,7 +247,7 @@ Both are read-only diagnostics over D0-R's loader. Neither is approved to run. B
 | The package holds only its own entry | `bootloader/ini/ios-diag-state.ini` (or `-d1min`) and `switchroot/ios-diag-state/` (or `-d1min`), nothing named `ios`, and the SHA-256 of each file recorded before copying |
 | No iOS entry is bootable | the Erista row is `boot 0`; `iOS` is not in hekate's list for this card, or the normal package is absent |
 | hekate is 6.5.5 and its entry list is photographed | the version the T1 v3 and D0 runs used |
-| Temperature and battery noted | Nyx's readout before. Start only below the provisional 40 C candidate. Battery charged, console on a table, Joy-Con off |
+| Temperature and battery noted | Nyx's readout before, written down before the run (D0-S v2's start was not recorded). Start only below the provisional 40 C candidate. Battery charged, console on a table, Joy-Con off |
 | Someone is at the console and has read the stop rules | POWER held for any stop condition; the scripts end in `reset` after their dwell, "expected to land in hekate, not verified" |
 | The expected screen is known | the table above. D1-min only after D0-S's photograph is reviewed |
 | Nothing else touches the card | no write by either script. The card is not removed while the console is on |
@@ -298,7 +298,7 @@ In order; each line blocks the next unless the owner waives it in writing.
 | # | Step | Settled by | Hardware |
 | --- | --- | --- | --- |
 | 1 | Mac verifies the commands below on one commit, including the trace-kernel scan and the three loader hashes | the Mac | no |
-| 2 | D0-S v1 hung (cause unknown); D0-S v2 run and passed 2026-11-26 (`ERISTA_D0S_V2_RESULT.md`); the framebuffer attributes came from D0-S v1's run, the SDMMC1 values were not reported | a photograph | done, read-only |
+| 2 | D0-S v1 hung (cause unknown); D0-S v2 run and passed 2026-11-26 (`ERISTA_D0S_V2_RESULT.md`); the framebuffer attributes and the four register values are recorded | a photograph | done, read-only |
 | 3 | D1-min run and reviewed (sector 0 CRC, `0xA001F200` range holds) | a photograph | yes, read-only, one SD read |
 | 4 | T2 run, or waived | `ERISTA_T2_DESIGN.md` plus this document | yes, one sensor write |
 | 5 | A stop path chosen: a proven reset (WDT0 or PSCI) or the person, in writing | the owner | the first two need a run |

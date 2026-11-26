@@ -116,5 +116,17 @@ class D1MinTarget(unittest.TestCase):
         self.assertIn('diag_loader_r c101d9c3ed21b8d62f1370e33871b857a41ffff64f8214092cece1d151b8105e', recorded)
 
 
+class PassCriteria(unittest.TestCase):
+    def test_the_review_sets_the_pass_conditions_and_the_start_temperature(self) -> None:
+        review = (ROOT / 'ERISTA_D1MIN_REVIEW.md').read_text()
+        for phrase in ('equals the CRC32 of the card\'s sector 0 taken on the Mac beforehand', '`55 AA PRESENT` for this card', "Nyx's start temperature"):
+            self.assertIn(phrase, review)
+
+    def test_next_diagnostics_names_u_boot_as_the_printer(self) -> None:
+        text = ' '.join((ROOT / 'ERISTA_NEXT_DIAGNOSTICS.md').read_text().split())
+        self.assertIn("U-Boot's script prints the CRC32", text)
+        self.assertNotIn('the loader prints only the CRC32', text)
+
+
 if __name__ == '__main__':
     unittest.main()

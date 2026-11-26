@@ -29,8 +29,7 @@ that line.
 `CRC32 verification` here means a value the person can check, not a pass test. A host-side check of the same card, read only, is the
 CRC32 of the card's first 512 bytes (`dd if=/dev/rdiskN bs=512 count=1 | python3 -c 'import sys,zlib;print("%08x"%zlib.crc32(sys.stdin.buffer.read()))'`,
 with N the card's disk number and the card unmounted). U-Boot's `crc32` is the IEEE CRC32, which `zlib.crc32` computes. Whether the
-digits U-Boot prints are zero padded is not known for this build. `ERISTA_NEXT_DIAGNOSTICS.md` says the loader prints the CRC; the script
-does, in U-Boot, before the screen clears.
+digits U-Boot prints are zero padded is not known for this build. U-Boot prints the CRC, before the screen clears; the loader does not.
 
 ## Findings
 
@@ -44,7 +43,7 @@ does, in U-Boot, before the screen clears.
    did the same on this card and nothing changed on it.
 4. **No stop other than the person.** A hang in `mmc dev` or `mmc read` has no timeout in the script (U-Boot's driver has its own) and
    no hardware reset (`ERISTA_STOP_PATHS.md`).
-5. **Doc inaccuracy found.** `ERISTA_NEXT_DIAGNOSTICS.md` says "the loader prints only the CRC32". The script prints it.
+5. **Doc inaccuracy, corrected.** `ERISTA_NEXT_DIAGNOSTICS.md` said the loader prints the CRC32. U-Boot's script prints it, and that file now says so.
 
 ## Expected time, stop conditions, recovery
 
@@ -66,8 +65,23 @@ The other `REFUSED` statuses are D0-S's (`ERISTA_D0S_RUN.md` section 5): `BOOT_E
 handoff and writes nothing. Recovery is the held power button, then hekate. Temperature: start below
 40 C, note Nyx's reading before and after (the 40, 50 and 55 C figures are provisional). One run, no retry.
 
+## Pass criteria for the first run (set 2026-11-26)
+
+The run passes only if all of these hold:
+
+1. The CRC32 U-Boot prints equals the CRC32 of the card's sector 0 taken on the Mac beforehand. Compare the numbers, not the strings: whether U-Boot pads the digits is not known.
+2. The signature line says `55 AA PRESENT` for this card.
+3. The run ends in hekate by the loader's own reset, with D0-R's report on screen and no `REFUSED` status.
+
+A CRC mismatch, `ABSENT`, or a hang is a FAIL and is reported as it is. A match shows the read returned the card's bytes. CRC32 is not protection against deliberate change.
+
 ## Before a run, if approved
 
-All of `ERISTA_FIRST_XNU_BOOT.md` "Before D0-S and D1-min", with these additions: the three loader hashes equal on the Mac; the card's
-CRC32 of sector 0 computed on the Mac first, so the printed value has something to be compared with; the photograph from the first
-U-Boot line. D1-min is a read-only diagnostic and does not approve D1-b, D1-c, D1, T2 or any XNU boot.
+All of `ERISTA_FIRST_XNU_BOOT.md` "Before D0-S and D1-min", with these additions:
+
+- The three loader hashes equal on the Mac.
+- The card's CRC32 of sector 0 computed on the Mac first, and written down before the run.
+- Nyx's start temperature read and written down before the run (start only below the provisional 40 C candidate). D0-S v2's start was not recorded, so its rise is unknown.
+- The photograph from the first U-Boot line.
+
+D1-min is a read-only diagnostic and does not approve D1-b, D1-c, D1, T2 or any XNU boot.
