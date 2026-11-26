@@ -87,13 +87,10 @@ class EristaPackageTest(unittest.TestCase):
         for other in (ERISTA, ROWS):
             self.assertEqual({k: v for k, v in other.items() if k not in OWN}, {k: v for k, v in OLED.items() if k not in OWN})
 
-    def test_it_is_opt_in_and_only_from_a_local_build(self):
+    def test_it_is_opt_in(self):
         for attributes in (ERISTA, ROWS):
             self.assertEqual(attributes['tags'], ['manual'])
-            self.assertEqual(
-                attributes['target_compatible_with'],
-                Select({'//install:from_local': [], '//conditions:default': ['@platforms//:incompatible']}),
-            )
+            self.assertNotIn('target_compatible_with', attributes)
 
     def test_the_size_check_links_a_loader_and_offers_nothing_else(self):
         self.assertEqual(ROWS['loader_defines'], ['-DSWITCH_CARVEOUT_ALL_ROWS=1'])

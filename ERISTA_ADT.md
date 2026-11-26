@@ -121,8 +121,8 @@ What each answers, and what is expected:
 
 `//boot:erista_package` is `//boot:package`'s rule with the Erista's tree (`//boot:erista_adt`), its DTB, one core
 (`//boot:single_core`) and its own output directory `erista-ios`. Everything else comes from the same attribute set
-(`_PACKAGE` in `boot/BUILD.bazel`), so the two cannot drift apart unseen. It is `manual` and only builds under
-`--//install:prebuilt=local`: the release's prebuilt loader and window were made for the OLED.
+(`_PACKAGE` in `boot/BUILD.bazel`), so the two cannot drift apart unseen. It is `manual`. Build it with
+`--//install:prebuilt=local`: the release's prebuilt loader and window were made for the OLED, and bl33 stage refuses them.
 
 Building it does not let anything boot. The Erista row is `boot 0`: U-Boot's script has no clause for it (WRONG_BOARD) and
 the loader refuses at `loader.c:292` before `native_gate`. `erista_package_test` pins the target's attributes; the refusals

@@ -295,8 +295,8 @@ boot_package(
 
 # The Erista's entry (ERISTA_NATIVE_PORT_PLAN.md, N5): its own ADT, DTB and directory, one core. Building it boots
 # nothing: the Erista row is boot 0, so the script and the loader refuse an Erista console, and its tree is checked by
-# //tools/package/test:erista_package_test. Opt in (manual), and never under the release's prebuilt parts, which were
-# made for the OLED's window.
+# //tools/package/test:erista_package_test. Opt in (manual). Under the release's prebuilt parts, which were made for the OLED's
+# window, bl33 stage refuses it (constants.json differs).
 boot_package(
     name = "erista_package",
     adt = ":erista_adt",
@@ -304,10 +304,6 @@ boot_package(
     out = "erista-ios",
     smp = ":single_core",
     tags = ["manual"],
-    target_compatible_with = select({
-        "//install:from_local": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     **_PACKAGE
 )
 
@@ -322,10 +318,6 @@ boot_package(
     out = "erista-rows-unused",
     smp = ":single_core",
     tags = ["manual"],
-    target_compatible_with = select({
-        "//install:from_local": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     visibility = ["//visibility:private"],
     **_PACKAGE
 )
