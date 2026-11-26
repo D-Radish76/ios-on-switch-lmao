@@ -105,6 +105,11 @@
  * so a normal boot leaves the screen to the console.
  */
 #if defined(SWITCH_XNU_BOARD) && SWITCH_XNU_BOARD
+/* SWITCH_EARLY_TRACE (--//kernel:early_trace, debug kernels only) draws the default green mark too, and arms the C
+ * stages' marks (switch_early_record[0] = 2). Nothing else changes: same registers, same block, same address range. */
+#ifndef SWITCH_EARLY_TRACE
+#define SWITCH_EARLY_TRACE 0
+#endif
 .macro SWITCH_EARLY_MARK stage, color=0xff70ff70
 	cbz x28, 99f
 	cbnz x21, 99f
@@ -112,7 +117,7 @@
 	add x16, x16, EXT(switch_early_record)@pageoff
 	mov x17, #\stage
 	str x17, [x16, #8]
-.if \color != 0xff70ff70
+.if (\color != 0xff70ff70) || SWITCH_EARLY_TRACE
 	MOV64 x16, (0xf5a00000 + (1279 - (16 + 40 * (\stage - 1))) * 2880 + 280 * 4)
 	MOV64 x17, \color
 	mov x18, #16
@@ -1080,6 +1085,10 @@ Lswitch_early_video_ready:
 	add x16, x16, EXT(switch_early_record)@pageoff
 	mov x28, #1
 	str x28, [x16]
+#if SWITCH_EARLY_TRACE
+	mov x17, #2
+	str x17, [x16]
+#endif
 	SWITCH_EARLY_MARK 1
 Lswitch_early_disabled:
 #endif

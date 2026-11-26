@@ -14,6 +14,9 @@ exports_files(glob([
     "*/*.h",
 ]))
 
+# The per-object define helpers, for the tests that read them.
+exports_files(["objects.bzl"])
+
 filegroup(
     name = "srcs",
     srcs = glob(

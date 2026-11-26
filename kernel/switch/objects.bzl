@@ -133,3 +133,19 @@ def with_kprof(component, copts):
         return copts
     kprof = "osfmk/kern/switch_kprof.c"
     return copts | {kprof: copts.get(kprof, []) + ["-DSWITCH_KPROF=1"]}
+
+def with_early_trace(component, copts):
+    """A component's `copts` with SWITCH_EARLY_TRACE for osfmk/arm64/start.s (--//kernel:early_trace), the one object that reads it.
+
+    Args:
+        component: osfmk, bsd, ...
+        copts: the component's per-object copts.
+
+    Returns:
+        The copts, osfmk's with the define on that object.
+    """
+    if component != "osfmk":
+        return copts
+    start = "osfmk/arm64/start.s"
+    return copts | {start: copts.get(start, []) + ["-DSWITCH_EARLY_TRACE=1"]}
+

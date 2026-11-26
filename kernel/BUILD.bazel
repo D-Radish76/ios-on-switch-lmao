@@ -59,6 +59,58 @@ config_setting(
     flag_values = {":kprof": "true"},
 )
 
+# Early stage marks for a first-boot observation (--//kernel:early_trace, xnu-10063, debug kernels only): start.s draws
+# the green mark for every early stage and SwitchDiag.c the blocks of stages 7 to 21 (ERISTA_FIRST_XNU_BOARD.md).
+# Only start.s reads SWITCH_EARLY_TRACE, so only its object changes with the flag. With kprof on as well, both apply.
+bool_flag(
+    name = "early_trace",
+    build_setting_default = False,
+    scope = "target",
+)
+
+config_setting(
+    name = "early_trace_on",
+    flag_values = {":early_trace": "true"},
+)
+
+config_setting(
+    name = "kprof_off",
+    flag_values = {":kprof": "false"},
+)
+
+config_setting(
+    name = "early_trace_off",
+    flag_values = {":early_trace": "false"},
+)
+
+# kprof without the trace: the one xnu-10063 select branch for kprof, so no two branches match at once.
+selects.config_setting_group(
+    name = "kprof_only_debug",
+    match_all = [
+        ":kprof_on",
+        ":early_trace_off",
+        "//bazel:debug",
+    ],
+)
+
+selects.config_setting_group(
+    name = "early_trace_debug",
+    match_all = [
+        ":early_trace_on",
+        ":kprof_off",
+        "//bazel:debug",
+    ],
+)
+
+selects.config_setting_group(
+    name = "early_trace_kprof_debug",
+    match_all = [
+        ":early_trace_on",
+        ":kprof_on",
+        "//bazel:debug",
+    ],
+)
+
 config_setting(
     name = "vm_page_16k",
     flag_values = {":vm_page_size": "16k"},
@@ -79,6 +131,12 @@ cc_library(
     hdrs = ["//drivers/TegraGM20B:OriginalAcceleratorABI.h"],
     tags = ["kernel"],
     target_compatible_with = ["//bazel/platforms:kernel"],
+)
+
+# This file, for the tests that read the flags' definitions.
+filegroup(
+    name = "build_file",
+    srcs = ["BUILD.bazel"],
 )
 
 # What the host tests compile from the kernel tree: every package's files (each package's :all_files).

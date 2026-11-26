@@ -46,14 +46,33 @@ __attribute__((no_stack_protector)) static void early_hex(unsigned y, const char
     (void)switch_diag_text((volatile uint32_t *)(uintptr_t)SWITCH_FB_PA, 16, y, 704, line, sizeof(line), SWITCH_WHITE);
 }
 
-// Records the last early stage reached (shown as LAST STAGE on an early exception or panic screen). Nothing is drawn:
-// a normal boot leaves the screen to XNU's console.
+#if DEVELOPMENT || DEBUG
+// Only start.s built with --//kernel:early_trace sets switch_early_record[0] to 2. The block is start.s's mark for the
+// stage: 16x16 pixels at y 280, x 16 + 40 * (stage - 1), through the identity map of the framebuffer that is live until
+// switch_diag_early_leave.
+__attribute__((no_stack_protector)) static void early_trace_mark(unsigned stage)
+{
+    for (unsigned dx = 0; dx < 16; ++dx) {
+        for (unsigned dy = 0; dy < 16; ++dy)
+            switch_diag_pixel((volatile uint32_t *)(uintptr_t)SWITCH_FB_PA, 16 + 40 * (stage - 1) + dx, 280 + dy,
+                              SWITCH_GREEN);
+    }
+    __asm__ volatile("dsb sy" ::: "memory");
+}
+#endif
+
+// Records the last early stage reached (shown as LAST STAGE on an early exception or panic screen). A normal boot
+// draws nothing and leaves the screen to XNU's console.
 __attribute__((no_stack_protector)) void switch_diag_early_stage(unsigned stage, const char *message)
 {
     (void)message;
     if (!switch_early_record[0] || switch_early_record[2] || stage < 7 || stage > 21)
         return;
     switch_early_record[1] = stage;
+#if DEVELOPMENT || DEBUG
+    if (switch_early_record[0] == 2)
+        early_trace_mark(stage);
+#endif
 }
 
 __attribute__((no_stack_protector)) void switch_diag_early_leave(void)
