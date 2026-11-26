@@ -46,3 +46,15 @@ TEST(SwitchBoardStart, OnlyTheWatchdogRunsOnEveryBoard)
     EXPECT_THAT(table, HasSubstr("{0, switch_watchdog_publish,"));
     EXPECT_THAT(table, HasSubstr("{SWITCH_FEATURE_MC_ERRORS, tegra_mc_errors_start,"));
 }
+
+TEST(SwitchBoardStart, ABoardWithoutSensorsDoesNotWaitForThem)
+{
+    const std::string open =
+        Body(SourceText("../../NativeSwitchWatchdog/NativeSwitchWatchdog.cpp"), "IOReturn NativeSwitchWatchdog::newUserClient(");
+    const size_t gate = open.find("!switch_board_has(SWITCH_FEATURE_SENSORS)");
+    const size_t wait = open.find("switch_sensors_wait_ready(");
+    ASSERT_NE(gate, std::string::npos);
+    ASSERT_NE(wait, std::string::npos);
+    EXPECT_LT(gate, wait);
+    EXPECT_THAT(open.substr(gate, wait - gate), HasSubstr("thermalOffGated"));
+}

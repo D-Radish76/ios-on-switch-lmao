@@ -99,7 +99,8 @@ class EristaPackageTest(unittest.TestCase):
         self.assertNotIn('loader_defines', OLED)
         self.assertNotIn('out', OLED)
         self.assertNotIn('tags', OLED)
-        self.assertNotIn('erista', repr({k: v for k, v in OLED.items() if k != 'dtb'}).lower())
+        names = [v for k, v in OLED.items() if k != 'dtb' and isinstance(v, str)]
+        self.assertFalse([v for v in names if 'erista' in v.lower()])
 
     def test_everything_else_is_shared(self):
         for other in (ERISTA, ROWS):

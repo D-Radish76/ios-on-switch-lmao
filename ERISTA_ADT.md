@@ -145,3 +145,15 @@ shasum -a 256 bazel-bin/boot/full-ram.adt                  # the same as from 85
 ```
 
 `--//boot:smp=false` for the OLED is still its own path. Nothing here sets `boot 1`.
+
+### Mac result for 10f31e883 (iOS 17, boot stays 0)
+
+| Command | Result |
+| --- | --- |
+| `bazel query //boot:all` | success |
+| `carveout_gate_test`, `erista_package_test` | pass |
+| `//boot:package` | success, 87 actions |
+| `//boot:erista_package` | success, 155 actions. Kernel window 17539072 bytes in 87 blocks, entry `0xb53cc4c8` |
+| `//boot:erista_loader_all_rows` | success, 148 actions: the loader with every row's MC values links |
+
+The linked margin below the stamps slot was not reported.

@@ -37,9 +37,10 @@ the candidate. It is not written: it needs an approval and a place (`ArmCpu` own
 
 ### Open
 
-- The watchdog's first open waits up to 180 s for `switch_sensors_wait_ready` (`NativeSwitchWatchdog.cpp`). A board
-  without the SENSORS feature never gets ready, so launchd's `watchdogd` would wait the full 180 s and then run with
-  monitoring off. Skipping the wait on such a board is a behaviour change. Not made.
+- The watchdog's first open used to wait up to 180 s for `switch_sensors_wait_ready` on every board. A board without the
+  SENSORS feature never gets ready, so `watchdogd` would have waited the full 180 s. `newUserClient` now turns
+  userspace monitoring off at once on such a board ("this board has no sensor driver"); the OLED waits as before
+  (`ABoardWithoutSensorsDoesNotWaitForThem`). The watchdog service still publishes, so `watchdogd` finds what it opens.
 - A DEVELOPMENT or DEBUG kernel arms WDT4 on any board when watchdogd connects. Release kernels do not.
 - Whether the Erista's Tegra RTC and `PMC` scratch registers behave as the OLED's is not measured.
 

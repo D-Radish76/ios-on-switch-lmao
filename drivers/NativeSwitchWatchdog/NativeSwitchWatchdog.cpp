@@ -42,6 +42,7 @@
 #include <IOKit/pwr_mgt/RootDomain.h>
 #include <kern/clock.h>
 #include "../SwitchPower/SwitchPower.h"
+#include "../../kits/SwitchBoard/SwitchBoardKernel.h"
 #if DEVELOPMENT || DEBUG
 #include <IOKit/IOFilterInterruptEventSource.h>
 #include "../ArmGIC/SwitchInterrupts.h"
@@ -137,8 +138,13 @@ IOReturn NativeSwitchWatchdog::newUserClient(task_t owningTask, void *securityID
     if (!verdictTaken_) {
         verdictTaken_ = true;
         char why[256] = "";
-        if (!switch_sensors_wait_ready(kSensorWaitMS, why, sizeof(why)))
+        // A board without the sensor driver never gets ready: monitoring goes off at once instead of after kSensorWaitMS.
+        if (!switch_board_has(SWITCH_FEATURE_SENSORS)) {
+            snprintf(why, sizeof(why), "this board has no sensor driver");
             loop_->runAction(&NativeSwitchWatchdog::thermalOffGated, this, why);
+        } else if (!switch_sensors_wait_ready(kSensorWaitMS, why, sizeof(why))) {
+            loop_->runAction(&NativeSwitchWatchdog::thermalOffGated, this, why);
+        }
     }
     if (verdictLock_)
         IOLockUnlock(verdictLock_);
