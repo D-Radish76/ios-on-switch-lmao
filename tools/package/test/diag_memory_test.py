@@ -18,7 +18,7 @@ from script_commands import FORBIDDEN, commands
 
 ROOT = Path('.')
 HEADER = (ROOT / 'kits/SwitchBoard/SwitchBoard.h').read_text()
-LOADER_C = (ROOT / 'boot/loader/loader.c').read_text()
+CARVEOUT_H = (ROOT / 'boot/loader/carveout.h').read_text()
 FRAME = (ROOT / 'boot/diag/memory/u-boot-script.txt').read_text()
 BODIES = {
     1: (ROOT / 'boot/diag/memory/page-1-bdinfo.txt').read_text(),
@@ -80,7 +80,7 @@ class Scripts(unittest.TestCase):
 
     def test_the_wait_and_reset_are_the_first_diagnostics_own(self) -> None:
         template = (ROOT / 'boot/diag/u-boot-diag-script.txt').read_text()
-        tail = diag_script(template, HEADER, LOADER_C).splitlines()[-TAIL_LINES:]
+        tail = diag_script(template, HEADER, CARVEOUT_H).splitlines()[-TAIL_LINES:]
         for page in (1, 2):
             self.assertEqual(script(page).splitlines()[-TAIL_LINES:], tail)
             self.assertEqual([t for t in commands(script(page)) if t[0] == 'reset'], [['reset']])

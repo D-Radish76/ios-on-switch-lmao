@@ -31,6 +31,27 @@ class RunSheet(unittest.TestCase):
         self.assertGreaterEqual(len(codes), 30)
         self.assertEqual([], [f'{c:04X}' for c in sorted(codes - covered_codes(RUN))])
 
+    def test_the_codes_after_the_divisor_write_are_not_called_pre_write_codes(self) -> None:
+        prelude = (ROOT / 'boot/diag/loader/t2_prelude.c').read_text()
+        apply_body = prelude[prelude.index('static int apply_divisor') : prelude.index('int switch_t2_prelude')]
+        names = set(re.findall(r'switch_t2_hw_stop\(hw, (SWITCH_T2_[A-Z0-9_]+)\)', apply_body))
+        names.add(
+            re.search(r'switch_t2_hw_load\(hw, SWITCH_T2_LOAD_APPLY, (SWITCH_T2_[A-Z0-9_]+)\)', apply_body).group(1)
+        )
+        values = {n: int(v, 16) for n, v in re.findall(r'(SWITCH_T2_[A-Z0-9_]+)\s*=\s*(0x7[0-9a-f]{2})', HEADERS)}
+        after = {values[n] for n in names}
+        self.assertEqual({0x70A, 0x70B, 0x70F, 0x714, 0x717}, after)
+        rows = {line.split('|')[1]: line for line in RUN.splitlines() if line.startswith('| `07')}
+        after_row = next(line for key, line in rows.items() if '`070A`' in key)
+        before_row = next(line for key, line in rows.items() if '`0701` to `0709`' in key)
+        self.assertEqual(after, covered_codes(after_row.split('|')[1]))
+        self.assertIn('after the divisor write', after_row)
+        self.assertEqual(set(), covered_codes(before_row.split('|')[1]) & after)
+        prelude_codes = {v for v in values.values() if v < 0x720} - {0x710}
+        self.assertEqual(prelude_codes, covered_codes(before_row.split('|')[1]) | after)
+        self.assertIn('Rows 1 to 7 run before write 1', RUN)
+        self.assertNotIn('all before write 1', RUN)
+
     def test_the_screen_texts_it_quotes_are_the_loaders(self) -> None:
         texts = (
             'BACK IN SHUTDOWN',

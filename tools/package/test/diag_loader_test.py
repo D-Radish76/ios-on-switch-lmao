@@ -42,11 +42,11 @@ CARVEOUT_H = (ROOT / 'boot/loader/carveout.h').read_text()
 TEMPLATE = (ROOT / 'boot/diag/loader/u-boot-script.txt').read_text()
 BL33 = (ROOT / 'bazel/pinned/firmware/bl33.bin').read_bytes()
 DTB = (ROOT / 'bazel/pinned/firmware/erista-sku0.dtb').read_bytes()
-# The *_access.c files hold the raw accesses of T1, T1-R, T1 v3 and T1-T, each with its own tests.
+# The *_access.c files hold the raw accesses of T1, T1-R, T1 v3, T1-T, T2 and D0-S v2, each with its own tests.
 SOURCES = sorted(
     p
     for p in (ROOT / 'boot/diag/loader').glob('*.[chS]')
-    if p.name not in ('t1_access.c', 't1r_access.c', 't1v3_access.c', 't1t_access.c')
+    if p.name not in ('t1_access.c', 't1r_access.c', 't1v3_access.c', 't1t_access.c', 't2_access.c', 's2_access.c')
 )
 
 COMMANDS = {'setenv', 'test', 'echoe', 'base', 'itest.l', 'fdt', 'cp.b', 'bootm', 'sleep', 'reset', 'true'}

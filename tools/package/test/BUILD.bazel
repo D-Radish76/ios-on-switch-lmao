@@ -473,6 +473,9 @@ py_test(
         "//boot/diag/loader/test:t2_bus_test.cpp",
         "//kits/SwitchBoard:SwitchBoard.h",
         "//local:.gitignore",
+        "//tools/package:erista_seed",
+        "//tools/package:erista_seeded_build",
+        "//tools/package:first_xnu_check",
     ],
 )
 
@@ -498,6 +501,7 @@ py_test(
     srcs = ["diag_d1min_audit_test.py"],
     data = [
         "//:ERISTA_D1MIN_REVIEW.md",
+        "//:ERISTA_NEXT_DIAGNOSTICS.md",
         "//bazel/pinned:firmware/erista-sku0.dtb",
         "//boot:all_sources",
         "//boot:build_file",

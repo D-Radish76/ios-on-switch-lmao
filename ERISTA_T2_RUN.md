@@ -73,7 +73,8 @@ exists nothing more is written. Nothing is restored after a stop.
 
 ## 5. Order and gates
 
-The controller gates are T1 v3's, all before write 1. Any miss stops with nothing written.
+The controller gates are T1 v3's. Rows 1 to 7 run before write 1: a miss there stops with nothing written. Row 8 contains write 1 and its
+checks come after it: a miss there leaves the divisor at `00FF0001`, not restored, and the loader makes no further transfer.
 
 | Order | Check | Stop |
 | --- | --- | --- |
@@ -125,10 +126,9 @@ conversion and is shown raw.
 
 | Code | Meaning |
 | --- | --- |
-| `0701` to `071B` | a controller gate stopped before write 1 (section 5). Report the code and the words shown |
-| `070A`, `0734`, `0735`, `0717` | `CONFIG_LOAD` anomaly. No go was written from it |
-| `070F` | I2C1 BUSY after the divisor apply |
-| `070B`, `0714` | divisor readback or `INT_STATUS` differs. Divisor not restored |
+| `0701` to `0709`, `0711` to `0713`, `0715`, `0716`, `071B` | a gate in rows 1 to 7 stopped before write 1. Nothing was written. Report the code and the words shown |
+| `070A`, `070B`, `070F`, `0714`, `0717` | a check of row 8, after the divisor write. The divisor is `00FF0001` and stays so until a reset; no sensor transfer was made |
+| `0734`, `0735` | `CONFIG_LOAD` anomaly on a transfer. No go was written from it |
 | `0721`, `0722`, `0723` | the sensor is not what the design assumes. No sensor write was made |
 | `0720`, `0733` | a read failed or no ACK from `0x4C`. No retry |
 | `0724` | the one-shot failed. Whether the part started a conversion is unknown |
