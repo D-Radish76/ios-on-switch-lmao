@@ -3,6 +3,7 @@
 #
 #   bazel run //tools/lint:py_owners   fail on any tracked .py file no py_binary/py_test/py_library owns
 #   bazel run //tools/lint:starlark_syntax   fail on Python that parses but is not Starlark in any tracked .bzl or BUILD file
+#   bazel run //tools/lint:duplicate_labels   fail on a label listed twice in one attribute of a tracked BUILD file
 #   bazel run //tools/lint:compdb      compile_commands.json (repository root) for clangd, from aquery (no build)
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
@@ -35,4 +36,20 @@ py_test(
     ],
     imports = ["."],
     main = "test_starlark_syntax.py",
+)
+
+py_binary(
+    name = "duplicate_labels",
+    srcs = ["duplicate_labels.py"],
+)
+
+py_test(
+    name = "duplicate_labels_test",
+    srcs = [
+        "duplicate_labels.py",
+        "runfiles_check.py",
+        "test_duplicate_labels.py",
+    ],
+    imports = ["."],
+    main = "test_duplicate_labels.py",
 )

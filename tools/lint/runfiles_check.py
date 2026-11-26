@@ -115,6 +115,10 @@ class Collector:
             self.files.add(path.relative_to(ROOT))
 
     def rule(self, pkg_name: str, rule: dict) -> None:
+        for key in ('srcs', 'hdrs', 'data', 'deps'):
+            resolved = ['//{}:{}'.format(*split(label, pkg_name)) for label in rule.get(key) or []]
+            for label in sorted({label for label in resolved if resolved.count(label) > 1}):
+                self.problems.append(f'{rule["kind"]} {rule["name"]} ({key}): {label} is listed more than once')
         for key in ('srcs', 'data', 'deps'):
             for label in rule.get(key) or []:
                 self.add(label, pkg_name, f'{rule["kind"]} {rule["name"]} ({key})')
