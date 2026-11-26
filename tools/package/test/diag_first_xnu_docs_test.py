@@ -282,6 +282,58 @@ class OptionsAndSeedClosure(unittest.TestCase):
         self.assertNotIn('boot_run=true\n', section.replace('Never build with `--//boot:erista_boot_run=true`', ''))
 
 
+class ReviewOfTheMacSeedReport(unittest.TestCase):
+    def test_the_report_the_control_gap_and_the_card_collision_are_recorded(self) -> None:
+        text = read('ERISTA_FIRST_XNU_MAC.md')
+        section = text[text.index('## 13. Mac results for `caa6b4fa7`') :]
+        for phrase in (
+            '`LoaderCompile` 4',
+            '`KernelTool` 1',
+            '22449 places',
+            '373 files in expected places',
+            '279345 symbolic links',
+            'the seed is in 7 of the 373 expected files',
+            'exit 0 means "the ADT held the seed, or there was no ADT"',
+            'that change is proposed, not made',
+            'must FAIL (exit 1)',
+            'tree artifact',
+            'mnemonic("KernelCompress"',
+            'expect 128',
+            '## 14. The seeded package on a card',
+            "overwrites a card's existing iOS entry",
+            'Using this seed for a later boot-capable build is not decided',
+        ):
+            self.assertIn(phrase, section, phrase)
+
+    def test_the_wrapper_has_the_control_behaviour_the_review_describes(self) -> None:
+        source = read('tools/package/erista_seeded_build.py')
+        self.assertIn('control = [p for p in expected if p.name == seed_places.CONTROL]', source)
+        self.assertIn('if control and control[0] not in report.expected_hits:', source)
+        defs = read('boot/defs.bzl')
+        self.assertIn('_WINDOW_SHARDS = 128', defs)
+        self.assertIn('mnemonic = "KernelCompress"', defs)
+
+    def test_option_d_is_compared_without_choosing_it(self) -> None:
+        text = read('ERISTA_T3T4_OPTIONS.md')
+        for phrase in (
+            '## D: T4 first, with a SoC watchdog and not the PMIC',
+            'Can T3 and T4 be built independently?',
+            'Watchdogs other than the MAX77620',
+            'A stop that is independent of the BPMP',
+            'After the hand-off to XNU',
+            'Restart loops',
+            'A time limit is still not a safety limit',
+            'None of the four is recommended here',
+            '0xc45a',
+            "`timer.h`'s bit definitions were not read",
+        ):
+            self.assertIn(phrase, text, phrase)
+        heartbeat = read('kernel/switch/diag/heartbeat.h')
+        self.assertIn('return 6u | (SWITCH_HEARTBEAT_PERIOD << 4) | (1u << 12) | (1u << 15);', heartbeat)
+        self.assertIn('0xc45au', heartbeat)
+        self.assertNotIn('—', text)
+
+
 class MacResults(unittest.TestCase):
     def test_the_mac_report_and_the_graph_check_are_recorded(self) -> None:
         for phrase in (

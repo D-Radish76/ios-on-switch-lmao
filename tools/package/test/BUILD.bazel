@@ -477,6 +477,7 @@ py_test(
         "//:ERISTA_T3T4_OPTIONS.md",
         "//:ERISTA_T3T4_REUSE.md",
         "//:ERISTA_RANDOM_SEED.md",
+        "//kernel/switch:diag/heartbeat.h",
         "//kernel/switch:include/switch/boot_layout.h",
         "//:ERISTA_FIRST_XNU_BLOCKERS.md",
         "//:ERISTA_FIRST_XNU_BOOT.md",

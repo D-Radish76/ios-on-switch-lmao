@@ -400,13 +400,32 @@ Report: the counts from `actions`, whether `build` accepted the output base, the
 
 | Check | Result |
 | --- | --- |
-| Action-graph check (`actions`) | 12 actions hold the seed; all carry `no-cache` and `no-remote` (reported as a count; the per-mnemonic list was not sent) |
+| Action-graph check (`actions`) | exit 0; 12 actions hold the seed, all uncacheable: `BootAdt` 1, `BootBl33` 1, `BootPackage` 1, `BootScript` 1, `KernelLayout` 1, `KernelTool` 1, `KernelWindow` 1, `LoaderCompile` 4, `LoaderLink` 1 (reported 01:23 JST) |
 | Rebuild after `clean` | 158 actions executed |
 | SHA256 of the package files before and after the rebuild | no difference, exit 0. The same seed gives the same package, so a rebuild does not change what goes on a card |
 | `output_base` | mode 700 |
-| `scan --caches` | 64863 files, no leak. Not reported: the number of places, unreadable files, the exit code and the control line (the seeded ADT holding the seed). Those fields decide whether the result counts |
+| `scan --caches` | 64863 files, no leak: scanned 64863 files in 22449 places for leaks and 373 files in expected places; 279345 symbolic links not followed, 0 special files, 0 unreadable; the seed is in 7 of the 373 expected files; exit 0 (reported 01:23 JST). There is no control line of its own: see below |
 
 Compressed or encrypted data, other encodings, remote caches and the SD card are outside what that scan can see.
+
+What exit 0 means for the control, from `run_scan` in `erista_seeded_build.py`: the seeded ADT is checked only if it exists under `bazel-bin/boot` when the scan starts; then it must be among the expected files that hold the seed, or the scan raises and exits 1. If the file is absent the check is skipped without a line. So exit 0 means "the ADT held the seed, or there was no ADT"; it does not say which. Here the rebuild had just recreated the ADT (`clean` removes it, and the package needs it), so the control most likely ran and passed, and 7 of 373 expected files holding the seed is consistent with that. That is an inference from the order of your commands, not a printed fact. The tool should print the control's outcome; that change is proposed, not made. To see it without a code change, before `clean`:
+
+```
+python3 tools/package/erista_seeded_build.py scan --also bazel-bin/boot/erista-full-ram-seeded.adt   # must FAIL (exit 1) and name that path; no other path
+```
+
+A failure naming exactly that file is the positive control working. Do not use that command as a gate.
+
+The 12 actions: `KernelTool` is the seeded ADT's generator (the mnemonic `kernel/rules/inputs.bzl` gives `tool_output`). The nine counts sum to 12. Missing from them are the `KernelCompress` actions: `boot/defs.bzl` creates one per shard (`_WINDOW_SHARDS` is 128), each reads a `KernelLayout` output directory and compresses it, and the shard that holds the ADT's region holds the seed. The code tags all of them (`_requirements(ctx)`, and `erista_seeded_build_test` counts that every action call has it), but the action-graph check did not report them. The likely cause is that they read a directory output (a tree artifact) that `aquery inputs(...)` does not list as an input file. That is a blind spot of the check, not evidence that the actions are cacheable. To settle it on the Mac:
+
+```
+bazel aquery --config=ios17 --//install:prebuilt=local --//kernel:early_trace=true --//boot:erista_boot_run=false \
+  'mnemonic("KernelCompress", deps(//boot:erista_first_xnu_seeded))' --output=text > /tmp/kc.txt
+grep -c 'Mnemonic: KernelCompress' /tmp/kc.txt                       # expect 128
+grep -c 'no-cache: 1' /tmp/kc.txt; grep -c 'no-remote: 1' /tmp/kc.txt     # expect 128 and 128
+```
+
+The proposed fix, not made: also require both tags on every action of a fixed list of mnemonics regardless of what the taint walk found, and add `KernelCompress` with its count of 128 to the required set.
 
 What would close the seed work for the boot=0 stage:
 
@@ -414,10 +433,10 @@ What would close the seed work for the boot=0 stage:
 | --- | --- |
 | Seed generated, private, git-ignored, not tracked; fingerprint `4b7779b2` | done |
 | Wrapper build with every cache and upload flag last, extra flags allow-listed | done |
-| Every action that holds the seed is `no-cache` and `no-remote` (12 of 12) | done; the 12 mnemonics are still to be listed |
+| Every action that holds the seed is `no-cache` and `no-remote` (12 of 12) | done for the 12 found; the 128 `KernelCompress` actions were not among them (below), so this row is not closed |
 | Rebuild executes the seeded actions and gives the same hashes | done (158 actions, no difference) |
 | Output base mode 700 | done |
-| Scan of git, disk caches, logs and state | done as reported; the four unreported fields above are open |
+| Scan of git, disk caches, logs and state | done: 64863 files, 0 unreadable, exit 0. Whether the ADT control ran is read from the source below |
 | `clean` and `clean --seed` run and checked | not run (below) |
 | The package copied to a card and its hashes compared | not done; needs no boot permission, the package is boot=0 |
 | The written decision to use the seed in the first run | open (row 6) |
@@ -457,3 +476,27 @@ python3 tools/package/first_xnu_check.py macho bazel-bin/kernel/kernel.macho --b
 ```
 
 Never build with `--//boot:erista_boot_run=true`. Report the commit, the pass count, every hash and the text of the two failing builds.
+
+## 14. The seeded package on a card: what it collides with (offline read, nothing copied)
+
+Copying is on hold. This is what the rule in `boot/defs.bzl` (`BootPackage`) and `boot/BUILD.bazel` put in every boot package, so the same layout applies to `erista_first_xnu`, `erista_first_xnu_seeded` and the normal packages:
+
+| Path in the package | Same path in a normal iOS package? |
+| --- | --- |
+| `switchroot/ios/*` (kernel window staging, `bl33.bin`, the loader and the rest of the switchroot files) | yes |
+| `bootloader/ini/ios.ini` (`[iOS]`, `id=iOS`, `boot_prefixes=/switchroot/ios/`) | yes, the same file content |
+| `bootloader/res/icon_ios_hue.bmp` | yes |
+| `overlay/`, `bootstrap/payload.tar`, `bootstrap/manifest.json`, `installer-bundle.json` | yes (the last when the Installer bundle is present) |
+
+So the first-XNU package, seeded or not, overwrites a card's existing iOS entry: same `ios.ini`, same `switchroot/ios/`. Two of them cannot coexist, and the seeded one holds the seed in its window. The diagnostic packages use their own entry names (`ios-diag-*`), which this read did not check against their file names; list the card before anything is copied.
+
+From the repository root, read-only, nothing is written to the card:
+
+```
+find bazel-bin/boot/erista-first-xnu-seeded -type f | sort | sed 's|^bazel-bin/boot/||'
+shasum -a 256 bazel-bin/boot/erista-first-xnu-seeded/bootloader/ini/ios.ini bazel-bin/boot/erista-ios/bootloader/ini/ios.ini   # equal: the entries collide
+find /Volumes/<card> -maxdepth 3 \( -path '*/switchroot/*' -o -path '*/bootloader/ini/*' \) | sort    # what is on the card now
+ls -la /Volumes/<card>/bootloader/ini /Volumes/<card>/switchroot
+```
+
+Report whether the card holds `ios.ini` or `switchroot/ios` already, and which diag entries. The run sheet's rows 5 and 6 (`ERISTA_FIRST_XNU_RUN.md`: the card holds only this entry's files; the normal Erista package is not on it) are what the copy would have to satisfy, with hashes taken before and after a re-insert. Using this seed for a later boot-capable build is not decided.
