@@ -40,6 +40,7 @@ exports_files([
     ".shellcheckrc",
     ".swiftformat",
     ".swiftlint.yml",
+    "ERISTA_FIRST_XNU_BOOT.md",
     "dprint.json",
     "ruff.toml",
     "rustfmt.toml",

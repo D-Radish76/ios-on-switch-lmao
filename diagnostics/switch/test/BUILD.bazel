@@ -120,6 +120,7 @@ py_test(
     name = "vm_done_source_test",
     srcs = ["vm_done_source_test.py"],
     data = [
+        "//:ERISTA_FIRST_XNU_BOOT.md",
         "//boot:build_file",
         "//boot:defs.bzl",
         "//diagnostics/switch:build_file",
