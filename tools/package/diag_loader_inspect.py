@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the D0 loader's binary may contain, read from its link map and its disassembly.
 
-    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r | --t1v3 | --t1t | --t2 | --s2]
+    diag_loader_inspect.py --map MAP --disassembly DIS [--report OUT] [--sd | --t1 | --t1r | --t1v3 | --t1t | --t2 | --s2 | --t4r]
 
 Exits nonzero, naming every violation, when the link pulled in the normal loader's kernel path, when code writes a CPU
 system register that WRITES does not list, or when an instruction outside the reviewed set is present. WRITES is the
@@ -143,6 +143,23 @@ S2_RAW16 = 'switch_s2_read16'
 S2_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_s2_read32>')
 S2_CALL16 = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_s2_read16>')
 S2_ADDRESS_HOLDERS = ('switch_s2_address', 'switch_s2_width', 'switch_s2_may_read', 'switch_s2_read32', 'switch_s2_read16')
+# T4-R (boot/diag/loader/t4r*.c) reads four TKE registers as 32 bit words and has no store counterpart. It links nothing of the
+# other stages and none of their allowlists.
+T4R_SYMBOLS = (
+    'switch_t4r_run_on_hardware',
+    'switch_t4r_run',
+    'switch_t4r_access',
+    'switch_t4r_read32',
+    'switch_t4r_may_read',
+    'switch_t4r_address',
+    'switch_t4r_classify',
+    'switch_t4r_advanced',
+    'switch_t4r_settle',
+)
+T4R_GATE = 'switch_t4r_access'
+T4R_RAW = 'switch_t4r_read32'
+T4R_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t4r_read32>')
+T4R_ADDRESS_HOLDERS = ('switch_t4r_address', 'switch_t4r_may_read', 'switch_t4r_read32')
 STORE = re.compile(r'^(?:str|stp|stur|stlr|stxr|stnp|st[1-4])[a-z]*\b')
 STACK_STORE = re.compile(r'\[(?:sp|x29)\b')
 COMPARISONS = ('cmp', 'ccmp', 'cmn', 'ccmn', 'subs')
@@ -182,6 +199,10 @@ T1T_ADDRESSES = frozenset(
 S2_PAGES = ((0x60006000, 0x60007000), (0x700B0000, 0x700B1000))
 S2_ADDRESSES = frozenset({0x60006004, 0x60006010, 0x700B0024, 0x700B002C})
 
+# T4-R's allowlist (boot/diag/loader/t4r_regs.c) as the linker laid it out: TMRUS, timer 5's PTV, WDT0's config and status.
+T4R_PAGES = ((0x60005000, 0x60006000),)
+T4R_ADDRESSES = frozenset({0x60005010, 0x60005060, 0x60005100, 0x60005104})
+
 
 def inspect_map(  # noqa: PLR0913
     text: str,
@@ -193,6 +214,7 @@ def inspect_map(  # noqa: PLR0913
     t1t: bool = False,
     t2: bool = False,
     s2: bool = False,
+    t4r: bool = False,
 ) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
@@ -205,6 +227,7 @@ def inspect_map(  # noqa: PLR0913
         *(T1T_SYMBOLS if t1t else ()),
         *(T2_SYMBOLS if t2 else ()),
         *(S2_SYMBOLS if s2 else ()),
+        *(T4R_SYMBOLS if t4r else ()),
     )
     problems += [f'the link lacks {name}' for name in wanted if name not in text]
     problems += [f'the link has {name} outside T1' for name in T1_SYMBOLS if not t1 and name in text]
@@ -213,6 +236,13 @@ def inspect_map(  # noqa: PLR0913
     problems += [f'the link has {name} outside T1-T' for name in T1T_SYMBOLS if not t1t and name in text]
     problems += [f'the link has {name} outside T2' for name in T2_SYMBOLS if not t2 and name in text]
     problems += [f'the link has {name} outside D0-S v2' for name in S2_SYMBOLS if not s2 and name in text]
+    problems += [f'the link has {name} outside T4-R' for name in T4R_SYMBOLS if not t4r and name in text]
+    if t4r:
+        problems += [
+            f'T4-R links {name}'
+            for name in ('switch_t1_', 'switch_t1r_', 'switch_t1v3_', 'switch_t1t_', 'switch_t2_', 'switch_s2_', 'switch_t4r_write')
+            if name in text
+        ]
     if s2:
         problems += [
             f'D0-S v2 links {name}'
@@ -388,9 +418,15 @@ def inspect_s2(code: dict[str, list[str]]) -> list[str]:
     )
 
 
-def inspect_image(flat: bytes, *, t1v3: bool = False, t1t: bool = False, t2: bool = False, s2: bool = False) -> list[str]:
+def inspect_t4r(code: dict[str, list[str]]) -> list[str]:
+    return inspect_read_only(code, T4R_GATE, T4R_RAW, T4R_CALL, T4R_ADDRESS_HOLDERS)
+
+
+def inspect_image(
+    flat: bytes, *, t1v3: bool = False, t1t: bool = False, t2: bool = False, s2: bool = False, t4r: bool = False
+) -> list[str]:
     """Return what is wrong with the linked flat image: the register addresses it holds as data, each once."""
-    if not (t1v3 or t1t or t2 or s2):
+    if not (t1v3 or t1t or t2 or s2 or t4r):
         return []
     name, pages, listed = (
         ('T1 v3', T1V3_PAGES, T1V3_ADDRESSES)
@@ -399,6 +435,8 @@ def inspect_image(flat: bytes, *, t1v3: bool = False, t1t: bool = False, t2: boo
         if t2
         else ('D0-S v2', S2_PAGES, S2_ADDRESSES)
         if s2
+        else ('T4-R', T4R_PAGES, T4R_ADDRESSES)
+        if t4r
         else ('T1-T', T1T_PAGES, T1T_ADDRESSES)
     )
     found = [
@@ -428,6 +466,7 @@ def inspect_disassembly(  # noqa: C901, PLR0913
     t1t: bool = False,
     t2: bool = False,
     s2: bool = False,
+    t4r: bool = False,
 ) -> list[str]:
     code = functions(disassembly)
     writes, special, problems = count_instructions(code, sd)
@@ -456,6 +495,8 @@ def inspect_disassembly(  # noqa: C901, PLR0913
         problems += inspect_t1(code, 'switch_t2_')
     if s2:
         problems += inspect_s2(code)
+    if t4r:
+        problems += inspect_t4r(code)
     return problems
 
 
@@ -478,8 +519,12 @@ def main() -> int:
     parser.add_argument('--t1t', action='store_true', help='the T1-T image: the timing register reads are linked')
     parser.add_argument('--t2', action='store_true', help='the T2 image: the divisor write and one TMP451 conversion are linked')
     parser.add_argument('--s2', action='store_true', help='the D0-S v2 image: the CAR and SDMMC1 reads are linked')
+    parser.add_argument('--t4r', action='store_true', help='the T4-R image: the four TKE register reads are linked')
     args = parser.parse_args()
-    flags = {'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t, 't2': args.t2, 's2': args.s2}
+    flags = {
+        'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t, 't2': args.t2, 's2': args.s2,
+        't4r': args.t4r,
+    }  # fmt: skip
     problems = inspect_map(args.map.read_text(), **flags) + inspect_disassembly(args.disassembly.read_text(), **flags)
     if args.report:
         args.report.write_text('\n'.join(problems or ['D0 loader inspection passed']) + '\n' + report() + '\n')

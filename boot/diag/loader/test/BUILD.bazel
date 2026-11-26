@@ -181,6 +181,27 @@ host_test(
     deps = [":s2"],
 )
 
+# T4-R's read logic: four allowlisted 32 bit reads, each between two shown steps, and the WDT0 state classification.
+host_library(
+    name = "t4r",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/loader/t4r.c",
+        "//boot:diag/loader/t4r.h",
+        "//boot:diag/loader/t4r_regs.c",
+        "//boot:diag/loader/t4r_report.c",
+        "//boot:diag/loader/t4r_report.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t4r_test",
+    srcs = ["t4r_test.cpp"],
+    deps = [":t4r"],
+)
+
 # The T2 image's logic: prelude, bus layer, sensor sequence and screen lines, against a model of the CAR words, I2C1 and a TMP451.
 host_library(
     name = "t2_image",

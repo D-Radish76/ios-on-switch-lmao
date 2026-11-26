@@ -40,6 +40,10 @@ The reset cause cannot be read after hekate. T4-A and T4-P therefore pass on wha
 
 A written marker that survives (a PMC scratch word) would give a direct cause, and it needs a PMC write nobody approved. It is not part of this plan; if the owner wants it, it is a separate request with its own register list.
 
+## Implementation
+
+Tier 1 only, built offline on 2026-11-27: `//boot:diag_t4r`, entry `ios-diag-t4r`, hekate name `iOS Diag T4R`, sources `boot/diag/loader/t4r*.c`, build and check commands in `ERISTA_T4R_RUN.md`. It reads `TMRUS`, `TMR5_PTV`, WDT0 config and WDT0 status as 32 bit words, `TMRUS` first and last. Tier 2 (WDT4) and tier 3 are not built. The state classification above is code (`switch_t4r_classify`), with UNKNOWN for what no source names. Not approved to run.
+
 ## Open and measured only by T4-R
 
 Whether WDT0's registers answer at non-secure EL1; whether the DTB's index 7 means anything; whether hekate leaves WDT0 alone in practice (a configured word, a running timer). If any tier 1 read fails to return, stages A and P are not run.

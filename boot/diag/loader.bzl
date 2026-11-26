@@ -55,6 +55,8 @@ def _impl(ctx):
         args.add("--t2")
     if ctx.attr.s2:
         args.add("--s2")
+    if ctx.attr.t4r:
+        args.add("--t4r")
     args.add("--map", linkmap)
     args.add("--disassembly", dis)
     args.add("--report", report)
@@ -121,6 +123,7 @@ diag_loader_package = rule(
         "t1t": attr.bool(default = False, doc = "T1-T: the link carries the timing register reads and the inspection holds them to read-only"),
         "t2": attr.bool(default = False, doc = "T2: the link carries the divisor write and one TMP451 conversion and the inspection holds them to the T2 allowlist"),
         "s2": attr.bool(default = False, doc = "D0-S v2: the link carries the CAR and SDMMC1 reads and the inspection holds them to its four-address read allowlist"),
+        "t4r": attr.bool(default = False, doc = "T4-R: the link carries four TKE register reads and the inspection holds them to its four-address read allowlist"),
         "t1v3": attr.bool(default = False, doc = "T1 v3: the link carries the divisor test and the inspection holds it to its allowlist"),
         "exporter": attr.label(allow_single_file = True, doc = "D1: the pinned exporter.uimg, which gets the bl33.bin slot"),
         "sums": attr.label(allow_single_file = True, doc = "D1: bazel/pinned/SHA256SUMS, the pins the exporter and bl33.bin are checked against"),

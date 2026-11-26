@@ -533,6 +533,12 @@ class T4Documents(unittest.TestCase):
         self.assertNotIn('| Reads (32-bit) | `TMRUS` `0x60005010` (twice, to see it advance); the ten', self.PLAN)
         self.assertNotIn('0x7000e5b4', self.PLAN.split('## T4-A')[0].split('| Reads')[1].split('\n')[0].replace('`PMC_RST_STATUS` is not read', ''))
 
+    def test_t4r_image_is_recorded_and_not_approved(self) -> None:
+        self.assertIn('//boot:diag_t4r', self.T4R)
+        self.assertIn('Not approved to run', self.T4R)
+        self.assertIn('`//boot:diag_t4r` is built offline', BLOCKERS)
+        self.assertIn('not approved to run', BLOCKERS)
+
     def test_mac_record_of_the_seed_tools(self) -> None:
         mac = read('ERISTA_FIRST_XNU_MAC.md')
         for phrase in ('## 15. Mac results', '140 actions hold the seed', '`control: NOT VERIFIED`', 'KernelCompress 128', '`/var` is a link to `/private/var`'):

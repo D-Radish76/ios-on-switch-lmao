@@ -59,6 +59,7 @@ exports_files([
     "ERISTA_T4_DIAG_PLAN.md",
     "ERISTA_T4_WATCHDOG_DESIGN.md",
     "ERISTA_T4R_DESIGN.md",
+    "ERISTA_T4R_RUN.md",
     "ERISTA_T3T4_REUSE.md",
     "ERISTA_RANDOM_SEED.md",
     "ERISTA_T2_DESIGN.md",
