@@ -60,7 +60,7 @@ class FirstXnuCheckTest(unittest.TestCase):
         self.assertIn('first_xnu_check', DEFS)
         entry = BUILD[BUILD.index('name = "erista_first_xnu"') :][:400]
         self.assertIn('require_early_trace = True', entry)
-        self.assertEqual(BUILD.count('require_early_trace'), 1)
+        self.assertEqual(BUILD.count('require_early_trace = True'), 2)  # the plain and the seeded first-XNU targets
 
 
 if __name__ == '__main__':
