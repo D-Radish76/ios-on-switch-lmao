@@ -34,10 +34,24 @@ py_library(
 )
 
 py_library(
+    name = "native_adt_common",
+    srcs = ["native_adt_common.py"],
+    imports = ["."],
+    deps = [":loader_abi"],
+)
+
+py_library(
     name = "native_oled_adt",
     srcs = ["native_oled_adt.py"],
     imports = ["."],
-    deps = [":loader_abi"],
+    deps = [":native_adt_common"],
+)
+
+py_library(
+    name = "native_erista_adt",
+    srcs = ["native_erista_adt.py"],
+    imports = ["."],
+    deps = [":native_adt_common"],
 )
 
 py_library(

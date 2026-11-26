@@ -10,8 +10,11 @@ import unittest
 from pathlib import Path
 
 from boot_script import board_gate, boards, boot_script
-from native_oled_adt import COMPATIBLE, IDENTITIES, MODEL
+from native_erista_adt import IDENTITY as ERISTA_IDENTITY
+from native_oled_adt import COMPATIBLE, MODEL
+from native_oled_adt import FACTS as OLED_FACTS
 
+IDENTITIES = {'oled': OLED_FACTS.identity, 'erista': ERISTA_IDENTITY}
 HEADER = Path('kits/SwitchBoard/SwitchBoard.h').read_text()
 DTBS = {'oled': Path('bazel/pinned/firmware/oled-sku3.dtb'), 'erista': Path('bazel/pinned/firmware/erista-sku0.dtb')}
 TEMPLATE = Path('boot/u-boot-script.txt').read_text()

@@ -53,6 +53,7 @@ py_test(
     ],
     deps = [
         "//tools/package:boot_script",
+        "//tools/package:native_erista_adt",
         "//tools/package:native_oled_adt",
     ],
 )
@@ -405,12 +406,27 @@ py_test(
     ],
 )
 
-# generate_adt per board: the OLED's tree byte for byte, the Erista's identity.
+# The OLED's tree byte for byte, and nothing of the Erista in it.
 py_test(
     name = "native_oled_adt_board_test",
     size = "small",
     srcs = ["native_oled_adt_board_test.py"],
     deps = ["//tools/package:native_oled_adt"],
+)
+
+# The Erista's tree: its numbers against the pinned Erista DTB and the D0 measurements, and the nodes it may have.
+py_test(
+    name = "native_erista_adt_test",
+    size = "small",
+    srcs = ["native_erista_adt_test.py"],
+    data = [
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:loader/memory.c",
+    ],
+    deps = [
+        "//tools/package:native_adt_common",
+        "//tools/package:native_erista_adt",
+    ],
 )
 
 # adt_edit.py over a minimal Switch tree: the selected IPSW kind's iPad's answers on /arm-io, the root and /product

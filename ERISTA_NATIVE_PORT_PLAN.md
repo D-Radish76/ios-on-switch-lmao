@@ -15,14 +15,14 @@ Everything between a Nintendo Switch (2017) and the first XNU instruction, in th
 | 4 | `boot/u-boot-script.txt:43` | Requires `0xF5A00000`, 720x1280, `a8b8g8r8`, rot 3 | Nothing if the properties match | Framebuffer address is hekate's. The console drew on the Erista, but the properties were not read (open) |
 | 5 | `boot/u-boot-script.txt:109` | `fdt rsvmem add 0xF5A00000 0x400000` | None | Same address as row 4 |
 | 6 | `boot/u-boot-script.txt:142-205` | `bootm_low 0x80000000`, `bootm_size 0x7FD00000`, `switch_native_xnu=1`, then `bootm go` | None if bank 0 matches | Bank 0 `0x80000000` + `0x7FD00000` |
-| 7 | `boot/loader/loader.c:288` (`loader_after_transition`) | Refuse `0x301` unless EL1h, SCTLR clear, DAIF masked, CNTFRQ 19.2 MHz, HCR/CNTHCTL/CNTVOFF as the EL2 drop leaves them | None expected | CNTFRQ 19.2 MHz measured. EL2 drop result on the Erista: only D0-R's register log, check before closing |
+| 7 | `boot/loader/loader.c:288` (`loader_after_transition`) | Refuse `0x301` unless EL1h, SCTLR clear, DAIF masked, CNTFRQ 19.2 MHz, HCR/CNTHCTL/CNTVOFF as the EL2 drop leaves them | None | Measured: D0 and D0-R, and the T1 v3 screen as reported by the user: EL=4, SCTLR `30D00800`, DAIF `3C0`, CNTFRQ 19200000, HCR `80000000`, CNTHCTL 3, CNTVOFF 0, EL1 STATE PASS. The diagnostic runs the same `boot/handoff/entry.S` and the same conditions (`diag/loader/checks.c:29-30` equals `loader.c:287-288`) |
 | 8 | `boot/loader/loader.c:292-294` | Reads HIDREV and ODM4, refuses `0x306` when `board->boot` is 0 | Same as row 1. This is the second place `boot 0` stops the loader | measured |
 | 9 | `boot/loader/loader.c:370` (`native_gate` call) | Any non-zero return refuses | See rows 10 to 13 | |
 | 10 | `boot/loader/loader.c` (`native_gate`), `boot/loader/carveout.h` (`switch_carveout_table`) | Done (N1): the OLED name test is gone. A board with no table is refused `0x402` before anything is read | none | The 25 values equal the OLED's |
-| 11 | `boot/loader/loader.c:253` | Entry SP in `[0xf0001000, 0xffd00000)` else `0x401` | None | `FF87D010` and `FF87DD10` pass |
+| 11 | `boot/loader/loader.c:253` | Entry SP in `[0xf0001000, 0xffd00000)` else `0x401` | None | `FF87D010` (D0), `FF87DD10` (D0-R, T1 v3 as reported) pass. The diagnostic uses the same range (`checks.h` `SWITCH_DIAG_DRAM_END`) |
 | 12 | `boot/loader/carveout.h` (`switch_carveout_check`) | Done (N1): one table per board, `switch_carveout_oled` and `switch_carveout_erista`, refuse `0x410 + i`. Host test `carveout_test` | none | All 25 read equal. Carveouts: GPU FW `0xFFD00000`, GPU WPR `0xFFD40000`, secure FW `0xFFE00000`, TZDRAM `0xFFF00000` |
 | 13 | `boot/loader/loader.c:270-274` | Reads six GIC-400 registers into the probe record, no refusal | None | GIC-400 at `0x50041000` and `0x50042000` read on the Erista |
-| 14 | `boot/loader/loader.c:380-384` | CRC32 field of `ID_AA64ISAR0_EL1` must be 1, else `0x305` | None if the A57 reports 1 | Not recorded in the notes I read: confirm in the D0-R log |
+| 14 | `boot/loader/loader.c:380-384` | CRC32 field of `ID_AA64ISAR0_EL1` must be 1, else `0x305` | None | Measured: ISAR0 `0000000000011120`, CRC32 field 1 (D0, D0-R, T1 v3 screen as reported). `diag.c:268` reads the same field |
 | 15 | `boot/loader/loader.c:406`, `:454`, `:460` | Kernel CRC (`0x302`, `0x303`) and boot-args shape (`0x304`) | None, board independent | none needed |
 | 16 | `boot/loader/loader.c:418-422`, `:516-525` | SD reference validation, refuse `0x640+` and `0x650`, `0x660+` | Needs the Erista SDMMC1 path to match (row A-3 SDMMC) | Not measured |
 | 17 | `boot/loader/memory.c:205-214` | Control FDT `/memory` must be exactly `0x80000000+0x7FD00000` and `0x100000000+0x80000000`, else codes 25 and 26. `bank_count = 2` | None | Both banks measured |
@@ -40,19 +40,36 @@ Problems found while surveying (reported, not changed)
 - Row 21 means a build for the Erista today would carry an OLED panel and touch description. `boot 1` must not be set
   before the ADT is board specific.
 - `ERISTA_LOADER_DIAG.md:44` still lists the framebuffer properties as open (row 4).
-- Rows 7, 14 and 18 have no Erista reading in the documents I read. They are unverified, not safe.
+- Row 18 has no Erista reading. It is unverified, not safe. Rows 7 and 14 were unverified in the first version of this plan and are now measured (see the table).
 
 Conditions to lift `boot 0` (none of these is done)
 1. Rows 10 and 12: done in N1 (separate tables, host tests).
-2. Rows 4, 7, 14, 16, 18 each have an Erista measurement or are removed from the Erista path with a reason.
+2. Rows 4, 16, 18 each have an Erista measurement or are removed from the Erista path with a reason.
 3. An Erista ADT exists and its differences from the OLED tree are audited (A-3).
 4. A person sets `boot 1`. Then the Erista build is also checked on both iOS versions (CLAUDE.md, version containment).
+
+## Drivers that run with the feature mask 0
+
+Found while building the Erista ADT (`ERISTA_ADT.md`, "PMIC differences"). With every feature bit clear the kernel still
+runs `switch_pmic_start` (I2C5 configure, reads of MAX77812 addresses `0x33` and `0x31`, MAX77620 RTC reads, a restart
+hook), `tegra_mc_errors_start` (writes MC_INTMASK) and the SD block driver. None of them has run on an Erista. They need
+a decision before `boot 1`; they are not changed here.
+
+## Measured and derived
+
+| Fact | Status | Basis |
+| --- | --- | --- |
+| DRAM banks, MC carveouts, entry SP, EL1 state, ISAR0, GIC-400 words | Measured on the Erista | D0, D0-R logs |
+| DRAM runs at 204 MHz at handoff | Derived from source, not measured | hekate `hw_deinit` runs `minerva_deinit` (`bdk/mem/minerva.c:152`). No EMC clock register was read on the Erista |
+| BPMP is powered off after BL31 | Derived from source, not measured | BL31 source and the pinned binary's behaviour on the Erista. No BPMP register or channel was read |
+| PSCI `SYSTEM_RESET` from EL1 | Measured | Returns to hekate on the Erista |
+| A57 clock and voltage at handoff | Not known | |
 
 ## A-2 Memory and CPU
 
 ### Memory
 - DRAM: bank 0 `0x80000000` + `0x7FD00000`, bank 1 `0x100000000` + `0x80000000`. `memory.c:205` already accepts exactly
-  these. Measured on the Erista. DRAM stays at 204 MHz (no EMC raise), so the EMC feature stays off.
+  these. The banks are measured. The EMC feature stays off.
 - Carveouts: the four values in row 12 equal the OLED's. The kernel layout (`tools/package/native_xnu_layout.py`) is
   derived from these and the loader's destination, boot-args page and stamp slots, which D0 notes call board
   independent. No Erista specific layout change is needed on the evidence so far.
@@ -110,13 +127,13 @@ version), Disableable (feature bit stays 0 at first boot).
 ## Suggested order (not started)
 
 1. Per-board carveout table in `native_gate` with host tests (rows 10, 12). Done (N1).
-2. Close the open measurement rows (4, 7, 14, 18) through read-only diagnostics, one at a time, each approved.
+2. Close the open measurement rows (4, 18) through read-only diagnostics, one at a time, each approved.
 3. Erista ADT generator path: panel, touch removed, SDMMC tuning from its DTB, one CPU.
 4. Single-core build, still `boot 0`, checked on both iOS versions by build and emulator.
 5. A person decides `boot 1` for one attended run. Buttons next, then T2 temperature display, then THERMAL.
 
 ## Not measured on the Erista
 
-EL2 drop and `ID_AA64ISAR0` readings (rows 7, 14), SD engine idle state (18), SD reference path (16), framebuffer
+SD engine idle state (18), SD reference path (16), framebuffer
 properties (4), PSCI `CPU_ON`, interrupt delivery, CPU clock and voltage at handoff, every driver in A-3 other than the
 read only ones noted.
