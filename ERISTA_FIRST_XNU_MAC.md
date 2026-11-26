@@ -408,7 +408,7 @@ Report: the counts from `actions`, whether `build` accepted the output base, the
 
 Compressed or encrypted data, other encodings, remote caches and the SD card are outside what that scan can see.
 
-What exit 0 means for the control, from `run_scan` in `erista_seeded_build.py`: the seeded ADT is checked only if it exists under `bazel-bin/boot` when the scan starts; then it must be among the expected files that hold the seed, or the scan raises and exits 1. If the file is absent the check is skipped without a line. So exit 0 means "the ADT held the seed, or there was no ADT"; it does not say which. Here the rebuild had just recreated the ADT (`clean` removes it, and the package needs it), so the control most likely ran and passed, and 7 of 373 expected files holding the seed is consistent with that. That is an inference from the order of your commands, not a printed fact. The tool should print the control's outcome; that change is proposed, not made. To see it without a code change, before `clean`:
+What exit 0 means for the control, from `run_scan` in `erista_seeded_build.py`: the seeded ADT is checked only if it exists under `bazel-bin/boot` when the scan starts; then it must be among the expected files that hold the seed, or the scan raises and exits 1. If the file is absent the check is skipped without a line. So exit 0 means "the ADT held the seed, or there was no ADT"; it does not say which. Here the rebuild had just recreated the ADT (`clean` removes it, and the package needs it), so the control most likely ran and passed, and 7 of 373 expected files holding the seed is consistent with that. That is an inference from the order of your commands, not a printed fact. Since 2026-11-27 the scan prints the outcome (below). To see the same thing on the build the Mac already has, before `clean`:
 
 ```
 python3 tools/package/erista_seeded_build.py scan --also bazel-bin/boot/erista-full-ram-seeded.adt   # must FAIL (exit 1) and name that path; no other path
@@ -425,7 +425,13 @@ grep -c 'Mnemonic: KernelCompress' /tmp/kc.txt                       # expect 12
 grep -c 'no-cache: 1' /tmp/kc.txt; grep -c 'no-remote: 1' /tmp/kc.txt     # expect 128 and 128
 ```
 
-The proposed fix, not made: also require both tags on every action of a fixed list of mnemonics regardless of what the taint walk found, and add `KernelCompress` with its count of 128 to the required set.
+Changed in the host tools (2026-11-27, not yet run on the Mac; the dependency walk is kept):
+
+- `actions` and `build` also find every `KernelCompress` action by its mnemonic, with the exact count 128 (the test pins it to `_WINDOW_SHARDS` in `boot/defs.bzl`), none listed twice, and both tags on each. Too few, too many, a duplicate or a missing tag refuses. The walk's blind spot, a directory output not listed as an input file, is written at the top of `tools/package/seeded_taint.py`.
+- `scan --caches` prints `control: PASSED` and the path when the seeded ADT held the seed. With no seeded ADT it refuses (`control missing`); `--allow-no-control`, for a scan after `clean`, instead prints `control: NOT VERIFIED` and ends with exit 2: no leak, but nothing showed the scan could see the seed. A control that fails is an error whatever the flag. A git-only scan prints `control: not run`.
+- Exit codes of `scan`: 0 no leak and the control passed (or git-only); 1 a leak, an unreadable file or an error; 2 no leak, control not verified.
+
+For the Mac's final check, `scan --caches` is the one with exit 0 and `control: PASSED`; after `clean`, `scan --caches --allow-no-control` can only give 2.
 
 What would close the seed work for the boot=0 stage:
 

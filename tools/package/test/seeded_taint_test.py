@@ -13,6 +13,11 @@ def action(mnemonic, inputs, outputs, info=TAGS):
     return {'mnemonic': mnemonic, 'inputs': inputs, 'outputs': outputs, 'info': info}
 
 
+def compress(count=128, info=TAGS):
+    # They read a directory the layout step wrote, which the input listing does not name: the walk cannot see them.
+    return [action('KernelCompress', [f'out/blocks/{i:03}'], [f'out/lz4/{i:03}'], info) for i in range(count)]
+
+
 def graph():
     return [
         action('Gen', ['local/erista-seed.hex', 'tool'], ['out/adt']),
@@ -23,7 +28,7 @@ def graph():
         action('BootBl33', ['out/script', 'out/window'], ['out/bl33']),
         action('BootPackage', ['out/bl33'], ['out/pkg']),
         action('Unrelated', ['kernel', 'tool'], ['out/other'], info=''),
-    ]
+    ] + compress()
 
 
 def render(actions):
@@ -39,8 +44,12 @@ def fake(actions, returncode=0):
 
     def run(command, **_):
         seen.append(command)
-        wanted = re.search(r'inputs\("(.*)", deps', command[-1]).group(1)
-        hits = [a for a in actions if any(re.fullmatch(wanted, i) for i in a['inputs'])]
+        by_name = re.search(r'mnemonic\("(.*)", deps', command[-1])
+        if by_name:
+            hits = [a for a in actions if a['mnemonic'] == by_name.group(1)]
+        else:
+            wanted = re.search(r'inputs\("(.*)", deps', command[-1]).group(1)
+            hits = [a for a in actions if any(re.fullmatch(wanted, i) for i in a['inputs'])]
         return subprocess.CompletedProcess(command, returncode, render(hits), '')
 
     run.seen = seen
@@ -58,6 +67,7 @@ class Follows(unittest.TestCase):
     def test_an_action_that_only_a_later_round_reaches_is_found(self):
         counts = taint.seed_actions_are_private((), fake(graph()))
         self.assertEqual(counts['BootPackage'], 1)
+        self.assertEqual(counts['KernelCompress'], 128)
         self.assertNotIn('Unrelated', counts)
 
     def test_the_query_uses_the_same_flags_the_build_does_and_ends_with_the_flag_off(self):
@@ -121,6 +131,56 @@ class Refuses(unittest.TestCase):
         run.rounds = []
         with self.assertRaisesRegex(taint.TaintError, 'still spreading'):
             taint.tainted((), run)
+
+
+class FixedSet(unittest.TestCase):
+    def without_compress(self):
+        return [a for a in graph() if a['mnemonic'] != 'KernelCompress']
+
+    def test_the_walk_alone_would_have_passed_without_them_and_the_fixed_set_does_not(self):
+        with self.assertRaisesRegex(taint.TaintError, '0 KernelCompress actions found, 128 expected'):
+            taint.seed_actions_are_private((), fake(self.without_compress()))
+
+    def test_too_few_or_too_many_are_refused(self):
+        for count in (0, 1, 127, 129, 256):
+            with (
+                self.subTest(count=count),
+                self.assertRaisesRegex(taint.TaintError, f'{count} KernelCompress actions found'),
+            ):
+                taint.seed_actions_are_private((), fake(self.without_compress() + compress(count)))
+
+    def test_a_duplicate_is_refused_even_when_the_count_is_right(self):
+        twice = self.without_compress() + compress(127) + [compress(1)[0]]
+        with self.assertRaisesRegex(taint.TaintError, 'listed twice'):
+            taint.seed_actions_are_private((), fake(twice))
+
+    def test_one_action_without_a_tag_is_refused(self):
+        for info in ('', '{no-cache: 1}', '{no-remote: 1}'):
+            actions = (
+                self.without_compress()
+                + compress(127)
+                + [action('KernelCompress', ['out/blocks/x'], ['out/lz4/x'], info)]
+            )
+            with (
+                self.subTest(info=info),
+                self.assertRaisesRegex(taint.TaintError, 'KernelCompress holds the seed and lacks'),
+            ):
+                taint.seed_actions_are_private((), fake(actions))
+
+    def test_an_action_the_walk_also_finds_is_counted_once(self):
+        both = [a for a in graph() if a['outputs'] != ['out/lz4/000']]
+        both.append(action('KernelCompress', ['out/shard0'], ['out/lz4/000']))
+        found = {a.mnemonic for a in taint.tainted((), fake(both))}
+        self.assertIn('KernelCompress', found)
+        self.assertEqual(taint.seed_actions_are_private((), fake(both))['KernelCompress'], 128)
+
+    def test_the_other_mnemonic_in_the_query_is_not_counted(self):
+        noisy = graph() + [action('KernelCompressOther', ['x'], ['out/other-lz4'], info='')]
+        self.assertEqual(taint.seed_actions_are_private((), fake(noisy))['KernelCompress'], 128)
+
+    def test_the_module_documents_the_tree_artifact_blind_spot(self):
+        self.assertIn('tree artifact', taint.__doc__)
+        self.assertEqual(taint.FIXED_SETS, {'KernelCompress': 128})
 
 
 class Helpers(unittest.TestCase):

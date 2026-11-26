@@ -206,6 +206,13 @@ class BootRowIsRefused(unittest.TestCase):
             self.assertRegex(line, r'name = "erista_boot_run(_on)?",|":erista_boot_run(_on)?"')
 
 
+class FixedSetMatchesTheRule(unittest.TestCase):
+    def test_the_shard_count_the_check_demands_is_the_one_the_rule_creates(self):
+        shards = int(re.search(r'^_WINDOW_SHARDS = (\d+)$', DEFS, re.M).group(1))
+        self.assertEqual(wrapper.seeded_taint.FIXED_SETS['KernelCompress'], shards)
+        self.assertEqual(len(re.findall(r'mnemonic = "KernelCompress"', DEFS)), 1)
+
+
 class CachesStayOff(unittest.TestCase):
     def test_the_cache_flags_come_after_everything_a_caller_or_a_config_can_set(self):
         command = wrapper.bazel_command(['--jobs=4', '--keep_going'])
@@ -344,8 +351,8 @@ class OutputBase(unittest.TestCase):
 class ScanReach(unittest.TestCase):
     SEED = bytes(range(256))[::-1]
 
-    def args(self, *, also=(), caches=False):
-        return type('Args', (), {'also': list(also), 'caches': caches})()
+    def args(self, *, also=(), caches=False, allow=False):
+        return type('Args', (), {'also': list(also), 'caches': caches, 'allow_no_control': allow})()
 
     def test_a_missing_path_is_an_error_and_a_clean_directory_passes(self):
         with tempfile.TemporaryDirectory() as scratch, mock.patch.object(wrapper, 'tracked_existing', return_value=[]):
@@ -427,6 +434,89 @@ class ScanReach(unittest.TestCase):
             )
             found = wrapper.seed_places.disk_caches([rc, Path(scratch) / 'missing'])
             self.assertEqual([Path.home() / 'Library/Caches/x/disk', Path('/tmp/other')], found)
+
+
+class ControlOutcome(unittest.TestCase):
+    SEED = bytes(range(256))[::-1]
+
+    def args(self, **kw):
+        values = {'also': [], 'caches': True, 'allow_no_control': False, **kw}
+        return type('Args', (), values)()
+
+    def environment(self, scratch, adt=b'adt' + SEED, leak=False):
+        root = Path(scratch)
+        base, binary = root / 'ob', root / 'bin'
+        (binary / 'boot').mkdir(parents=True)
+        base.mkdir()
+        if adt is not None:
+            (binary / 'boot' / 'erista-full-ram-seeded.adt').write_bytes(adt)
+        if leak:
+            (base / 'command.log').write_bytes(self.SEED)
+
+        def run(command, **_):
+            return subprocess.CompletedProcess(
+                command, 0, f'{ {"output_base": base, "bazel-bin": binary}[command[2]] }\n', ''
+            )
+
+        return run
+
+    def scan(self, **kw):
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with (
+            tempfile.TemporaryDirectory() as scratch,
+            mock.patch.object(wrapper, 'tracked_existing', return_value=[]),
+            mock.patch.object(wrapper.seed_places, 'disk_caches', return_value=[]),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            run = self.environment(scratch, **{k: kw[k] for k in ('adt', 'leak') if k in kw})
+            try:
+                code = wrapper.run_scan(
+                    self.SEED, self.args(**{k: v for k, v in kw.items() if k not in ('adt', 'leak')}), run
+                )
+            except wrapper.BuildError as exc:
+                code = f'refused: {exc}'
+        return code, out.getvalue()
+
+    def test_a_passed_control_is_printed_and_exits_0(self):
+        code, shown = self.scan()
+        self.assertEqual(code, 0)
+        self.assertIn('control: PASSED', shown)
+        self.assertIn('no leak found', shown)
+
+    def test_a_missing_adt_is_not_a_pass_and_stops_the_final_check(self):
+        code, _ = self.scan(adt=None)
+        self.assertRegex(str(code), 'refused: control missing')
+
+    def test_after_a_clean_the_result_is_distinct_and_says_it_is_not_verified(self):
+        code, shown = self.scan(adt=None, allow_no_control=True)
+        self.assertEqual(code, 2)
+        self.assertIn('control: NOT VERIFIED', shown)
+        self.assertIn('no leak found, control not verified', shown)
+        self.assertNotIn('control: PASSED', shown)
+
+    def test_a_failed_control_stops_even_when_nothing_leaked(self):
+        code, _ = self.scan(adt=b'nothing')
+        self.assertRegex(str(code), 'refused: control FAILED')
+        code, _ = self.scan(adt=b'nothing', allow_no_control=True)
+        self.assertRegex(str(code), 'refused: control FAILED')
+
+    def test_a_leak_is_exit_1_whatever_the_control_says(self):
+        self.assertEqual(self.scan(leak=True)[0], 1)
+        self.assertEqual(self.scan(leak=True, adt=None, allow_no_control=True)[0], 1)
+
+    def test_a_git_only_scan_says_it_ran_no_control(self):
+        code, shown = self.scan(caches=False)
+        self.assertEqual(code, 0)
+        self.assertIn('control: not run', shown)
+        self.assertNotIn('PASSED', shown)
+
+    def test_the_flag_exists_and_the_default_requires_the_control(self):
+        parser_source = (ROOT / 'tools/package/erista_seeded_build.py').read_text()
+        self.assertIn("'--allow-no-control'", parser_source)
 
 
 if __name__ == '__main__':

@@ -193,6 +193,8 @@ def scan_places(args, run=subprocess.run) -> tuple[list[Path], list[Path], list[
 
 
 def run_scan(seed: bytes, args, run=subprocess.run) -> int:
+    """0: no leak and the positive control passed (or the scan is git-only and has none); 1: a leak, an error, or no control
+    where one is required; 2: no leak, but the control could not run (--allow-no-control)."""
     leak, expected, notes = scan_places(args, run)
     try:
         report = seed_scan.scan(seed, leak, expected)
@@ -204,10 +206,30 @@ def run_scan(seed: bytes, args, run=subprocess.run) -> int:
         print(f'could not read {path}', file=sys.stderr)
     print(*notes, *seed_scan.summary(report), 'remote caches and the SD card are not covered', sep='\n')
     control = [p for p in expected if p.name == seed_places.CONTROL]
-    if control and control[0] not in report.expected_hits:
-        raise BuildError('the scan did not find the seed in the seeded ADT, which holds it: this scan proves nothing')
-    print('no leak found' if report.clean else 'leak or unreadable file: see above')
-    return 0 if report.clean else 1
+    verified = None
+    if not args.caches:
+        print('control: not run (a git-only scan has no seeded output to find the seed in)')
+    elif control and control[0] in report.expected_hits:
+        verified = True
+        print(f'control: PASSED, the scan found the seed in {control[0]}')
+    elif control:
+        raise BuildError(
+            f'control FAILED: the seed is in {control[0]} and the scan did not find it, so it proves nothing'
+        )
+    elif args.allow_no_control:
+        verified = False
+        print(
+            'control: NOT VERIFIED, there is no seeded ADT under bazel-bin/boot; a negative result here has no positive control'
+        )
+    else:
+        raise BuildError(
+            'control missing: no seeded ADT under bazel-bin/boot, so the scan cannot show it would find the seed (--allow-no-control after a clean)'
+        )
+    if not report.clean:
+        print('leak or unreadable file: see above')
+        return 1
+    print('no leak found' + ('' if verified is not False else ', control not verified'))
+    return 2 if verified is False else 0
 
 
 def main(argv=None) -> int:
@@ -219,6 +241,9 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         '--caches', action='store_true', help="scan: the disk caches named in rc files and bazel's logs and state"
+    )
+    parser.add_argument(
+        '--allow-no-control', action='store_true', help='scan --caches: accept a missing seeded ADT, exit 2'
     )
     parser.add_argument('--seed', action='store_true', help='clean: delete the seed file too')
     parser.add_argument(

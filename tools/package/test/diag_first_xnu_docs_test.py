@@ -294,7 +294,10 @@ class ReviewOfTheMacSeedReport(unittest.TestCase):
             '279345 symbolic links',
             'the seed is in 7 of the 373 expected files',
             'exit 0 means "the ADT held the seed, or there was no ADT"',
-            'that change is proposed, not made',
+            'Since 2026-11-27 the scan prints the outcome',
+            '`control: NOT VERIFIED`',
+            'exit 2: no leak, but nothing showed the scan could see the seed',
+            'with the exact count 128',
             'must FAIL (exit 1)',
             'tree artifact',
             'mnemonic("KernelCompress"',
@@ -308,7 +311,9 @@ class ReviewOfTheMacSeedReport(unittest.TestCase):
     def test_the_wrapper_has_the_control_behaviour_the_review_describes(self) -> None:
         source = read('tools/package/erista_seeded_build.py')
         self.assertIn('control = [p for p in expected if p.name == seed_places.CONTROL]', source)
-        self.assertIn('if control and control[0] not in report.expected_hits:', source)
+        self.assertIn('elif control and control[0] in report.expected_hits:', source)
+        self.assertIn('control: NOT VERIFIED', source)
+        self.assertIn('control missing', source)
         defs = read('boot/defs.bzl')
         self.assertIn('_WINDOW_SHARDS = 128', defs)
         self.assertIn('mnemonic = "KernelCompress"', defs)
@@ -499,6 +504,31 @@ class MeasuredKernel(unittest.TestCase):
         ):
             self.assertIn(phrase, text, phrase)
         self.assertIn('ERISTA_T3T4_MINIMAL.md', BLOCKERS)
+
+
+class T4Documents(unittest.TestCase):
+    PLAN = read('ERISTA_T4_DIAG_PLAN.md')
+    DESIGN = read('ERISTA_T4_WATCHDOG_DESIGN.md')
+
+    def test_every_stage_has_the_required_rows(self) -> None:
+        for stage in ('## T4-R', '## T4-A', '## T4-P'):
+            self.assertIn(stage, self.PLAN)
+        for row in ('| Purpose |', '| Stop |', '| Pass |', '| Recovery |', '| Loop risk |'):
+            self.assertGreaterEqual(self.PLAN.count(row), 3, row)
+
+    def test_the_plan_is_not_an_approval(self) -> None:
+        for phrase in ('Nothing here is implemented, built or approved', 'T3 and T4 are not waived', '`boot` stays 0'):
+            self.assertIn(phrase, self.PLAN)
+        self.assertIn('| Writes | none.', self.PLAN)
+
+    def test_no_dashes_and_no_forbidden_name(self) -> None:
+        for text in (self.PLAN, self.DESIGN):
+            self.assertNotRegex(text, '[\u2013\u2014]')
+            self.assertNotIn('ioswitch', text.lower())
+
+    def test_the_blockers_point_at_both(self) -> None:
+        for name in ('ERISTA_T4_DIAG_PLAN.md', 'ERISTA_T4_WATCHDOG_DESIGN.md'):
+            self.assertIn(name, BLOCKERS)
 
 
 class Blockers(unittest.TestCase):
