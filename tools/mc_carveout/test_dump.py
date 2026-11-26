@@ -13,9 +13,13 @@ LOADER = Path('boot/loader/carveout.h').read_text()
 
 
 def gate_table():
-    body = LOADER[LOADER.index('switch_carveout_oled[][2] = {') :]
-    body = body[: body.index('};')]
-    return [(int(a, 16), int(v, 0)) for a, v in re.findall(r'\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+|\d+)\}', body)]
+    def array(name):
+        body = LOADER[LOADER.index(name + '[SWITCH_CARVEOUT_REGISTERS] = {') :]
+        body = body[body.index('{') + 1 : body.index('};')]
+        return [int(v, 0) for v in re.findall(r'0x[0-9a-fA-F]+|\b\d+\b', body)]
+
+    base = int(re.search(r'SWITCH_CARVEOUT_MC_BASE (0x[0-9a-fA-F]+)u', LOADER).group(1), 16)
+    return [(base + o, v) for o, v in zip(array('switch_carveout_offset'), array('switch_carveout_OLED'), strict=True)]
 
 
 def run(devmem_body, applet=True, standalone=False):

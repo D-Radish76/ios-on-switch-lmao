@@ -1,4 +1,6 @@
-// native_gate's carveout check (boot/loader/carveout.h) against the Erista's measured registers and the OLED's table.
+// native_gate's carveout check (boot/loader/carveout.h) with every board's values present, against the Erista's measured
+// registers and the OLED's table. carveout_gate_test.cpp has the table as the loader is built.
+#define SWITCH_CARVEOUT_ALL_ROWS 1
 #include <gtest/gtest.h>
 
 #include <map>
@@ -18,6 +20,14 @@ uint32_t Read(uint32_t address)
     return g_registers.at(address);
 }
 
+void Load(const uint32_t *values)
+{
+    g_registers.clear();
+    g_reads = 0;
+    for (unsigned i = 0; i < 25; ++i)
+        g_registers[SWITCH_CARVEOUT_MC_BASE + switch_carveout_offset[i]] = values[i];
+}
+
 void LoadErista()
 {
     g_registers.clear();
@@ -26,29 +36,36 @@ void LoadErista()
         g_registers[r.address] = r.value;
 }
 
-void LoadOled()
+const switch_board *Oled()
 {
-    g_registers.clear();
-    g_reads = 0;
-    for (const auto &row : switch_carveout_oled)
-        g_registers[row[0]] = row[1];
+    return switch_board_by_name("oled");
+}
+
+const switch_board *Erista()
+{
+    return switch_board_by_name("erista");
 }
 
 TEST(Carveout, TheEristasMeasuredRegistersPass)
 {
     LoadErista();
-    EXPECT_EQ(switch_carveout_check("erista", Read), 0u);
+    EXPECT_EQ(switch_carveout_check(Erista(), Read), 0u);
     EXPECT_EQ(g_reads, 25u);
 }
 
-TEST(Carveout, TheEristaTableIsTheMeasurementInOrder)
+TEST(Carveout, TheEristaValuesAreTheMeasurementInOrder)
 {
-    ASSERT_EQ(sizeof(kEristaMeasured) / sizeof(kEristaMeasured[0]), 25u);
-    ASSERT_EQ(sizeof(switch_carveout_erista) / sizeof(switch_carveout_erista[0]), 25u);
     for (unsigned i = 0; i < 25; ++i) {
-        EXPECT_EQ(switch_carveout_erista[i][0], kEristaMeasured[i].address) << i;
-        EXPECT_EQ(switch_carveout_erista[i][1], kEristaMeasured[i].value) << i;
+        EXPECT_EQ(SWITCH_CARVEOUT_MC_BASE + switch_carveout_offset[i], kEristaMeasured[i].address) << i;
+        EXPECT_EQ(switch_carveout_ERISTA[i], kEristaMeasured[i].value) << i;
     }
+}
+
+TEST(Carveout, EachBoardsRowIsItsOwnValues)
+{
+    EXPECT_TRUE(switch_carveout_for(Oled()) == switch_carveout_OLED);
+    EXPECT_TRUE(switch_carveout_for(Erista()) == switch_carveout_ERISTA);
+    EXPECT_TRUE(switch_carveout_for(Oled()) != switch_carveout_for(Erista()));
 }
 
 TEST(Carveout, EachEristaRegisterThatDiffersIsRefusedAtItsOwnIndex)
@@ -56,23 +73,23 @@ TEST(Carveout, EachEristaRegisterThatDiffersIsRefusedAtItsOwnIndex)
     for (unsigned i = 0; i < 25; ++i) {
         LoadErista();
         g_registers[kEristaMeasured[i].address] ^= 1u;
-        EXPECT_EQ(switch_carveout_check("erista", Read), 0x410u + i) << i;
+        EXPECT_EQ(switch_carveout_check(Erista(), Read), 0x410u + i) << i;
     }
 }
 
 TEST(Carveout, EachOledRegisterThatDiffersIsRefusedAtItsOwnIndex)
 {
     for (unsigned i = 0; i < 25; ++i) {
-        LoadOled();
-        g_registers[switch_carveout_oled[i][0]] ^= 0x80000000u;
-        EXPECT_EQ(switch_carveout_check("oled", Read), 0x410u + i) << i;
+        Load(switch_carveout_OLED);
+        g_registers[SWITCH_CARVEOUT_MC_BASE + switch_carveout_offset[i]] ^= 0x80000000u;
+        EXPECT_EQ(switch_carveout_check(Oled(), Read), 0x410u + i) << i;
     }
 }
 
-TEST(Carveout, TheOledPassesOnItsOwnTable)
+TEST(Carveout, TheOledPassesOnItsOwnValues)
 {
-    LoadOled();
-    EXPECT_EQ(switch_carveout_check("oled", Read), 0u);
+    Load(switch_carveout_OLED);
+    EXPECT_EQ(switch_carveout_check(Oled(), Read), 0u);
     EXPECT_EQ(g_reads, 25u);
 }
 
@@ -88,67 +105,57 @@ TEST(Carveout, TheOledTableIsTheOneNativeGateHadBeforeTheSplit)
         {0x70019d54, 0},
     };
     for (unsigned i = 0; i < 25; ++i) {
-        EXPECT_EQ(switch_carveout_oled[i][0], expected[i][0]) << i;
-        EXPECT_EQ(switch_carveout_oled[i][1], expected[i][1]) << i;
+        EXPECT_EQ(SWITCH_CARVEOUT_MC_BASE + switch_carveout_offset[i], expected[i][0]) << i;
+        EXPECT_EQ(switch_carveout_OLED[i], expected[i][1]) << i;
     }
 }
 
 TEST(Carveout, AnUnknownBoardIsRefusedWithoutReadingAnything)
 {
     LoadErista();
-    for (const char *name : {"unknown", "", "OLED", "oled ", "erista2", "ole"}) {
-        EXPECT_EQ(switch_carveout_check(name, Read), 0x402u) << name;
-    }
+    EXPECT_EQ(switch_carveout_check(&switch_board_unknown, Read), 0x402u);
+    EXPECT_EQ(switch_carveout_check(switch_board_by_name("lite"), Read), 0x402u);
     EXPECT_EQ(g_reads, 0u);
-    EXPECT_TRUE(switch_carveout_table("unknown") == nullptr);
+    EXPECT_TRUE(switch_carveout_for(&switch_board_unknown) == nullptr);
 }
 
-TEST(Carveout, TheTablesAreSeparateStorage)
+TEST(Carveout, ACopyOfARowIsNotThatRow)
 {
-    EXPECT_NE(static_cast<const void *>(switch_carveout_table("oled")),
-              static_cast<const void *>(switch_carveout_table("erista")));
+    switch_board copy = *Oled();
+    EXPECT_EQ(switch_carveout_check(&copy, Read), 0x402u);
+    EXPECT_TRUE(switch_carveout_for(nullptr) == nullptr);
+}
+
+TEST(Carveout, EveryRowHasValuesAndTheyMatchTheRowsName)
+{
+    unsigned rows = 0;
+    for (const switch_board &board : switch_boards) {
+        const uint32_t *values = switch_carveout_for(&board);
+        EXPECT_TRUE(values != nullptr) << board.name;
+        if (!values)
+            continue;
+        EXPECT_TRUE(values == (switch_board_streq(board.name, "oled") ? switch_carveout_OLED : switch_carveout_ERISTA))
+            << board.name;
+        ++rows;
+    }
+    EXPECT_EQ(rows, 2u);
 }
 
 TEST(Carveout, AValueOfTheOtherBoardDoesNotStandInForThisOne)
 {
     LoadErista();
     g_registers[0x700199a0] = 0xfff00000u + 0x100000;
-    EXPECT_EQ(switch_carveout_check("oled", Read), 0x414u);
-    EXPECT_EQ(switch_carveout_check("erista", Read), 0x414u);
+    EXPECT_EQ(switch_carveout_check(Oled(), Read), 0x414u);
+    EXPECT_EQ(switch_carveout_check(Erista(), Read), 0x414u);
 }
 
-TEST(Carveout, EveryBoardInTheTableHasACarveoutTableOrIsRefused)
+TEST(Carveout, TheAddressesAreTheMemoryControllersRegisters)
 {
-    for (const switch_board &board : switch_boards) {
-        const bool has = switch_carveout_table(board.name) != nullptr;
-        LoadErista();
-        EXPECT_EQ(switch_carveout_check(board.name, Read) == 0x402u, !has) << board.name;
+    for (unsigned i = 0; i < 25; ++i) {
+        EXPECT_EQ((SWITCH_CARVEOUT_MC_BASE + switch_carveout_offset[i]) & 0xfffff000u, 0x70019000u) << i;
+        for (unsigned j = i + 1; j < 25; ++j)
+            EXPECT_NE(switch_carveout_offset[i], switch_carveout_offset[j]);
     }
-}
-
-TEST(Carveout, TheEristaStillDoesNotBootAndHasNoFeatures)
-{
-    const switch_board *erista = switch_board_by_name("erista");
-    EXPECT_TRUE(erista != nullptr);
-    if (!erista)
-        return;
-    EXPECT_EQ(erista->boot, 0);
-    EXPECT_EQ(erista->features, 0u);
-    const switch_board *detected = switch_board_detect(0x00022117, 0x00000204);
-    EXPECT_TRUE(switch_board_streq(detected->name, "erista"));
-    EXPECT_EQ(detected->boot, 0);
-    const switch_board *oled = switch_board_by_name("oled");
-    EXPECT_TRUE(oled != nullptr);
-    if (!oled)
-        return;
-    EXPECT_EQ(oled->boot, 1);
-}
-
-TEST(Carveout, AnUnknownConsoleIsDetectedAsABoardThatDoesNotBoot)
-{
-    const switch_board *board = switch_board_detect(0x00000000, 0x00000000);
-    EXPECT_EQ(board->boot, 0);
-    EXPECT_EQ(board->features, 0u);
 }
 
 }  // namespace

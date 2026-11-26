@@ -75,15 +75,20 @@ INI = '\n'.join(
 )
 
 
-def carveout_table(loader_src: str) -> list[tuple[int, int]]:
-    """(address, OLED value) of native_gate's OLED table in boot/loader/carveout.h, in its order."""
-    gate = re.search(r'static const uint32_t switch_carveout_oled\[\]\[2\] = \{(.*?)\n\};', loader_src, re.DOTALL)
-    if not gate:
-        raise SystemExit('carveout.h has no OLED carveout table')
-    pairs = re.findall(r'\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+|\d+)\}', gate.group(1))
-    if not pairs or len(pairs) != gate.group(1).count('{'):
-        raise SystemExit('native_gate has a register row diag_boot.py cannot read')
-    return [(int(a, 16), int(v, 0)) for a, v in pairs]
+def carveout_table(carveout_src: str) -> list[tuple[int, int]]:
+    """(address, OLED value) of native_gate's registers in boot/loader/carveout.h, in its order."""
+
+    def array(name: str) -> list[int]:
+        body = re.search(rf'{name}\[SWITCH_CARVEOUT_REGISTERS\] = \{{(.*?)\}};', carveout_src, re.DOTALL)
+        if not body:
+            raise SystemExit(f'carveout.h has no {name}')
+        return [int(v, 0) for v in re.findall(r'0x[0-9a-fA-F]+|\b\d+\b', body.group(1))]
+
+    base = re.search(r'SWITCH_CARVEOUT_MC_BASE (0x[0-9a-fA-F]+)u', carveout_src)
+    offsets, values = array('switch_carveout_offset'), array('switch_carveout_OLED')
+    if not base or len(offsets) != len(values) or not offsets:
+        raise SystemExit('carveout.h has a register row diag_boot.py cannot read')
+    return [(int(base.group(1), 16) + o, v) for o, v in zip(offsets, values, strict=True)]
 
 
 def read_addresses(loader_src: str) -> list[int]:

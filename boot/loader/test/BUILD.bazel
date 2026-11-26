@@ -261,4 +261,11 @@ host_test(
     deps = [":carveout"],
 )
 
+# The same header as the loader builds it: a row that does not boot has no values.
+host_test(
+    name = "carveout_gate_test",
+    srcs = ["carveout_gate_test.cpp"],
+    deps = [":carveout"],
+)
+
 exports_files(["erista_mc_fixture.h"])

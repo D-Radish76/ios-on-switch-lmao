@@ -252,7 +252,7 @@ static uint32_t carveout_read(uint32_t address)
 static uint64_t native_gate(const struct switch_board *board)
 {
 #if LOAD_NATIVE_GATES
-    if (!switch_carveout_table(board->name))
+    if (!switch_carveout_for(board))
         return 0x402;
     // U-Boot's inherited stack must be where hardware showed it before we switch to ours.
     // The full RAM profile later retires completed U-Boot allocations; live
@@ -261,7 +261,7 @@ static uint64_t native_gate(const struct switch_board *board)
         return 0x401;
     // Memory-controller carveout registers as read on hardware, per board (carveout.h). Refuse a changed carveout
     // layout instead of inferring new free memory.
-    const uint64_t carveout = switch_carveout_check(board->name, carveout_read);
+    const uint64_t carveout = switch_carveout_check(board, carveout_read);
     if (carveout)
         return carveout;
     // Non-destructive register observation only: never read IAR or change
