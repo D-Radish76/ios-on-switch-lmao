@@ -42,7 +42,7 @@ The loader's room below U-Boot's stamps slot (`0xa001ef00`) and the SD reference
 already fails past either):
 
 ```
-python3 tools/package/first_xnu_check.py margin bazel-bin/boot/erista-first-xnu_work/loader.uboot.bin
+python3 tools/package/first_xnu_check.py margin bazel-bin/boot/erista_first_xnu_work/loader.uboot.bin
 ```
 
 It reports the flat image only. Stacks are not in the file, so `loader_link.py`'s footprint check stays the authority on those.

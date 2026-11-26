@@ -623,3 +623,15 @@ py_test(
     ],
     deps = ["//tools/package:first_xnu_check_lib"],
 )
+
+# The per-install Erista seed (erista_seed.py): generation, refusals, and the seeded target's cache and git hygiene.
+py_test(
+    name = "erista_seed_test",
+    srcs = ["erista_seed_test.py"],
+    data = [
+        "//boot:build_file",
+        "//local:.gitignore",
+        "//tools/package:erista_adt_seeded.py",
+    ],
+    deps = ["//tools/package:erista_seed_lib"],
+)

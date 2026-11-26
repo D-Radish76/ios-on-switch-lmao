@@ -33,6 +33,24 @@ mixes SE2's DRBG into it per boot (`boot/loader/seed.c`), but only where the row
 Recommended order, if approved: C first (offline, no hardware), then A once the SE1 security registers have been read (a read-only
 diagnostic in the D0-S style) and the margin is known, D after A or if A cannot work. B only as the fallback for A.
 
+## Option C as built (N7 follow-up C)
+
+`tools/package/erista_seed.py generate` writes 256 bytes from the Mac's secure RNG to `local/erista-seed.hex` (mode 0600,
+git-ignored, never printed; only an 8-digit fingerprint is). `//boot:erista_first_xnu_seeded` builds the first-XNU package from
+that file through `//boot:erista_adt_seeded`. The seed is not patched into a built package: the window is LZ4-compressed
+per megabyte, its SHA-256 is the stage id and the loader embeds the block table, so a changed seed changes the loader.
+Rebuilding recomputes every check value (stage id, block table, the script's CRCs) and keeps Bazel's actions
+deterministic for a given file. Unset, short, all-zero, low-variety, world-readable or pinned seeds are refused by the tool
+and by the ADT step, and without the file the target does not exist to build.
+
+Caches: the ADT action is `no-cache` and `no-remote`, but later actions (window, loader, bl33) carry the seed too. Build
+with the flags `erista_seed.py command` prints (`--noremote_accept_cached --noremote_upload_local_results --disk_cache=`).
+Nothing enforces that; a remote cache configured elsewhere would still need those flags. Unverified on the Mac:
+the target, the flags and `//local:erista-seed.hex` as a missing input.
+
+What this does not give: a seed per boot. Every boot of one install has the same physmap slide and stack guard, and the
+seed file sits in the loader window on the card. SE1 is untouched (not approved).
+
 ## Not decided
 
 - Whether a fixed stack guard and slide on the first test boots matter. A trace boot is not a security boundary; a daily-use install is.

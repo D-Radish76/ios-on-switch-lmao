@@ -1,0 +1,9 @@
+# Machine-local inputs git ignores. The seed is made by tools/package/erista_seed.py.
+load("//bazel/lint:defs.bzl", "lint_files")
+
+lint_files()
+
+exports_files([
+    ".gitignore",
+    "erista-seed.hex",
+])

@@ -91,6 +91,26 @@ py_binary(
     deps = [":native_erista_adt"],
 )
 
+py_library(
+    name = "erista_seed_lib",
+    srcs = ["erista_seed.py"],
+    imports = ["."],
+)
+
+py_binary(
+    name = "erista_seed",
+    srcs = ["erista_seed.py"],
+)
+
+py_binary(
+    name = "erista_adt_seeded",
+    srcs = [
+        "erista_adt_seeded.py",
+        "erista_seed.py",
+    ],
+    deps = [":native_erista_adt"],
+)
+
 # Structural check of a native board's ADT (what the kernel and drivers read at boot); adt_check.py ADT --cores N.
 py_library(
     name = "adt_check",
@@ -468,6 +488,7 @@ py_test(
 # //boot:snapshot copies a build to ~/Library/Application Support/switch-ios/lkg/<name> (its py_binary lives in boot/).
 exports_files([
     "adt_edit.py",
+    "erista_adt_seeded.py",
     "overlay.py",
     "snapshot.py",
 ])

@@ -116,6 +116,26 @@ tool_output(
     xcode = False,
 )
 
+# The Erista's tree with a per-install seed from local/erista-seed.hex (tools/package/erista_seed.py generate), which git
+# ignores. Without the file the target does not build. no-remote and no-cache keep this action's output out of any cache;
+# the actions after it depend on the seed too, so build with the flags erista_seed.py command prints.
+tool_output(
+    name = "erista_adt_seeded",
+    srcs = ["//local:erista-seed.hex"],
+    outs = ["erista-full-ram-seeded.adt"],
+    args = [
+        "$(execpath //local:erista-seed.hex)",
+        "{out}",
+    ],
+    binary = "//tools/package:erista_adt_seeded",
+    message = "Generating the native Erista ADT with the per-install seed",
+    requirements = [
+        "no-cache",
+        "no-remote",
+    ],
+    xcode = False,
+)
+
 # hekate passes every key to U-Boot's environment too. bootwait=0: no wait on hekate's logo when launched from Nyx.
 # scan_dev_for_extlinux: the first boot timing sample (boot/loader/stamps.h). bootcmd_mmc0=true: never scan the eMMC.
 write_file(
@@ -169,6 +189,17 @@ boot_entry(
     adt = ":erista_adt",
     dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
     out = "erista-first-xnu",
+    require_early_trace = True,
+    smp = ":single_core",
+    tags = ["manual"],
+)
+
+# erista_first_xnu with the per-install seed: its own directory, never built by default.
+boot_entry(
+    name = "erista_first_xnu_seeded",
+    adt = ":erista_adt_seeded",
+    dtb = "//bazel/pinned:firmware/erista-sku0.dtb",
+    out = "erista-first-xnu-seeded",
     require_early_trace = True,
     smp = ":single_core",
     tags = ["manual"],
