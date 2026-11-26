@@ -50,8 +50,25 @@ The HUD's clear wipes marks 1 to 21 once `arm_vm_init` has returned; its first l
 
 If no mark appears at all, one of these holds, and the screen cannot tell them apart: the loader or XNU hung before mark 1, or start.s's
 contract (`BA_PHYS_BASE`, 4 GiB memory size, virtual base, `0xF5A00000`, stride 2880) did not match the Erista's boot args and early
-rendering stayed off. The loader's stamps at `0xa001ef00` (`ERISTA_XNU_HANDOFF.md`) are the second source. The Erista's boot args against
-that contract have not been compared.
+rendering stayed off. The loader's stamps at `0xa001ef00` (`ERISTA_XNU_HANDOFF.md`) are the second source. The boot args against that contract are compared in the next section.
+
+## Boot args against start.s (N7 follow-up A)
+
+`boot_args_contract_test` evaluates start.s's early-rendering gate on the values the packager writes. Agreeing: field
+offsets (`0x28` to `0x50`), `physBase` `0x80000000`, `memSize` 4 GiB, the kernel base `0xb207c000`, `virtBase` derived from
+the kind's `kernel_virt_base`, framebuffer `0xF5A00000` with stride 2880 inside measured DRAM bank 0
+(`0x80000000` to `0xFFD00000`) and in the loader's reservations, and every mark (stages 1 to 21, x up to 831 in the
+logical 1280x720 frame) inside the 0x384000-byte framebuffer. A mark clobbers only x16 to x18, uses no stack and no call,
+and draws physical `0xF5A00000` addresses: identity-mapped as Device by the stage 3 block before the MMU is enabled, and
+through that same TTBR0 block after.
+
+**One mismatch.** The packager's Video is display 1 with depth `0x320` (`loader_abi.py VIDEO`). start.s accepts depth 32
+for display 1 and `0x320` for display 0 only, so on a package built from today's values the gate falls to
+`Lswitch_early_disabled` and no mark is drawn, trace build or not. XNU's own decode reads the low byte as bits per pixel
+(`pe_init.c`), so `0x320` is a valid depth word. The test records the mismatch instead of hiding it. Two ways to close
+it, neither done: make start.s accept the low byte 32 for display 1 (this also enables early rendering on the OLED, whose
+behaviour with it was not checked), or change `VIDEO` (changes the loader image hash and XNU's console rotation). Needs
+a decision.
 
 ## Stops
 

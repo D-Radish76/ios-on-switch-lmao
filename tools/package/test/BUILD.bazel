@@ -600,3 +600,15 @@ py_test(
     deps = ["//tools/package:diag_loader"],
 )
 
+
+# The boot args the packager builds against start.s's early-rendering gate, the measured DRAM banks and the mark range.
+py_test(
+    name = "boot_args_contract_test",
+    srcs = ["boot_args_contract_test.py"],
+    data = [
+        "//boot:diag/erista-memory-bdinfo.log",
+        "//kernel/switch:include/switch/boot_layout.h",
+        "//kernel/xnu-10063.141.1/osfmk:arm64/start.s",
+    ],
+    deps = ["//tools/package:loader_abi"],
+)
