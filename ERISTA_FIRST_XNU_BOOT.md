@@ -298,7 +298,7 @@ In order; each line blocks the next unless the owner waives it in writing.
 | # | Step | Settled by | Hardware |
 | --- | --- | --- | --- |
 | 1 | Mac verifies the commands below on one commit, including the trace-kernel scan and the three loader hashes | the Mac | no |
-| 2 | D0-S run and reviewed (framebuffer attributes, SDMMC1 words) | a photograph | yes, read-only |
+| 2 | D0-S v1 hung (cause unknown); D0-S v2 run and passed 2026-11-26 (`ERISTA_D0S_V2_RESULT.md`); the framebuffer attributes came from D0-S v1's run, the SDMMC1 values were not reported | a photograph | done, read-only |
 | 3 | D1-min run and reviewed (sector 0 CRC, `0xA001F200` range holds) | a photograph | yes, read-only, one SD read |
 | 4 | T2 run, or waived | `ERISTA_T2_DESIGN.md` plus this document | yes, one sensor write |
 | 5 | A stop path chosen: a proven reset (WDT0 or PSCI) or the person, in writing | the owner | the first two need a run |

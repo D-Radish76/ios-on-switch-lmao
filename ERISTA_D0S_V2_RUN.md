@@ -1,7 +1,8 @@
 # D0-S v2: run sheet
 
-D0-S v2 is not approved to run. This sheet is for the run once it is. One run, no retry, `boot` stays 0. D0-S (v1) is never run
-again: it hung (`boot/diag/erista-d0s-run1.txt`).
+D0-S v2 ran once on 2026-11-26 and passed (`ERISTA_D0S_V2_RESULT.md`, `boot/diag/erista-d0sv2-run1.txt`). A second run is not approved; this
+sheet is the procedure of that run. `boot` stays 0. D0-S (v1) is never run again: it hung (`boot/diag/erista-d0s-run1.txt`), and
+why is not known.
 
 D0-S v2 is D0's loader plus four read-only device reads, behind a U-Boot script that makes no load from a device address. The
 script prints the control FDT's framebuffer properties, as D0-S did, and hands over. The loader reads CAR `RST_DEVICES_L`

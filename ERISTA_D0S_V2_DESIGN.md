@@ -45,3 +45,8 @@ and keeps D0's RAM reads. The loader draws a BEGIN line before each read and a R
 stops the run before the next read with stop `0802`. The SDMMC1 registers are read only behind the CAR bits, Clock Control as a 16 bit `ldrh` (hekate declares `clkcon` as `vu16`, Linux reads it with `readw`; no source reads it as a word). Host tests: `s2_test` (20),
 `diag_state_v2_test` (script, inspection, real link, hashes); the static audit is `boot/diag/erista-s2-mmio-audit.txt`. The run sheet
 is `ERISTA_D0S_V2_RUN.md`. Not run: Bazel, the Mac build, any hardware. D0-S v2 stays HOLD.
+
+## Result
+
+The first run passed: `S2 COMPLETE. READS 4. STOP 0000`, hekate back by itself, 35 C at the end (`ERISTA_D0S_V2_RESULT.md`). The register values
+were not reported. D0-S v1's hung instruction stays unidentified.

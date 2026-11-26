@@ -416,6 +416,33 @@ py_test(
     ],
 )
 
+# The recorded D0-S v2 run against the loader's own text and logic (ERISTA_D0S_V2_RESULT.md).
+py_test(
+    name = "diag_s2_measured_test",
+    srcs = ["diag_s2_measured_test.py"],
+    data = [
+        "//:ERISTA_D0S_V2_RESULT.md",
+        "//:NOTES.md",
+        "//boot:all_sources",
+        "//boot:diag/erista-d0sv2-run1.txt",
+    ],
+)
+
+# D1-min's rendered script and its BUILD target, read offline before any run (ERISTA_D1MIN_REVIEW.md).
+py_test(
+    name = "diag_d1min_audit_test",
+    srcs = ["diag_d1min_audit_test.py"],
+    data = [
+        "//:ERISTA_D1MIN_REVIEW.md",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = ["//tools/package:diag_loader"],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",

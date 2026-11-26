@@ -1,0 +1,20 @@
+# D0-S v2 first hardware run: PASS. Erista, hekate 6.5.5, started from Nyx "More configs", entry iOS Diag State V2.
+# Reported by the user 2026-11-26 21:30 JST. The photograph is not stored here.
+# Only the facts below were reported. The three register values and the start temperature were not, so they are not
+# written here and nothing is inferred for them. Run once, no retry.
+result=PASS
+screen_complete_line=S2 COMPLETE. READS 4. STOP 0000
+reads=4
+stop=0000
+psci_system_reset_returned_to_hekate=yes
+manual_power_hold_needed=no
+start_temperature_nyx=not recorded
+end_temperature_nyx=35 C
+car_rst_devices_l=not reported
+car_clk_out_enb_l=not reported
+sdmmc1_present_state=not reported
+sdmmc1_clock_control=not reported
+# What READS 4 shows by the loader's own logic (boot/diag/loader/s2.c): both CAR words were read, the SDMMC1 gate saw bit 14 of
+# CLK_OUT_ENB_L set and bit 14 of RST_DEVICES_L clear, and both SDMMC1 reads were made and returned. A closed gate gives READS 2.
+# Not shown: the values, whether the 16 bit read of Clock Control returns what the controller holds, and any screen line other
+# than the complete line.
