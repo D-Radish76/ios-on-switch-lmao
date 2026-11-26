@@ -412,6 +412,7 @@ py_test(
         "//tools/package:diag_images",
         "//tools/package:diag_loader",
         "//tools/package:diag_loader_inspect",
+        "//tools/package:diag_mmio_audit",
     ],
 )
 
