@@ -17,7 +17,7 @@ Both are in the TKE block at `0x60005000`. The register layout is the same, 0x20
 | Reset path in the word | bit 15, `PMC2CAR` reset | the heartbeat's word has bit 15 too, plus bit 12 (interrupt) |
 | Belongs to | the CCPLEX by convention: the Erista DTB's `watchdog@60005100` is WDT0 (disabled) | the BPMP: hekate's FIQ goes there, and the heartbeat comment says an FIQ or a core reset from it "would go to BPMP-Lite" |
 | Collision | the panic path's `disarm_watchdog` writes unlock, disable and `TMR5_PTV` 0 to it, so a panic with a reboot delay would cancel ours; the shutdown watch arms it too | hekate arms it again in its next start; the kernel heartbeat refuses to arm over a timer block that is not idle |
-| Source index | the panic path uses 5 with `TMR5_PTV` `0x60`; the DTB node names timer index 7 with a register at `0x60005088`, which the heartbeat's table gives to TMR0. The two do not agree and the TRM is not here | the heartbeat uses 6 with `TMR6_PTV` `0x68` |
+| Source index | the panic path uses 5 with `TMR5_PTV` `0x60`; mainline Linux `tegra_wdt.c` uses WDT0 with timer 5 at `0x60005060`, the same as this path. The DTB node names timer index 7 with a register at `0x60005088` (TMR0 in the heartbeat's table); that node is L4T's and is not needed | the heartbeat uses 6 with `TMR6_PTV` `0x68` |
 
 Provisional preference, for the owner to decide after the read-only diagnostic shows both watchdogs idle: WDT0 on TMR5, the word the panic path already uses (no interrupt, `PMC2CAR` reset), because it is the watchdog Linux assigns to the CCPLEX, it avoids the BPMP's WDT4, and hekate does not touch it. Its collision with the panic path is confined to a kernel that has a reboot delay set, which the first-XNU kernel does not. WDT4 on TMR6 stays the alternative, with the heartbeat's word minus bit 12 (no handler exists in the loader or the early kernel).
 
@@ -43,9 +43,9 @@ Not shown: that any of it has been observed on an Erista, or on any console in a
 ## PMC2CAR reset, the BPMP and the destination
 
 - The word's bit 15 asks the PMC to reset the SoC through the CAR. That is all the repository knows: the comment in `heartbeat.h` ("TMR6, the interrupt and PMC2CAR's reset. No FIQ, no core reset") and `SwitchPanicSave.c` ("armed to reset through the PMC"). No source here states the conditions (a PMC enable, a lock, a secure setting) under which the reset acts.
-- The reset cause it leaves is `PMC_RST_STATUS` (`0x7000e5b4`) 1, "the SoC watchdog" (`SwitchResetCause.h`, from L4T `pmc.c`); a software `MAIN_RST` leaves 3, THERMTRIP 2, power-on 0. That register is the evidence of what ended a run, and it is a PMC read this tree has only in the kernel, not in any loader.
+- The reset cause it leaves in the PMC is `PMC_RST_STATUS` (`0x7000e5b4`) 1, "the SoC watchdog" (`SwitchResetCause.h`, from L4T `pmc.c`); a software `MAIN_RST` leaves 3, THERMTRIP 2, power-on 0. Hekate saves that register and writes it back to power-on in `hw_init`, so nothing launched from hekate can read it (`ERISTA_T4R_DESIGN.md`).
 - The BPMP: the design's own precedent avoids its FIQ and its core reset, so the path should not need BPMP software, but the sources do not show whether the BPMP firmware must be alive for the PMC to act. The first run keeps the BPMP running (hekate hands over to the BPMP firmware, which runs BL31 on a T210). Whether a hung or stopped BPMP changes the outcome is not tested and not testable offline.
-- PSCI `SYSTEM_RESET`, the existing stop, is an `smc` to BL31 (`SwitchVmDone.c`), measured to return to hekate from the loader at EL1 in seven runs (`ERISTA_STOP_PATHS.md`). BL31 is not in this repository. A software main reset by the kernel's own `MAIN_RST` write is the panic path's, and hekate was seen to come back with RAM intact after it. Whether a watchdog reset, the PSCI reset and `MAIN_RST` land in the same place with DRAM kept is likely and unproven; `PMC_RST_STATUS` tells them apart afterwards.
+- PSCI `SYSTEM_RESET`, the existing stop, is an `smc` to BL31 (`SwitchVmDone.c`), measured to return to hekate from the loader at EL1 in seven runs (`ERISTA_STOP_PATHS.md`). BL31 is not in this repository. A software main reset by the kernel's own `MAIN_RST` write is the panic path's, and hekate was seen to come back with RAM intact after it. Whether a watchdog reset, the PSCI reset and `MAIN_RST` land in the same place with DRAM kept is likely and unproven; only a PMC marker written before the reset could tell them apart afterwards, and none is approved.
 
 ## The state after a reset
 
@@ -65,7 +65,7 @@ Stacked, none proven:
 - the period is long enough for a person to hold POWER, which ends any loop by removing power (a power-cycle resets the TKE block, which is also not read from a source here);
 - the staged diagnostics run in an order in which a loop can first appear in a loader that does nothing else.
 
-If hekate's `watchdog_fired()` is true at its next start, its bootloader skips its LP0 and Minerva step and the code read shows no `watchdog_end` on that path, so an armed leftover would also change how hekate starts. That is another reason the first state read comes before any arm.
+`watchdog_fired()` reads an IRAM word that hekate's own FIQ handler sets, so a bit-15 reset does not make hekate skip its LP0 step. A WDT4 left armed would still collide with hekate's `watchdog_start`, whose config write is ignored while the counter runs. The first state read comes before any arm.
 
 ## XNU initialisation and the TKE block
 
@@ -73,4 +73,4 @@ A search of this tree for the TKE block's address and the `TMRUS` register finds
 
 ## Open items that need the TRM or a measurement
 
-Which source index each WDT takes (the DTB and the panic path differ); the exact expiry count and the effect of period 0; whether the WDT registers are accessible at non-secure EL1 here; the PMC2CAR conditions; the BPMP's part; the state after each kind of reset; whether the reset keeps DRAM through to hekate. None is settled by this document, and each has a place in the diagnostics.
+Which source index each WDT takes (mainline Linux and the panic path agree on WDT0 with timer 5; only L4T's DTB node differs, see `ERISTA_T4R_DESIGN.md`); the exact expiry count and the effect of period 0; whether the WDT registers are accessible at non-secure EL1 here; the PMC2CAR conditions; the BPMP's part; the state after each kind of reset; whether the reset keeps DRAM through to hekate. None is settled by this document, and each has a place in the diagnostics.

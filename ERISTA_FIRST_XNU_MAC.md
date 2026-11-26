@@ -506,3 +506,17 @@ ls -la /Volumes/<card>/bootloader/ini /Volumes/<card>/switchroot
 ```
 
 Report whether the card holds `ios.ini` or `switchroot/ios` already, and which diag entries. The run sheet's rows 5 and 6 (`ERISTA_FIRST_XNU_RUN.md`: the card holds only this entry's files; the normal Erista package is not on it) are what the copy would have to satisfy, with hashes taken before and after a re-insert. Using this seed for a later boot-capable build is not decided.
+
+## 15. Mac results for `7ea7b9ddb` and `2cfa28d28` (reported 2026-11-27 02:01 JST)
+
+| Item | Result |
+| --- | --- |
+| Regression, 13 tests | 12 passed. `seed_scan_test` failed once: the Mac's `/var` is a link to `/private/var`, and one assertion compared a resolved path with an unresolved one. The scanner was right. The expectation was resolved (`2cfa28d28`); that test alone passed afterwards. The 13 have not been run together on the fixed commit |
+| `actions` | fingerprint `4b7779b2`; 140 actions hold the seed, all uncacheable: BootAdt 1, BootBl33 1, BootPackage 1, BootScript 1, KernelCompress 128, KernelLayout 1, KernelTool 1, KernelWindow 1, LoaderCompile 4, LoaderLink 1. Exit 0 |
+| `scan --caches` before `clean` | 64904 files in 22452 places; 373 in expected places, 7 of them hold the seed; 279293 links not followed; 0 special; 0 unreadable; `control: PASSED`; no leak; exit 0 |
+| `clean` | exit 0; the ADT, the work directory and the output directory REMOVED; seed retained |
+| `scan --caches --allow-no-control` after `clean` | 64904 files in 22449 places; 0 in expected places; `control: NOT VERIFIED`; no leak found, control not verified; exit 2 |
+
+The 140 are the 12 mnemonics of section 13 with the 128 compress shards counted: the check the 01:29 request asked for is done on the Mac. The control passing before `clean` and reading NOT VERIFIED after it is the behaviour the exit codes were written for.
+
+Still open for the boot=0 stage: `clean --seed` (its final removal is to be reported separately), one run of the 13 tests together on `2cfa28d28`, the card copy (on hold), and the written decision on the seed (row 6). The seed of this verification is not used for a boot.

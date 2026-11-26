@@ -509,6 +509,7 @@ class MeasuredKernel(unittest.TestCase):
 class T4Documents(unittest.TestCase):
     PLAN = read('ERISTA_T4_DIAG_PLAN.md')
     DESIGN = read('ERISTA_T4_WATCHDOG_DESIGN.md')
+    T4R = read('ERISTA_T4R_DESIGN.md')
 
     def test_every_stage_has_the_required_rows(self) -> None:
         for stage in ('## T4-R', '## T4-A', '## T4-P'):
@@ -522,12 +523,23 @@ class T4Documents(unittest.TestCase):
         self.assertIn('| Writes | none.', self.PLAN)
 
     def test_no_dashes_and_no_forbidden_name(self) -> None:
-        for text in (self.PLAN, self.DESIGN):
+        for text in (self.PLAN, self.DESIGN, self.T4R):
             self.assertNotRegex(text, '[\u2013\u2014]')
             self.assertNotIn('ioswitch', text.lower())
 
-    def test_the_blockers_point_at_both(self) -> None:
-        for name in ('ERISTA_T4_DIAG_PLAN.md', 'ERISTA_T4_WATCHDOG_DESIGN.md'):
+    def test_t4r_findings_and_minimal_reads(self) -> None:
+        for phrase in ('Hekate erases the reset cause', '`WDT_TIMER_ID 5`', 'is not a hardware read', 'Tier 1 is four reads', '`0x60005060`', '`0x60005100`'):
+            self.assertIn(phrase, self.T4R, phrase)
+        self.assertNotIn('| Reads (32-bit) | `TMRUS` `0x60005010` (twice, to see it advance); the ten', self.PLAN)
+        self.assertNotIn('0x7000e5b4', self.PLAN.split('## T4-A')[0].split('| Reads')[1].split('\n')[0].replace('`PMC_RST_STATUS` is not read', ''))
+
+    def test_mac_record_of_the_seed_tools(self) -> None:
+        mac = read('ERISTA_FIRST_XNU_MAC.md')
+        for phrase in ('## 15. Mac results', '140 actions hold the seed', '`control: NOT VERIFIED`', 'KernelCompress 128', '`/var` is a link to `/private/var`'):
+            self.assertIn(phrase, mac, phrase)
+
+    def test_the_blockers_point_at_all_three(self) -> None:
+        for name in ('ERISTA_T4_DIAG_PLAN.md', 'ERISTA_T4_WATCHDOG_DESIGN.md', 'ERISTA_T4R_DESIGN.md'):
             self.assertIn(name, BLOCKERS)
 
 
