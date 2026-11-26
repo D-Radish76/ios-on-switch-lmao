@@ -50,10 +50,8 @@ Conditions to lift `boot 0` (none of these is done)
 
 ## Drivers that run with the feature mask 0
 
-Found while building the Erista ADT (`ERISTA_ADT.md`, "PMIC differences"). With every feature bit clear the kernel still
-runs `switch_pmic_start` (I2C5 configure, reads of MAX77812 addresses `0x33` and `0x31`, MAX77620 RTC reads, a restart
-hook), `tegra_mc_errors_start` (writes MC_INTMASK) and the SD block driver. None of them has run on an Erista. They need
-a decision before `boot 1`; they are not changed here.
+`switch_pmic_start` and `tegra_mc_errors_start` now sit behind the `PMIC` and `MC_ERRORS` features, which the Erista does
+not have. The rest, what is left running on every board and the random-seed options are in `ERISTA_BOOT_AUDIT.md`.
 
 ## Measured and derived
 

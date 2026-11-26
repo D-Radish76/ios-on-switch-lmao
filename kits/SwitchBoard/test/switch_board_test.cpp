@@ -24,7 +24,7 @@ void oledConsole(const char *commandLine = "")
 
 void expectNoFeatures(const char *why)
 {
-    for (uint32_t bit = 1; bit <= SWITCH_FEATURE_CACHE_IDLE; bit <<= 1)
+    for (uint32_t bit = 1; bit <= SWITCH_FEATURE_MC_ERRORS; bit <<= 1)
         EXPECT_FALSE(switch_board_has(static_cast<switch_feature>(bit))) << why << " " << bit;
 }
 
@@ -264,6 +264,31 @@ TEST(SwitchBoard, TheDeviceTreeAloneNamesTheRowForTheCpuIdleCheck)
     }
     EXPECT_FALSE(switch_board_has_feature(switch_board_by_compatible("nintendo,aula", 13), SWITCH_FEATURE_CACHE_IDLE));
     EXPECT_FALSE(switch_board_has_feature(switch_board_by_compatible(nullptr, 0), SWITCH_FEATURE_CACHE_IDLE));
+}
+
+TEST(SwitchBoard, OnlyTheOledStartsThePmicAndTheMcErrorInterrupt)
+{
+    oledConsole();
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_PMIC));
+    EXPECT_TRUE(switch_board_has(SWITCH_FEATURE_MC_ERRORS));
+    oledConsole("switch-board=erista");
+    EXPECT_FALSE(switch_board_has(SWITCH_FEATURE_PMIC));
+    EXPECT_FALSE(switch_board_has(SWITCH_FEATURE_MC_ERRORS));
+    oledConsole();
+    gHidrev = 0x21u << 8 | 1u << 4 | 1;
+    gOdm4 = 0;
+    EXPECT_FALSE(switch_board_has(SWITCH_FEATURE_PMIC));
+    EXPECT_FALSE(switch_board_has(SWITCH_FEATURE_MC_ERRORS));
+}
+
+TEST(SwitchBoard, AKernelFeatureNeedsARowOfTheTable)
+{
+    const switch_board stray = switch_boards[0];
+    EXPECT_EQ(switch_board_kernel_features(&switch_boards[0]), SWITCH_FEATURE_PMIC | SWITCH_FEATURE_MC_ERRORS);
+    EXPECT_EQ(switch_board_kernel_features(switch_board_by_name("erista")), 0u);
+    EXPECT_EQ(switch_board_kernel_features(&switch_board_unknown), 0u);
+    EXPECT_EQ(switch_board_kernel_features(&stray), 0u);
+    EXPECT_EQ(switch_board_kernel_features(nullptr), 0u);
 }
 
 TEST(SwitchBoard, TheOledMaskCoversEveryFeatureAndNothingElse)

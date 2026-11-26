@@ -37,7 +37,7 @@ extern int switch_watchdog_publish(void); /* the IOWatchdog launchd starts watch
 extern int tegra_se_start(void);          /* SE2: known answers, kernel PRNG reseed, a timing run later; own thread */
 
 /* A driver outside the board's feature mask is never started: its init is what touches the chip, so the check has to come
- * before it. GPIO, buttons, the watchdog and the MC error interrupt read or watch only and run on every board. */
+ * before it. Only the watchdog runs on every board: it drives no hardware in a release kernel. */
 static void switch_board_driver(unsigned feature, int (*start)(void), const char *name)
 {
     if (feature && !switch_board_has((enum switch_feature)feature))
@@ -60,7 +60,7 @@ static void switch_board_thread(void *parameter __unused, wait_result_t result _
         const char *name;
     } drivers[] = {
         {SWITCH_FEATURE_WIRELESS, switch_bluetooth_start, "SwitchBluetooth"},
-        {0, tegra_mc_errors_start, "the MC error interrupt"},
+        {SWITCH_FEATURE_MC_ERRORS, tegra_mc_errors_start, "the MC error interrupt"},
         {0, switch_watchdog_publish, "NativeSwitchWatchdog"},
         {SWITCH_FEATURE_SE2, tegra_se_start, "TegraSE"},
         {SWITCH_FEATURE_WIRELESS, switch_joycon_start, "SwitchJoyCon"},

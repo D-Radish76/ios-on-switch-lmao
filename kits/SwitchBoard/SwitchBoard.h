@@ -35,8 +35,12 @@ enum switch_feature {
     SWITCH_FEATURE_RTC_MARK = 1u << 14,  // DEVELOPMENT only: the boot mark in the MAX77620 RTC alarm (a write to the RTC)
     SWITCH_FEATURE_CACHE_IDLE = 1u << 15,  // osfmk/arm64/cpu.c: idle with the L1 and L2 retained (Cortex-A57 only)
     SWITCH_FEATURE_BUTTONS = 1u << 16,     // the GPIO controller's eager start and SwitchButtons (PMC_CNTRL, MAX77620 IRQ masks)
+    // Not in a row's mask: SwitchBoardKernel.h gives them by row (the loader and the diagnostic images embed this table)
+    SWITCH_FEATURE_PMIC = 1u << 17,       // SwitchPMIC: I2C5 setup, MAX77812 read, MAX77620 RTC, the halt and restart hook
+    SWITCH_FEATURE_MC_ERRORS = 1u << 18,  // TegraMCErrors: MC_INTMASK and the memory controller's error interrupt
 };
 
+// The bits a row's mask may hold.
 #define SWITCH_FEATURES_ALL 0x1ffffu
 
 // X(id, "name", t210b01, sku, boot, features, model, compatible). boot_script.py parses the first five fields.

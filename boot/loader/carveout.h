@@ -48,12 +48,13 @@ SWITCH_CARVEOUT_ASSERT(sizeof(switch_carveout_values) / sizeof(switch_carveout_v
 
 typedef uint32_t (*switch_carveout_read)(uint32_t address);
 
-// The board's values, or NULL for a pointer that is not one of the table's rows (the unknown board included).
+// The board's values, or NULL for a pointer that is not one of the table's rows (the unknown board included). The
+// pointers are compared as integers: subtracting or ordering pointers into different objects is undefined.
 static inline const uint32_t *switch_carveout_for(const struct switch_board *board)
 {
-    const size_t row = (size_t)(board - switch_boards);
-    return board >= switch_boards && row < sizeof(switch_carveout_values) / sizeof(switch_carveout_values[0])
-               ? switch_carveout_values[row]
+    const uintptr_t at = (uintptr_t)board - (uintptr_t)switch_boards;
+    return at < sizeof(switch_boards) && at % sizeof(switch_boards[0]) == 0
+               ? switch_carveout_values[at / sizeof(switch_boards[0])]
                : NULL;
 }
 

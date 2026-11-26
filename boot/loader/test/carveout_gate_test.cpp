@@ -49,4 +49,24 @@ TEST(CarveoutGate, EveryBootingRowHasValues)
         EXPECT_EQ(board.boot != 0, switch_carveout_for(&board) != nullptr) << board.name;
 }
 
+TEST(CarveoutGate, APointerThatIsNotARowHasNoValues)
+{
+    const uintptr_t table = reinterpret_cast<uintptr_t>(switch_boards);
+    const switch_board copy = switch_boards[0];
+    const switch_board *offTable[] = {
+        nullptr,
+        &copy,
+        &switch_board_unknown,
+        switch_boards + sizeof(switch_boards) / sizeof(switch_boards[0]),
+        reinterpret_cast<const switch_board *>(table + 1),
+        reinterpret_cast<const switch_board *>(table + sizeof(switch_boards[0]) / 2),
+        reinterpret_cast<const switch_board *>(table - sizeof(switch_boards[0])),
+        reinterpret_cast<const switch_board *>(~uintptr_t{0}),
+    };
+    for (const switch_board *board : offTable) {
+        EXPECT_TRUE(switch_carveout_for(board) == nullptr);
+        EXPECT_EQ(switch_carveout_check(board, Zero), 0x402u);
+    }
+}
+
 }  // namespace

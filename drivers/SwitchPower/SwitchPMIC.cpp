@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // What XNU's platform layer needs from the Switch OLED's (T210B01) PMICs on I2C5 (PWR_I2C), early in boot:
 //   * the boot report: one console line with the CPU and EMC clocks as the CAR has them and VDD_CPU as the MAX77812
-//     has it (SwitchClocks.h), always;
+//     has it (SwitchClocks.h), always; a board without the PMIC feature gets the CAR half only. That feature also
+//     covers everything below that uses I2C5 (the RTC, the Wi-Fi clock, the halt hook);
 //   * the wall clock: the MAX77620 RTC, published as the "IORTC" resource that ArmDTPlatform forwards
 //     PEGetUTCTimeOfDay() / PESetUTCTimeOfDay() to, read only (rtcMode 1; 2 would write it back);
 //   * Shut Down and Restart: PE_halt_restart, which IOPlatformExpert::haltRestart() calls from PEHaltRestart();
@@ -649,8 +650,11 @@ void reportClocks(const char *when)
     formatMHz(emcRate, sizeof(emcRate), emc.kHz);
     uint8_t address = 0;
     uint8_t vout = 0;
-    const int err = readCpuRail(&address, &vout);
-    if (err) {
+    const bool probeRail = switch_board_has(SWITCH_FEATURE_PMIC);
+    const int err = probeRail ? readCpuRail(&address, &vout) : 0;
+    if (!probeRail) {
+        snprintf(rail, sizeof(rail), "VDD_CPU not read");
+    } else if (err) {
         snprintf(rail, sizeof(rail), "VDD_CPU unreadable (I2C5 %d)", err);
     } else {
         snprintf(rail, sizeof(rail), "VDD_CPU %u mV (MAX77812 0x%02x)", voutMilliVolts(vout), address);
@@ -767,8 +771,11 @@ extern "C" int switch_pmic_start(void)
     uint8_t control = 0;
     int64_t rtcSecs = -1;
     uint64_t rtcStamp = 0;
-    const int err = tegra_i2c_init(kBus) ? TEGRA_I2C_ENOTREADY : readByte(kPmic, ONOFFCNFG1, &control);
-    if (err) {
+    const bool pmic = switch_board_has(SWITCH_FEATURE_PMIC);
+    const int err = !pmic ? 0 : tegra_i2c_init(kBus) ? TEGRA_I2C_ENOTREADY : readByte(kPmic, ONOFFCNFG1, &control);
+    if (!pmic) {
+        IOLog("SwitchPMIC: not enabled for this board: I2C5 untouched, no RTC, no halt or restart hook\n");
+    } else if (err) {
         IOLog("SwitchPMIC: MAX77620 not answering on I2C5 (%d): no RTC, no power-off\n", err);
     } else {
         if (switch_board_has(SWITCH_FEATURE_WIRELESS)) {

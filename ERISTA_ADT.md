@@ -76,19 +76,18 @@ feature is enabled on the Erista, the resume path needs the same board check (it
 
 The ADT has none. The drivers do, and these are the ones that act on every board:
 
-| Driver | Behaviour with the feature mask 0 | Erista |
+| Driver | Before | Now |
 | --- | --- | --- |
-| `SwitchPMIC.cpp:756` (`switch_pmic_start`, called from `IOStartIOKit.cpp:92`) | `reportClocks("at boot")`: reads CAR, then `readCpuRail` probes MAX77812 at I2C5 `0x33` and `0x31` (`SwitchClocks.h:64`), then reads MAX77620 RTC state at `0x3c` and installs the halt and restart hook | the Erista DTB has no MAX77812. Both probes should NACK ("VDD_CPU unreadable") and are reads. `tegra_i2c_init(5)` first configures I2C5 (divisor `(5<<16)\|1`, bus clear), which is a controller write. Not run on an Erista |
-| `TegraMCErrors.cpp:124` (`tegra_mc_errors_start`) | writes MC_INTMASK to unmask the error interrupt | an MC register write at boot. Same MC block on both (the 25 carveout registers are equal), the register itself unread on the Erista |
-| `NativeSwitchWatchdog` | starts on every board | not audited |
+| `SwitchPMIC.cpp:756` (`switch_pmic_start`, called from `IOStartIOKit.cpp:92`) | Configured I2C5 (divisor `(5<<16)\|1`, bus clear), probed MAX77812 at `0x33` and `0x31` (`SwitchClocks.h:64`), read the MAX77620 RTC, installed the halt and restart hook | Behind the `PMIC` feature. The Erista has no MAX77812 in its DTB, and none of this has run on one |
+| `TegraMCErrors.cpp:124` (`tegra_mc_errors_start`) | Wrote MC_INTMASK | Behind the `MC_ERRORS` feature |
+| `NativeSwitchWatchdog` | Starts on every board | Stays. No hardware in a release kernel. See `ERISTA_BOOT_AUDIT.md` |
 
 MAX77620 at `0x3c` is on both boards and covers RTC, power-off and reset. The CPU and GPU rails differ (Erista max77621,
 OLED max77812) and only `SwitchThermal` and `SwitchPMIC` know about them, so they stay behind the THERMAL bit.
 
 ## Open
 
-- First boot would run the three unconditional drivers above. None was approved for the Erista. They are reported, not
-  changed.
+- The watchdog is the one driver still started on every board. Its open questions are in `ERISTA_BOOT_AUDIT.md`.
 - The Erista tree has not been through the real Apple tree, the loader's layout step or a Bazel build (Phase N3, below).
 - `random-seed` repeats on every Erista boot because the loader only mixes SE2's output.
 

@@ -80,9 +80,27 @@ static inline const struct switch_board *switch_board_current(void)
 #endif
 }
 
+// The features a row has beyond its mask (SwitchBoard.h). The diagnostic images embed switch_boards[] and their hashes are
+// pinned, so a bit added to SWITCH_FEATURES_ALL would change them. Every row names its own here, 0 for none: a row
+// without a SWITCH_KERNEL_FEATURES_<id> does not compile.
+#define SWITCH_KERNEL_FEATURES_OLED (SWITCH_FEATURE_PMIC | SWITCH_FEATURE_MC_ERRORS)
+#define SWITCH_KERNEL_FEATURES_ERISTA 0u
+#define SWITCH_KERNEL_ROW(id, name, t210b01, sku, boot, features, model, compatible) SWITCH_KERNEL_FEATURES_##id,
+
+// Integer arithmetic: the board is a pointer into a table of this unit or the unknown board, and ordering or subtracting
+// pointers into different objects is undefined.
+static inline uint32_t switch_board_kernel_features(const struct switch_board *board)
+{
+    static const uint32_t rows[] = {SWITCH_BOARDS(SWITCH_KERNEL_ROW)};
+    const uintptr_t at = (uintptr_t)board - (uintptr_t)switch_boards;
+    return at < sizeof(switch_boards) && at % sizeof(switch_boards[0]) == 0 ? rows[at / sizeof(switch_boards[0])] : 0;
+}
+#undef SWITCH_KERNEL_ROW
+
 static inline int switch_board_has(enum switch_feature feature)
 {
-    return switch_board_has_feature(switch_board_current(), feature);
+    const struct switch_board *board = switch_board_current();
+    return ((board->features | switch_board_kernel_features(board)) & (uint32_t)feature) == (uint32_t)feature;
 }
 
 #ifdef __cplusplus
