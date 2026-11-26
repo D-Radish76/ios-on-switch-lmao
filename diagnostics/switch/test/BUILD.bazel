@@ -11,7 +11,8 @@
 #   random_seed_source_test   the order of the first random-seed consumers and the gates ERISTA_RANDOM_SEED.md rests on
 #   sd_audit_source_test      the SD driver facts ERISTA_FIRST_XNU_BOOT.md's audit rests on: PMIC writers, the HIDREV skip, the
 #                             partition gate, the extension-register writes
-#   vm_done_source_test       SwitchVmDone.c: where it is called, that it is debug only, touches nothing but the framebuffer
+#   vm_done_source_test       SwitchVmDone.c: where it is called, that it is debug only, its one firmware call, the timer registers
+#   vm_reset_test             SwitchVmReset.h: the boot-arg (1 to 60, duplicates and overflow refused) and the tick arithmetic
 #
 #   bazel test //diagnostics/switch/test:all
 #   bazel test --config=release //diagnostics/switch/test:switch_diag_link_test
@@ -109,6 +110,14 @@ py_test(
     ],
 )
 
+
+host_test(
+    name = "vm_reset_test",
+    srcs = [
+        "vm_reset_test.cpp",
+        "//diagnostics/switch:SwitchVmReset.h",
+    ],
+)
 
 py_test(
     name = "sd_audit_source_test",

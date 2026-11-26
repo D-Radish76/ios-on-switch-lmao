@@ -17,26 +17,28 @@ caches in use). The firmware does not see any of that, but it has not been tried
 | # | Layer | Ends | Needs | State |
 | --- | --- | --- | --- | --- |
 | 0 | The person holds POWER | anything | someone at the console | the only one that exists |
-| 1 | Timed `SYSTEM_RESET` from `switch_diag_vm_done` | the VM-done stop, a stop in a stage after VM init, if the kernel still reaches the call | a fixed `smc`, no ADT change, the counter and `wfe` as the loader does, no polling | not built |
-| 2 | Same call from the panic path of the debug kernel, after the record is saved | a kernel panic before VM init finishes | a call site in the panic code, behind `DEVELOPMENT \|\| DEBUG` | not designed further |
+| 1 | Timed `SYSTEM_RESET` from `switch_diag_vm_done` | the VM-done ending | a fixed `smc`, no ADT change, the counter and `wfe` as the loader does, no polling | built offline, not run |
+| 2 | Same call from the panic path | a kernel panic before VM init finishes | a call site in the panic code | not done: left with the person |
 | 3 | WDT0 or WDT4 reset | a hang that never reaches layer 1 or 2 | the TRM's register sequence and its destination (hekate, or a loop) | blocked: no source for the A57's route |
 | 4 | THERMTRIP | overheating | calibrated SOC_THERM, a PMC reset command the DTB lacks | out of reach |
 | 5 | Fan (T3) | heat while parked | PWM clock on, rail GPIO and PMC writes, the tach | designed, unapproved |
 
 Layer 1 is the only new one that rests on something measured. Layers 3 to 5 do not move.
 
-## Layer 1 as it would be built
+## Layer 1 as built (offline)
 
-- In `SwitchVmDone.c`, under `DEVELOPMENT || DEBUG`, in place of `park()` when `switch_stop_after_vm=1`: mask interrupts, set `CNTKCTL_EL1`
-  to the event stream value the loader uses (`0xf4`), `wfe` until the counter passes a deadline, then the same `smc #0` and a final park if it returns.
-  `wfe` and the event stream are the loader's own no-poll wait, so the core is not spun.
-- The deadline is a boot-arg (`switch_stop_after_vm=<seconds>`, replacing the flag), with no default above the loader's 15 s and a refusal
-  of 0 or of more than 60. The screen says the number and that the console resets itself.
-- Release kernels contain none of it (`first_xnu_check` and `vm_done_source_test` already pin the gating).
-- The run sheet's recovery stays the held power button. The reset is an addition, not a replacement.
+Approved on 2026-11-26 for the first-XNU diagnostic only; the panic path (layer 2) was left out. The sequence, the boot-arg rules and the
+failure screens are in `ERISTA_FIRST_XNU_BOOT.md` ("The timed reset"), the code in `SwitchVmDone.c` and `SwitchVmReset.h`.
 
-What it would prove, in one approved run: that the call lands in hekate from XNU's EL1. What it would not prove: anything about a
-hang before VM init, or a panic loop.
+Open items, none settled by a host test:
+
+- The event stream under XNU. `cntkctl_el1` is written with the loader's event stream bits and `wfe` is expected to wake every 2^16 counts. If it does not,
+  `wfe` never returns and the run ends only by the power button. The loader showed it working at EL1 before XNU's own setup, not after.
+- The counter. Its frequency and advance are checked once before the wait, not during it. A counter that stops later is not detected.
+- The call after XNU owns the core. Same firmware and same HCR_EL2, but not tried.
+- What the reset does to RAM and to the screen, and whether hekate comes back, as in the loader runs.
+
+The reset ends one observation. It is not a hang or temperature protection and does not replace either.
 
 ## What each layer leaves unprotected
 
@@ -55,9 +57,9 @@ The fan is off at the loader (Nyx's launch ran `fan_set_duty(0)`), so heat while
 parked time. The loader's phase before XNU is a few seconds. No temperature is read by any layer, and the 40, 50 and 55 C figures
 remain provisional criteria for the person, not triggers.
 
-## Decisions for the owner
+## Decisions
 
-1. Is layer 1 acceptable as the stop for the VM-done run, in place of "the power button in writing"?
-2. May the deadline be a boot-arg, and is 60 s the right ceiling?
-3. Should the panic path (layer 2) get the same call, or stay with the person?
-4. Hold on layers 3 to 5 until a TRM or a measured dump exists. Nothing in this file asks to change that.
+1. Layer 1 is approved as the VM-done ending. The 15 s default and the 60 s ceiling are settings, not safe durations.
+2. The wait is a boot-arg, 1 to 60 s.
+3. The panic path stays with the person.
+4. Hold on layers 3 to 5 until a TRM or a measured dump exists.

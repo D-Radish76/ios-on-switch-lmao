@@ -63,7 +63,7 @@ Each mark is a 16x16 green block at y 280, x `16 + 40 * (stage - 1)`. Stages 1 t
 | CPU and clock bring-up | 10 to 15 |
 | Memory init | 16 `arm_vm_init` entered, 17 bounds, 18 random slide (the first use of the random seed), 19 and 20 final tables, 21 last |
 | VM initialised | `XNU VM INITIALIZED` (below). The old HUD does not run in this configuration; the marks stay |
-| IOKit init | not reached: the diagnostic stops first (`switch_stop_after_vm`) |
+| IOKit init | not reached: the diagnostic resets the console first (`switch_stop_after_vm`) |
 | First storage access | not reached for the same reason. Without the stop it would be the SD driver (`switch_root_event`), unchecked on screen |
 | GIC init | no mark. The nearest line is `platform interrupts initialized` after `PE_init_platform(TRUE)`. Whether that covers the GIC distributor setup is not verified |
 
@@ -168,20 +168,24 @@ depth `0x320`, `switch_diag_init` takes the native-profile branch and leaves the
 `ml_io_map` (usable once `arm_vm_init` returned), clears a 130-column band that does not touch the marks at column 280, and draws the text. Nothing else
 is mapped or written.
 
-With `switch_stop_after_vm=1` in the boot-args it then stops, before `PE_init_platform`, IOKit and the SD driver. `boot_args.py --stop-after-vm` writes the word and
-only `//boot:erista_first_xnu` and `..._seeded` pass it (`stop_after_vm`, which needs `require_early_trace`). The normal packages' boot-args are unchanged. Release
-kernels link none of it (`SwitchVmDone.c` is in `SwitchDiagDebug`, the call is an empty macro, `vm_done_source_test`).
+With `switch_stop_after_vm=<seconds>` in the boot-args it then ends the run with a timed reset, before `PE_init_platform`, IOKit and the SD driver.
+`boot_args.py --stop-after-vm[=N]` writes the word (default 15, `vm_reset_seconds` in the package rule) and only `//boot:erista_first_xnu` and
+`..._seeded` pass it (`stop_after_vm`, which needs `require_early_trace`). The normal packages' boot-args are unchanged. Release kernels link none of it
+(`SwitchVmDone.c` is in `SwitchDiagDebug`, the call is an empty macro, `vm_done_source_test`).
 
-**Not a safe stop.** The stop is a parked core: interrupts masked, `wfi` in a loop. It uses no timer, so it does not spin, but nothing resets or powers the console
-off and only the power button ends it. PSCI does not help here:
+**The timed reset.** Not a hang or temperature protection: it ends one observation, and 15 and 60 s are settings, not a safe duration. Sequence:
 
-- The Erista ADT has no `/psci` node and `ArmCpu` takes the conduit from it, so the kernel has no PSCI call to make.
-- `SYSTEM_RESET` returned to hekate when measured from U-Boot (EL2). Whether it works from EL1 after XNU has the MMU and vectors is unverified, and a call to it would be a
-  new firmware call that is not approved.
-- On a single core with no PMIC, `PE_halt_restart` has no hook (`ERISTA_STOP_PATHS.md`).
+1. The word is read from the command line by `SwitchVmReset.h` (`vm_reset_test`). Bare means 15; `=N` means 1 to 60 in plain decimal. A value outside the range, text,
+   an empty value, a number that would overflow, or the word twice is refused: the screen says `BAD SWITCH_STOP_AFTER_VM. NO RESET`, and the core parks. Absent means no stop at all.
+2. It must be EL1 (`CurrentEL`), `cntfrq_el0` must be nonzero, `seconds x frequency` must not overflow and `cntpct_el0` must advance. Otherwise: `NO RESET`, park.
+3. Interrupts are masked, `cntkctl_el1` gets the loader's event stream (EVNTEN, EVNTI 15, other bits kept), and the core waits in `wfe` until the counter passes the deadline.
+4. One `smc #0` with PSCI `SYSTEM_RESET`. If it returns, the screen says `SMC RETURNED <x0>. NO RETRY` and the core parks. There is no second call.
 
-Hardware boot is not allowed on this basis until a stop path is established and approved: either a PSCI `SYSTEM_RESET` from EL1 shown to work (its own approved diagnostic), or the
-owner accepting the held power button as the stop, in writing. A bare loop is not counted as one. The row stays `boot 0` either way.
+The wait is the loader's own (`exit.c`), which returned to hekate from EL1 on this board. Not verified: the call after XNU owns the core (MMU on, its vectors), and that the event
+stream wakes `wfe` under XNU's `cntkctl_el1`. If it does not, `wfe` never returns and only the power button ends the run; that stays an open item. The parked states use no timer and
+do not spin, but nothing powers the console off. The panic path has no reset added.
+
+Hardware boot stays held. It is not allowed until the owner approves the run itself, and the held power button stays the recovery. The row stays `boot 0`.
 
 ## Real-hardware preparation (N7 follow-up E)
 

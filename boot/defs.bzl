@@ -193,7 +193,9 @@ def _boot_package_impl(ctx):
     boot_args = out("boot-args.txt")
     if ctx.attr.stop_after_vm and not ctx.attr.require_early_trace:
         fail("%s: stop_after_vm needs require_early_trace (the stop is the trace build's)" % ctx.label)
-    flags = (["--smp"] if smp else []) + (["--release"] if release else []) + (["--stop-after-vm"] if ctx.attr.stop_after_vm else [])
+    if ctx.attr.stop_after_vm and not 1 <= ctx.attr.vm_reset_seconds <= 60:
+        fail("%s: vm_reset_seconds is 1 to 60" % ctx.label)
+    flags = (["--smp"] if smp else []) + (["--release"] if release else []) + (["--stop-after-vm=%d" % ctx.attr.vm_reset_seconds] if ctx.attr.stop_after_vm else [])
     _run(ctx, ctx.executable._boot_args, [boot_args.path] + flags, [], [boot_args], "BootArgs", "Writing the boot-args")
 
     # Manifest source -> file: the Mach-Os the trust module may name, then every other overlay file.
@@ -562,7 +564,8 @@ boot_package = rule(
         "_bl33": _tool("//tools/package:bl33"),
         "_first_xnu_check": _tool("//tools/package:first_xnu_check"),
         "private_seed": attr.bool(doc = "the ADT carries a per-install seed: no action of this target may be cached, locally or remotely"),
-        "stop_after_vm": attr.bool(doc = "bake switch_stop_after_vm=1 into the boot-args: the trace kernel parks once arm_vm_init returned"),
+        "stop_after_vm": attr.bool(doc = "bake switch_stop_after_vm=<vm_reset_seconds> into the boot-args: the trace kernel resets the console that long after arm_vm_init returned"),
+        "vm_reset_seconds": attr.int(default = 15, doc = "the wait of stop_after_vm, 1 to 60 seconds; a setting, not a safe duration"),
         "require_early_trace": attr.bool(doc = "refuse a release profile, and a kernel whose start.s was not built with early_trace"),
         # LLVM 23.1.4's linker and binutils.
         "_ld_lld": attr.label(default = "@llvm//:bin/ld.lld", cfg = "exec", allow_single_file = True),
