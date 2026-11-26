@@ -1,0 +1,79 @@
+# T2 static audit (2026-11-26, offline, Linux clang 18.1.3, flat image sha256 7f5a91a4ca3d0330a7afab842b03cb07cc58c6fd8ed944bf660893a0f508f124 = the diag_t2 line of erista-diag-image-hashes.txt):
+#   diag_mmio_audit.py --disassembly loader.dis --flat loader.flat --t2 --t2-sources boot/diag/loader
+# Not a hardware result. The Mac repeats it on its own loader.dis and loader.uboot.bin (--uboot-image).
+1. Instructions that form an address in the device window 0x50000000 to 0x7fffffff
+   switch_diag_after_transition a0000a50: movk w0, #0x7000, lsl #16  -> 0x70000804
+   switch_diag_after_transition a0000a60: movk w0, #0x7000, lsl #16  -> 0x7000f9d8
+   loader_check_fdt_memory_ranges a000457c: mov w8, #0x7fd00000  -> 0x7fd00000
+2. Where those registers go (loads, stores, copies, calls)
+   switch_diag_after_transition a0000a54: bl 0xa000023c <switch_diag_read32>  (bl switch_diag_read32 with x0=0x70000804)
+   switch_diag_after_transition a0000a64: bl 0xa000023c <switch_diag_read32>  (bl switch_diag_read32 with x0=0x7000f9d8)
+3. The path from an address to its access
+   switch_diag_read32: ldr w0, [x8]; called by switch_diag_after_transition
+   switch_t2_read32: ldr w0, [x8]; called by switch_t2_access
+   switch_t2_write32: str w1, [x8]; called by switch_t2_access
+   T2: static table (switch_t2_address) -> switch_t2_access (the allowlist decides first) -> switch_t2_read32 / switch_t2_write32; switch_t2_address called by switch_t2_access
+4. Functions that load or store through a pointer that is not a constant (not bounded by this scan)
+   switch_diag_read32: load pointer x1
+   probe_before_transition: load pointer x11, store pointer x8
+   begin_screen: store pointer x1
+   put: load pointer x7, store pointer x20
+   switch_diag_after_transition: load pointer x11, store pointer x8
+   report_board: load pointer x5
+   switch_diag_el1_state: load pointer x7
+   switch_diag_fdt_reservations: load pointer x5, store pointer x4
+   switch_diag_line_add: load pointer x4, store pointer x3
+   switch_diag_line_clip: load pointer x1, store pointer x2
+   switch_diag_line_start: load pointer x4, store pointer x5
+   switch_diag_line_hex: load pointer x3, store pointer x3
+   switch_diag_line_decimal: load pointer x3, store pointer x4
+   switch_diag_register_line: load pointer x79, store pointer x114
+   switch_t2_run: load pointer x21, store pointer x48
+   sample: load pointer x8, store pointer x1
+   wait_for_conversion: load pointer x9, store pointer x4
+   switch_t2_run_with: load pointer x1, store pointer x4
+   switch_t2_prelude: load pointer x35, store pointer x75
+   switch_t2_hw_stop: load pointer x1, store pointer x1
+   switch_t2_hw_get: load pointer x4, store pointer x1
+   switch_t2_hw_put: load pointer x6, store pointer x2
+   switch_t2_hw_now: load pointer x3
+   switch_t2_hw_wait_us: load pointer x10, store pointer x1
+   switch_t2_hw_load: load pointer x17, store pointer x3
+   switch_t2_hw_bus: store pointer x3
+   bus_read: load pointer x5, store pointer x2
+   bus_write: load pointer x1
+   bus_now_us: load pointer x3
+   bus_wait_us: load pointer x10, store pointer x1
+   transaction: load pointer x51, store pointer x9
+   switch_t2_lines: load pointer x44, store pointer x18
+   switch_t2_read32: load pointer x1
+   switch_t2_write32: store pointer x1
+   loader_check_fdt_memory_ranges: load pointer x67, store pointer x21
+   be32: load pointer x5
+   be64: load pointer x10
+   overlaps_any: load pointer x3, store pointer x1
+   name_is: load pointer x3
+5. Memory accesses by base: load pointer x459, load stack x179, load static data x29, store RAM constant x1, store pointer x368, store stack x144, store static data x43
+6. Flat image: register address words match the T2 list
+7. T2 register table and allowlist (sources)
+   T2_HW_CAR_RST_DEVICES_L: 0x60006004 R
+   T2_HW_CAR_CLK_OUT_ENB_L: 0x60006010 R
+   T2_HW_CAR_CLK_SOURCE_I2C1: 0x60006124 R
+   T2_HW_CAR_PLLP_BASE: 0x600060a0 R
+   T2_HW_I2C1_CNFG: 0x7000c000 R|W
+   T2_HW_I2C1_CMD_ADDR0: 0x7000c004 W
+   T2_HW_I2C1_CMD_DATA1: 0x7000c00c R|W
+   T2_HW_I2C1_STATUS: 0x7000c01c R
+   T2_HW_I2C1_INT_STATUS: 0x7000c068 R
+   T2_HW_I2C1_CLK_DIVISOR: 0x7000c06c R|W
+   T2_HW_I2C1_CONFIG_LOAD: 0x7000c08c R|W
+   T2_HW_I2C1_TIMING_0: 0x7000c094 R
+   T2_HW_I2C1_TIMING_1: 0x7000c098 R
+   writes to 0x7000c000: 0x2800 0x2802 0x2840 0x2a00 0x2a02 0x2a40
+   writes to 0x7000c004: 0x98 0x99
+   writes to 0x7000c00c: 0x0 0x1 0x2 0x3 0xf 0x10 0x11 0x12 0x15 0xfe
+   writes to 0x7000c06c: 0xff0001
+   writes to 0x7000c08c: 0x1 0x25
+   one-shot: pointer 0x0f (TMP451 one-shot start), value 0x00, one issuing call
+
+AUDIT PASSED (T2): the image holds exactly the 13 listed CAR and I2C1 addresses, each once; switch_t2_access is the only caller of the one word load and the one word store; the table and allowlist match the review (CAR read only, one TMP451 write: pointer 0x0f, value 0x00); in code only the two identity registers are formed.

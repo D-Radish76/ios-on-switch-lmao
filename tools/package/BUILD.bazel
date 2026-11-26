@@ -238,7 +238,10 @@ py_binary(
 # Lists the device-window addresses a diagnostic loader forms in code, from its loader.dis (ERISTA_T1T_RUN.md).
 py_binary(
     name = "diag_mmio_audit",
-    srcs = ["diag_mmio_audit.py"],
+    srcs = [
+        "diag_mmio_audit.py",
+        "diag_t2_allowlist.py",
+    ],
     imports = ["."],
     deps = [":diag_loader_inspect"],
 )

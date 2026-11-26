@@ -2,7 +2,8 @@ r"""List the device-window addresses a diagnostic loader forms in code and where
 
 Input is the loader's disassembly (llvm-objdump -d --no-show-raw-insn), `loader.dis` in the Bazel output:
     diag_mmio_audit.py --disassembly bazel-bin/boot/diag_t1t/loader.dis \\
-        [--uboot-image bazel-bin/boot/diag_t1t/loader.uboot.bin --t1t | --t1v3 | --s2]
+        [--uboot-image bazel-bin/boot/diag_t1t/loader.uboot.bin --t1t | --t1v3 | --s2 | --t2]
+    (with --t2, --t2-sources boot/diag/loader also reads the register table and the allowlist)
 It reads text only, so the Mac file works as well as a Linux one. The exit status is 1 for a window address that reaches
 a load, a store, a copy or a call other than the identity register reads. What a linear scan cannot show is in
 ERISTA_T1T_RUN.md, section 8.
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from diag_loader_inspect import inspect_disassembly, inspect_image
+from diag_t2_allowlist import audit as allowlist_audit
 
 WINDOW = (0x50000000, 0x80000000)
 ID_REGISTERS = (0x70000804, 0x7000F9D8)
@@ -141,7 +143,14 @@ def callers(code: dict[str, list[tuple[str, str]]], target: str) -> list[str]:
 
 def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
     lines = []
-    for name in ('switch_diag_read32', 'switch_t1t_read32', 'switch_s2_read32', 'switch_s2_read16'):
+    for name in (
+        'switch_diag_read32',
+        'switch_t1t_read32',
+        'switch_s2_read32',
+        'switch_s2_read16',
+        'switch_t2_read32',
+        'switch_t2_write32',
+    ):
         if name in code:
             loads = [t for _, t in code[name] if MEMORY.match(t)]
             lines.append(
@@ -157,6 +166,12 @@ def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
             '   D0-S v2: static table (switch_s2_address, switch_s2_width) -> switch_s2_access -> '
             'switch_s2_read32 (one word load) or switch_s2_read16 (one halfword load); '
             f'switch_s2_address called by {", ".join(callers(code, "switch_s2_address"))}'
+        )
+    if 'switch_t2_access' in code:
+        lines.append(
+            '   T2: static table (switch_t2_address) -> switch_t2_access (the allowlist decides first) -> '
+            'switch_t2_read32 / switch_t2_write32; '
+            f'switch_t2_address called by {", ".join(callers(code, "switch_t2_address"))}'
         )
     if 'switch_t1v3_access' in code:
         lines.append(
@@ -195,11 +210,23 @@ def judge(found: Findings, code: dict[str, list[tuple[str, str]]]) -> list[str]:
         for c in callers(code, raw)
         if c != 'switch_t1v3_access'
     ]
+    problems += [
+        f'{raw} is called by {c}'
+        for raw in ('switch_t2_read32', 'switch_t2_write32')
+        for c in callers(code, raw)
+        if c != 'switch_t2_access'
+    ]
     return problems
 
 
-def audit(
-    disassembly: str, flat: bytes | None = None, *, t1t: bool = False, t1v3: bool = False, s2: bool = False
+def audit(  # noqa: PLR0913
+    disassembly: str,
+    flat: bytes | None = None,
+    *,
+    t1t: bool = False,
+    t1v3: bool = False,
+    s2: bool = False,
+    t2: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Return the report lines and the problems."""
     code = parse(disassembly)
@@ -224,10 +251,12 @@ def audit(
     problems = judge(found, code)
     if s2:
         problems += inspect_disassembly(disassembly, s2=True)
+    if t2:
+        problems += inspect_disassembly(disassembly, t2=True)
     if flat is not None:
-        listed = inspect_image(flat, t1t=t1t, t1v3=t1v3, s2=s2)
-        name = 'D0-S v2' if s2 else 'T1-T' if t1t else 'T1 v3'
-        checked = t1t or t1v3 or s2
+        listed = inspect_image(flat, t1t=t1t, t1v3=t1v3, s2=s2, t2=t2)
+        name = 'D0-S v2' if s2 else 'T1-T' if t1t else 'T2' if t2 else 'T1 v3'
+        checked = t1t or t1v3 or s2 or t2
         report.append(
             '6. Flat image: '
             + (
@@ -249,24 +278,50 @@ def main() -> int:
     parser.add_argument('--t1t', action='store_true', help='the image is T1-T: check its register address words')
     parser.add_argument('--t1v3', action='store_true', help='the image is T1 v3: check its register address words')
     parser.add_argument('--s2', action='store_true', help='the image is D0-S v2: check its register address words')
+    parser.add_argument(
+        '--t2', action='store_true', help='the image is T2: check its register address words and raw accesses'
+    )
+    parser.add_argument(
+        '--t2-sources', type=Path, help='with --t2: boot/diag/loader, to read the table and the allowlist'
+    )
+    parser.add_argument('--flat', type=Path, help='the flat loader image itself, in place of --uboot-image')
     args = parser.parse_args()
-    flat = None
+    flat = args.flat.read_bytes() if args.flat else None
     if args.uboot_image:
         raw = args.uboot_image.read_bytes()
         if int.from_bytes(raw[:4], 'big') != UIMAGE_MAGIC:
             print('not a legacy U-Boot image', file=sys.stderr)
             return 2
         flat = raw[UIMAGE_HEADER:]
-    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t, t1v3=args.t1v3, s2=args.s2)
+    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t, t1v3=args.t1v3, s2=args.s2, t2=args.t2)
+    if args.t2 and args.t2_sources:
+        directory = args.t2_sources
+        bus = (directory / 't2_bus.c').read_text() + (directory.parent / 't2' / 't2.h').read_text()
+        listing, table_problems = allowlist_audit((directory / 't2_regs.c').read_text(), bus)
+        report += ['7. T2 register table and allowlist (sources)', *listing]
+        problems += table_problems
     print('\n'.join(report))
     if problems:
         print('\nPROBLEMS:\n' + '\n'.join(problems), file=sys.stderr)
         return 1
     if args.s2:
         print(
-            '\nAUDIT PASSED (D0-S v2): the image holds exactly 0x60006004, 0x60006010, 0x700b0024 and 0x700b002c, each once; '
+            '\nAUDIT PASSED (D0-S v2): the image holds exactly 0x60006004, 0x60006010, 0x700b0024 and '
+            '0x700b002c, each once; '
             'switch_s2_access is the only caller of the one word load (the first three) and of the one halfword load '
             '(0x700b002c); no device store; in code only the two identity registers are formed.'
+        )
+        return 0
+    if args.t2:
+        print(
+            '\nAUDIT PASSED (T2): the image holds exactly the 13 listed CAR and I2C1 addresses, each once; '
+            'switch_t2_access is the only caller of the one word load and the one word store; '
+            + (
+                'the table and allowlist match the review (CAR read only, one TMP451 write: pointer 0x0f, value 0x00); '
+                if args.t2_sources
+                else 'the table and allowlist were not read (no --t2-sources); '
+            )
+            + 'in code only the two identity registers are formed.'
         )
         return 0
     print('\nAUDIT PASSED: only the two identity registers reach a call or an access.')

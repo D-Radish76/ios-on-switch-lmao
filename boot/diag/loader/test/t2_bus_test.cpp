@@ -131,6 +131,21 @@ TEST(T2Image, AFullRunMakesOneSensorWriteTheDivisorWriteAndNothingElse)
     EXPECT_LT(result.sensor.done_us, 100000u);
 }
 
+TEST(T2Image, AFullRunWritesTwoPlusNinePerReadPlusFiveForTheOneShot)
+{
+    Rig r;
+    switch_t2_image_result result;
+    switch_t2_run_with(&r.io, &result);
+    ASSERT_EQ(result.stop, 0);
+    const unsigned reads = (result.transfers - 1) / 2;
+    EXPECT_EQ(result.transfers, 2 * reads + 1);
+    EXPECT_EQ(r.model.writes.size(), 2u + 9u * reads + 5u);
+    EXPECT_EQ(result.writes, r.model.writes.size());
+    const unsigned polls = reads - 15;
+    EXPECT_GE(polls, 2u);
+    EXPECT_EQ(r.model.writes.size(), 142u + 9u * polls);
+}
+
 TEST(T2Image, NoCarRegisterIsEverWritten)
 {
     Rig r;

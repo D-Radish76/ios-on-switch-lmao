@@ -20,22 +20,20 @@ sample as reads, and one write, the one-shot at pointer `0F` with value `00`. Th
 
 ## Findings
 
-1. **No run procedure exists.** T1 v3 has `ERISTA_T1V3_RUN.md` (entry, screens, deadlines, stop rules). T2 has none: the design's "Stop codes `07xx`, the 15 s countdown and the 50 s deadline as T1 v3"
-   cannot be followed by a person without one. A `ERISTA_T2_RUN.md` is a prerequisite.
+1. **No run procedure existed, and now one does** (`ERISTA_T2_RUN.md`, 2026-11-26). T1 v3 has `ERISTA_T1V3_RUN.md` (entry, screens, deadlines, stop rules). T2 has none: the design's "Stop codes `07xx`, the 15 s countdown and the 50 s deadline as T1 v3"
+   could not be followed by a person without one. It is written; the Mac's package hashes are still to be filled in.
 2. **A document error, corrected.** `ERISTA_T2_DESIGN.md` and `ERISTA_T1V3_RUN.md` gave `CONFIG_LOAD` as `+94`. The code (`t1v3_regs.c`, `t2_regs.c`) uses `+8c`, which is where T1 v3 read `00000004`
    and where `TIMING_0` (`+94`) is a different register. Both documents now say `+8c`. No code changes.
 3. **The one-shot's form is a documented inference.** The data sheet says any value written to pointer `0F` starts a conversion; hekate and Linux give no precedent for the write-byte form on this part. If the sensor does not
    start, T2 shows the 100 ms timeout; nothing is lost, and the part stays in shutdown.
 4. **The sensor's state afterwards.** T2 writes no setting, so shutdown stays; the next Nyx start runs `tmp451_init`. This is a design claim. T1 v3 sent only a pointer byte (`FE`) to the sensor, which sets no register, so no run shows what a write does to the part.
 5. **Real-hardware I2C writes are not approved.** The one-shot is the first transfer that carries a value to a sensor register (T1 v3's pointer byte set no register). It needs its own approval, separate from this review.
-6. **The audit tool has no `--t2` mode**; `diag_t2_test` does the allowlist and inspection checks. A `diag_mmio_audit --t2` run, with a recorded output like the T1 v3 one, is a prerequisite for the Mac.
+6. **The audit tool had no `--t2` mode, and now has one** (`diag_mmio_audit.py --t2 --t2-sources`, with `diag_t2_allowlist.py`). Its Linux output is `boot/diag/erista-t2-mmio-audit.txt`; `diag_t2_audit_test` holds the negative cases. The Mac repeats it on its own build.
 7. **What T2 does not buy.** It shows one temperature after a one-shot and the BUSY semantics. It does not give a thermal limit, does not run the fan, and does not make XNU's early heat known.
 
 ## Prerequisites before a run could be approved
 
-- `ERISTA_T2_RUN.md`: entry name, expected screens, the 50 s human deadline, stop rules, recovery, Nyx before and after.
-- `diag_mmio_audit --t2` and its record.
-- The Mac builds `//boot:diag_t2` and reports the three-way hashes as for D0-S.
-- The owner's separate written approval for the one sensor write.
+- Done offline: `ERISTA_T2_RUN.md`, `diag_mmio_audit --t2` and its record, `diag_t2_audit_test`.
+- Still open: the Mac builds `//boot:diag_t2`, repeats the audit and reports the package hashes (the sheet's section 2 waits for them); the owner's separate written approval for the one sensor write.
 
 T2 can also be waived (`ERISTA_FIRST_XNU_BLOCKERS.md`): the first XNU diagnostic needs only a Nyx reading before and after, not an in-diagnostic temperature.

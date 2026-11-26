@@ -1,7 +1,8 @@
 # D1-min result: first hardware run
 
 Run 2026-11-26 on the Erista, hekate 6.5.5, from Nyx "More configs", entry `iOS Diag D1-min`. The user reported it at 22:05 JST, read from the
-photograph, which is not stored. The record is `boot/diag/erista-d1min-run1.txt`. Verdict: PASS, by the criteria set in `ERISTA_D1MIN_REVIEW.md`.
+photograph, which is not stored. A report at 22:11 JST corrected the sector line: the screen shows it in full, as the script echoes it, and
+screen and script do not differ. The record is `boot/diag/erista-d1min-run1.txt`. Verdict: PASS, by the criteria set in `ERISTA_D1MIN_REVIEW.md`.
 
 | Criterion | Result |
 | --- | --- |
@@ -30,7 +31,6 @@ run's duration was not reported, so the run's own share is unknown.
 - Anything about the card's later sectors, a write, or the eMMC.
 - That U-Boot prints the CRC zero padded. The value has no leading zero, so the question stays open.
 - That the run's own heating is small: only a Nyx start and end reading exist.
-- The photograph's first line differs from the script's text (`ERISTA_D1MIN_REVIEW.md` finding below): reported as is.
 - CRC32 is a check for corruption, not tamper protection.
 
 `boot` stays 0 and the feature mask stays 0. T2, T3, T4, the full D1 and every XNU run stay on HOLD.

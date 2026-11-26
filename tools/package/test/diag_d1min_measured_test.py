@@ -1,4 +1,4 @@
-"""The recorded D1-min run (boot/diag/erista-d1min-run1.txt) against the script, the loader's text and the review's criteria."""
+"""The recorded D1-min run (boot/diag/erista-d1min-run1.txt) against the script, the loader and the review."""
 
 import re
 import unittest
@@ -6,7 +6,9 @@ from pathlib import Path
 
 ROOT = Path('.')
 TEXT = (ROOT / 'boot/diag/erista-d1min-run1.txt').read_text()
-RECORD = dict(line.split('=', 1) for line in TEXT.splitlines() if '=' in line and not line.startswith(('#', 'uboot:', 'loader:')))
+RECORD = dict(
+    line.split('=', 1) for line in TEXT.splitlines() if '=' in line and not line.startswith(('#', 'uboot:', 'loader:'))
+)
 UBOOT = [line[len('uboot: ') :] for line in TEXT.splitlines() if line.startswith('uboot: ')]
 LOADER = [line[len('loader: ') :] for line in TEXT.splitlines() if line.startswith('loader: ')]
 SCRIPT = (ROOT / 'boot/diag/state/u-boot-script-d1min.txt').read_text()
@@ -46,20 +48,37 @@ class AgainstTheScript(unittest.TestCase):
         self.assertIn('mmc1 is current device', UBOOT)
 
     def test_the_reported_script_lines_are_in_the_script(self) -> None:
-        for line in ('BOARD OK', 'FRAMEBUFFER OK', 'DTB COPIED AND FRAMEBUFFER RESERVED', 'LOADER WRITTEN TO 0xA0000000', 'D1-MIN SIGNATURE 55 AA PRESENT'):
+        for line in (
+            'BOARD OK',
+            'FRAMEBUFFER OK',
+            'DTB COPIED AND FRAMEBUFFER RESERVED',
+            'LOADER WRITTEN TO 0xA0000000',
+            'D1-MIN SIGNATURE 55 AA PRESENT',
+        ):
             self.assertIn(line, UBOOT)
             self.assertIn(f'echoe "{line}', SCRIPT)
 
-    def test_the_sector_line_is_a_prefix_of_the_script_echo(self) -> None:
-        reported = 'D1-MIN SECTOR 0 READ TO 0xA001F200'
-        self.assertIn(reported, UBOOT)
-        self.assertIn(f'echoe "{reported}', SCRIPT)
-        self.assertIn("Differences from the script's text", TEXT)
+    def test_the_sector_line_is_the_scripts_echo_in_full(self) -> None:
+        line = 'D1-MIN SECTOR 0 READ TO 0xA001F200. CRC32 OF THE 512 BYTES:'
+        self.assertIn(line, UBOOT)
+        self.assertIn(f'echoe "{line}"', SCRIPT)
+        self.assertIn('There is no difference between the screen and the script', TEXT)
 
 
 class AgainstTheLoader(unittest.TestCase):
     def test_every_loader_line_is_text_diag_c_draws(self) -> None:
-        for fragment in ('LOAD DIAG', 'EL1 STATE PASS', 'MC REGISTERS READ', 'DIFFERENT FROM THE OLED', 'FDT WALK CODE', 'ALL RANGES FREE', 'FDT NODES', 'EXPORTER', 'SD REFERENCE', 'BOOT STAYS'):
+        for fragment in (
+            'LOAD DIAG',
+            'EL1 STATE PASS',
+            'MC REGISTERS READ',
+            'DIFFERENT FROM THE OLED',
+            'FDT WALK CODE',
+            'ALL RANGES FREE',
+            'FDT NODES',
+            'EXPORTER',
+            'SD REFERENCE',
+            'BOOT STAYS',
+        ):
             self.assertTrue(any(fragment in line for line in LOADER), fragment)
             self.assertIn(fragment, DIAG)
         self.assertIn('RESET IN 15 S', LOADER)
@@ -83,12 +102,28 @@ class AgainstTheLoader(unittest.TestCase):
 class Documents(unittest.TestCase):
     def test_the_result_names_what_it_does_not_show(self) -> None:
         result = (ROOT / 'ERISTA_D1MIN_RESULT.md').read_text()
-        for phrase in ("XNU's SD driver is unverified", 'U-Boot\'s SD host driver', 'e1d4e0ff', '+4.1 C', 'PASS', 'not tamper protection'):
+        self.assertNotIn('differs from the script', result)
+        self.assertIn('do not differ', result)
+        for phrase in (
+            "XNU's SD driver is unverified",
+            "U-Boot's SD host driver",
+            'e1d4e0ff',
+            '+4.1 C',
+            'PASS',
+            'not tamper protection',
+        ):
             self.assertIn(phrase, result)
         self.assertNotIn('—', result)
 
     def test_nothing_identifying_is_recorded(self) -> None:
-        self.assertEqual([], [w for w in re.findall(r'\b[0-9a-fA-F]{8,}\b', TEXT) if w.lower() not in ('e1d4e0ff', 'a001f200', 'a001f3ff')])
+        self.assertEqual(
+            [],
+            [
+                w
+                for w in re.findall(r'\b[0-9a-fA-F]{8,}\b', TEXT)
+                if w.lower() not in ('e1d4e0ff', 'a001f200', 'a001f3ff')
+            ],
+        )
 
 
 if __name__ == '__main__':

@@ -20,12 +20,14 @@ Replaces the table in `ERISTA_FIRST_XNU_BOOT.md`.
 | 1 | The Mac verifies everything on one commit (tests, builds, the trace-kernel scan, the loader hashes) | open until the Mac reports on the latest commit | yes |
 | 2 | D0-S | done: v2 PASS | no |
 | 3 | D1-min | done: PASS | no |
-| 4 | T2 run, or waived in writing | open. Reviewed offline in `ERISTA_T2_REVIEW.md`; it has one sensor write and needs its own approval | only if not waived |
+| 4 | T2 run, or waived in writing | open. Reviewed in `ERISTA_T2_REVIEW.md`; run sheet `ERISTA_T2_RUN.md` and static audit (`--t2`) done offline; the Mac's build and hashes and the owner's written approval of the one sensor write are open | only if not waived |
 | 5 | A stop path | the person, plus the timed `SYSTEM_RESET` after VM done (built offline, not run). Proven from the loader at EL1 in five runs; not proven after XNU owns the core | yes: the owner accepts the person in writing, or approves the run that tries the reset |
 | 6 | Seed decision | open, the owner's | yes |
-| 7 | T3 and T4 built and proved, or waived | open. Neither is built. See below | only if not waived |
+| 7 | T3 and T4 built and proved, or waived | open. Neither is built; the owner has not decided a waiver. See below | only if not waived |
 | 8 | `boot` 1 for the build under test, set by the owner | open | yes |
 | 9 | The run: trace kernel, one core, stop after VM, stop rules, a person at the console | not approved | |
+
+Owner's decision (2026-11-26): the full D1 is not a condition of the first VM-stop diagnostic. The Mac's checks for the first-XNU package are in `ERISTA_FIRST_XNU_MAC.md`.
 
 Two things this run list does not need: D1-min's result (the first XNU diagnostic ends before IOKit and the SD driver, so XNU never touches the card in it) and
 the full D1.

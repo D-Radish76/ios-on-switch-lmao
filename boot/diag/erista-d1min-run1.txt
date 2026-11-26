@@ -20,7 +20,7 @@ uboot: LOADER WRITTEN TO 0xA0000000
 uboot: switch to partitions #0, OK
 uboot: mmc1 is current device
 uboot: MMC read: dev #1, block #0, count 1 ... 1 blocks read: OK
-uboot: D1-MIN SECTOR 0 READ TO 0xA001F200
+uboot: D1-MIN SECTOR 0 READ TO 0xA001F200. CRC32 OF THE 512 BYTES:
 uboot: CRC32 for a001f200 ... a001f3ff ==> e1d4e0ff
 uboot: D1-MIN SIGNATURE 55 AA PRESENT
 # Loader (EL1) lines, as reported:
@@ -35,6 +35,6 @@ loader: EXPORTER 0xA7000000-0xA7010000 CLEAR BANK 0
 loader: SD REFERENCE 0xA001F000-0xA0020000 CLEAR BANK 0
 loader: BOOT STAYS 0
 loader: RESET IN 15 S
-# Differences from the script's text, to be sent and not explained away: the script echoes "D1-MIN SECTOR 0 READ TO 0xA001F200. CRC32 OF THE
-# 512 BYTES:" and the report gives the line without the second sentence (a transcription, or a screen that differs). The rise of 4.1 C
-# spans hekate, Nyx and the run; the run's own share is not separable. The run's duration was not reported.
+# Corrected 2026-11-26 22:11 JST: the photograph shows the sector line in full, as the script echoes it. The first report left out its second
+# sentence. There is no difference between the screen and the script. The rise of 4.1 C spans hekate, Nyx and the run; the run's own share
+# is not separable, and the run's duration was not reported.

@@ -440,6 +440,42 @@ py_test(
     ],
 )
 
+# T2's static audit: the allowlist read from the sources, the linked image's accesses, and the negative cases (ERISTA_T2_RUN.md section 1).
+py_test(
+    name = "diag_t2_audit_test",
+    size = "medium",
+    srcs = ["diag_t2_audit_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//boot:diag/erista-t2-mmio-audit.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+        "//tools/package:diag_mmio_audit",
+    ],
+)
+
+# The T2 run sheet and the first-XNU Mac checklist against the code and the build files they name.
+py_test(
+    name = "diag_t2_run_docs_test",
+    srcs = ["diag_t2_run_docs_test.py"],
+    data = [
+        "BUILD.bazel",
+        "//:ERISTA_FIRST_XNU_BOOT.md",
+        "//:ERISTA_FIRST_XNU_MAC.md",
+        "//:ERISTA_T2_RUN.md",
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot/diag/loader/test:t2_bus_test.cpp",
+        "//kits/SwitchBoard:SwitchBoard.h",
+        "//local:.gitignore",
+    ],
+)
+
 # The blocker list and the T2 review written after D1-min, against the code they cite.
 py_test(
     name = "diag_blockers_docs_test",

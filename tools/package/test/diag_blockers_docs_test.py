@@ -28,11 +28,11 @@ class Documents(unittest.TestCase):
         self.assertIn('is not approved to run', T2_REVIEW)
 
     def test_the_xnu_sd_driver_is_called_unverified(self) -> None:
-        self.assertIn('XNU\'s SD path', BLOCKERS)
+        self.assertIn("XNU's SD path", BLOCKERS)
         self.assertIn('unverified', BLOCKERS)
 
     def test_the_nine_steps_are_listed_and_d1_min_is_done(self) -> None:
-        rows = re.findall(r'^\| (\d) \|', BLOCKERS, re.M)
+        rows = re.findall(r'^\| (\d) \|', BLOCKERS, re.MULTILINE)
         self.assertEqual([str(n) for n in range(1, 10)], rows)
         self.assertIn('| 3 | D1-min | done: PASS |', BLOCKERS)
 
@@ -56,14 +56,14 @@ class T2Claims(unittest.TestCase):
         self.assertIn('T2_BUS_DENIED', bus)
 
     def test_the_review_names_what_blocks_a_run(self) -> None:
-        for phrase in ('No run procedure exists', 'ERISTA_T2_RUN.md', '--t2', 'separate written approval'):
+        for phrase in ('No run procedure existed', 'ERISTA_T2_RUN.md', '--t2', 'separate written approval'):
             self.assertIn(phrase, T2_REVIEW)
 
     def test_the_cars_agree_between_t1v3_and_d0s_v2(self) -> None:
         t1v3 = (ROOT / 'boot/diag/erista-t1v3-run1.txt').read_text()
         v2 = (ROOT / 'boot/diag/erista-d0sv2-run1.txt').read_text()
         for key, name in (('RST_L', 'car_rst_devices_l'), ('ENB_L', 'car_clk_out_enb_l')):
-            word = re.search(rf'^{key}=([0-9A-F]{{8}})', t1v3, re.M).group(1)
+            word = re.search(rf'^{key}=([0-9A-F]{{8}})', t1v3, re.MULTILINE).group(1)
             self.assertIn(f'value={word}', v2.split(name)[1].splitlines()[0])
 
 

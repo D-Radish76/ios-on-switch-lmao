@@ -212,4 +212,5 @@ host_test(
 exports_files([
     "t1t_measured_test.cpp",
     "t1v3_hardware_test.cpp",
+    "t2_bus_test.cpp",
 ])
