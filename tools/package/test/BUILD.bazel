@@ -429,6 +429,36 @@ py_test(
     ],
 )
 
+# adt_check.py over both boards' trees, and what it names when a property is wrong.
+py_test(
+    name = "adt_check_test",
+    size = "small",
+    srcs = ["adt_check_test.py"],
+    deps = [
+        "//tools/package:adt_check",
+        "//tools/package:native_erista_adt",
+        "//tools/package:native_oled_adt",
+    ],
+)
+
+# The Erista's tree through adt_edit.py without --smp, for the selected IPSW kind (--config=ios17, --config=ios27).
+py_test(
+    name = "erista_adt_edit_test",
+    size = "small",
+    srcs = ["erista_adt_edit_test.py"],
+    data = [
+        "//ipsw:device_tree",
+        "//tools/package:adt_edit.py",
+    ],
+    deps = [
+        "//tools/package:adt_check",
+        "//tools/package:native_erista_adt",
+        "//tools/package:native_oled_adt",
+        "//tools/trustcache",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 # adt_edit.py over a minimal Switch tree: the selected IPSW kind's iPad's answers on /arm-io, the root and /product
 # (from Apple's tree of it, //ipsw:device_tree), which VideoToolbox and MobileGestalt read before iOS uses a feature.
 py_test(

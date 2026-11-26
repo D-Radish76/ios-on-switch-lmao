@@ -84,6 +84,20 @@ py_binary(
     deps = [":native_oled_adt"],
 )
 
+# //boot:erista_adt: the Erista's, one core, never packaged.
+py_binary(
+    name = "erista_adt",
+    srcs = ["erista_adt.py"],
+    deps = [":native_erista_adt"],
+)
+
+# Structural check of a native board's ADT (what the kernel and drivers read at boot); adt_check.py ADT --cores N.
+py_library(
+    name = "adt_check",
+    srcs = ["adt_check.py"],
+    imports = ["."],
+)
+
 py_binary(
     name = "overlay",
     srcs = ["overlay.py"],

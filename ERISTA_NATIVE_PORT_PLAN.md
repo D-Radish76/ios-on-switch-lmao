@@ -12,7 +12,7 @@ Everything between a Nintendo Switch (2017) and the first XNU instruction, in th
 | 1 | `kits/SwitchBoard/SwitchBoard.h:47` (`SWITCH_BOARDS`) | `X(ERISTA, "erista", 0, 0, 0, 0, ...)`: `boot` is 0 and the feature mask is 0 | Set `boot` to 1 only by a person, after every row below is closed. Features are added one reviewed bit at a time | HIDREV `00022117`, ODM4 `00000204` identify the row |
 | 2 | `tools/package/boot_script.py:34` (`board_gate`) | Emits `READY` only for rows with `boot 1`, otherwise `WRONG_BOARD` | None. It follows the table | none |
 | 3 | `boot/u-boot-script.txt:19` (`@BOARD_GATE@`) | Refuses the handoff on `WRONG_BOARD` | None | none |
-| 4 | `boot/u-boot-script.txt:43` | Requires `0xF5A00000`, 720x1280, `a8b8g8r8`, rot 3 | Nothing if the properties match | Framebuffer address is hekate's. The console drew on the Erista, but the properties were not read (open) |
+| 4 | `boot/u-boot-script.txt:43` | Requires `0xF5A00000`, 720x1280, `a8b8g8r8`, rot 3 | None | The D0 and D0-R scripts run the same check (`boot/diag/loader/u-boot-script.txt:30-34`) and reached the loader, so it passed on the Erista. Inferred from the control flow: the values were not printed (`ERISTA_NEXT_DIAGNOSTICS.md`) |
 | 5 | `boot/u-boot-script.txt:109` | `fdt rsvmem add 0xF5A00000 0x400000` | None | Same address as row 4 |
 | 6 | `boot/u-boot-script.txt:142-205` | `bootm_low 0x80000000`, `bootm_size 0x7FD00000`, `switch_native_xnu=1`, then `bootm go` | None if bank 0 matches | Bank 0 `0x80000000` + `0x7FD00000` |
 | 7 | `boot/loader/loader.c:288` (`loader_after_transition`) | Refuse `0x301` unless EL1h, SCTLR clear, DAIF masked, CNTFRQ 19.2 MHz, HCR/CNTHCTL/CNTVOFF as the EL2 drop leaves them | None | Measured: D0 and D0-R, and the T1 v3 screen as reported by the user: EL=4, SCTLR `30D00800`, DAIF `3C0`, CNTFRQ 19200000, HCR `80000000`, CNTHCTL 3, CNTVOFF 0, EL1 STATE PASS. The diagnostic runs the same `boot/handoff/entry.S` and the same conditions (`diag/loader/checks.c:29-30` equals `loader.c:287-288`) |
@@ -26,7 +26,7 @@ Everything between a Nintendo Switch (2017) and the first XNU instruction, in th
 | 15 | `boot/loader/loader.c:406`, `:454`, `:460` | Kernel CRC (`0x302`, `0x303`) and boot-args shape (`0x304`) | None, board independent | none needed |
 | 16 | `boot/loader/loader.c:418-422`, `:516-525` | SD reference validation, refuse `0x640+` and `0x650`, `0x660+` | Needs the Erista SDMMC1 path to match (row A-3 SDMMC) | Not measured |
 | 17 | `boot/loader/memory.c:205-214` | Control FDT `/memory` must be exactly `0x80000000+0x7FD00000` and `0x100000000+0x80000000`, else codes 25 and 26. `bank_count = 2` | None | Both banks measured |
-| 18 | `boot/loader/loader.c:485-491` | Refuse `0x710` if the SD engine at `0x700b0024`/`0x700b002f` is busy or `bank_count != 2` | None | Not measured on the Erista |
+| 18 | `boot/loader/loader.c:485-491` | Refuse `0x710` if the SD engine at `0x700b0024`/`0x700b002f` is busy or `bank_count != 2` | None | Not read on the Erista. A read-only diagnostic at the same moment is designed in `ERISTA_NEXT_DIAGNOSTICS.md` and not approved |
 | 19 | `boot/loader/loader.c:537` | SE2 seed mixing only if the board has `SWITCH_FEATURE_SE2` | None: the Erista row has no SE2 and keeps the pinned seed | The Erista DTB has one `se` node |
 | 20 | `boot/loader/loader.c:544` | `loader_enter_kernel(LOAD_ARGS, LOAD_ENTRY)` | None | |
 | 21 | `tools/package/native_oled_adt.py:186` (`generate_adt`) | Only the root identity and SoC naming follow the board. Everything else is the OLED's tree | An Erista ADT (panel, touch, PMIC set, SDMMC tuning, no SE2). Its own docstring says the tree is not usable until audited | DTB comparison in A-3 |
@@ -39,12 +39,12 @@ Problems found while surveying (reported, not changed)
   should go through the table.
 - Row 21 means a build for the Erista today would carry an OLED panel and touch description. `boot 1` must not be set
   before the ADT is board specific.
-- `ERISTA_LOADER_DIAG.md:44` still lists the framebuffer properties as open (row 4).
-- Row 18 has no Erista reading. It is unverified, not safe. Rows 7 and 14 were unverified in the first version of this plan and are now measured (see the table).
+- `ERISTA_LOADER_DIAG.md:44` still lists the framebuffer properties as open; row 4 shows they passed the same check.
+- Row 4 passed by control flow but was not printed. Row 18 has no Erista reading. It is unverified, not safe. Rows 7 and 14 were unverified in the first version of this plan and are now measured (see the table).
 
 Conditions to lift `boot 0` (none of these is done)
 1. Rows 10 and 12: done in N1 (separate tables, host tests).
-2. Rows 4, 16, 18 each have an Erista measurement or are removed from the Erista path with a reason.
+2. Rows 16, 18 each have an Erista measurement or are removed from the Erista path with a reason.
 3. An Erista ADT exists and its differences from the OLED tree are audited (A-3).
 4. A person sets `boot 1`. Then the Erista build is also checked on both iOS versions (CLAUDE.md, version containment).
 
@@ -127,13 +127,12 @@ version), Disableable (feature bit stays 0 at first boot).
 ## Suggested order (not started)
 
 1. Per-board carveout table in `native_gate` with host tests (rows 10, 12). Done (N1).
-2. Close the open measurement rows (4, 18) through read-only diagnostics, one at a time, each approved.
+2. Close the open measurement rows (18, and print row 4) through read-only diagnostics, one at a time, each approved.
 3. Erista ADT generator path: panel, touch removed, SDMMC tuning from its DTB, one CPU.
 4. Single-core build, still `boot 0`, checked on both iOS versions by build and emulator.
 5. A person decides `boot 1` for one attended run. Buttons next, then T2 temperature display, then THERMAL.
 
 ## Not measured on the Erista
 
-SD engine idle state (18), SD reference path (16), framebuffer
-properties (4), PSCI `CPU_ON`, interrupt delivery, CPU clock and voltage at handoff, every driver in A-3 other than the
-read only ones noted.
+SD engine idle state (18), SD reference path (16), PSCI `CPU_ON`, interrupt delivery, CPU clock and voltage at handoff,
+every driver in A-3 other than the read only ones noted. Printed framebuffer values (row 4 passed by control flow only).

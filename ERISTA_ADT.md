@@ -46,8 +46,10 @@ is in `ERISTA_NATIVE_PORT_PLAN.md`, A-3.
 
 ## What `adt_edit.py` adds
 
-The package then runs the tree through `adt_edit.py` (iPad identity and the nodes userland asks for). That step is
-shared with the OLED and has not been run over the Erista tree. It adds, with the OLED's assumptions:
+The package runs the tree through `adt_edit.py` (iPad identity and the nodes userland asks for). That step is shared with
+the OLED. Run here over the Erista tree without `--smp` against a synthetic Apple tree (the real one needs the IPSW, so
+the Mac run is Phase N3's), it adds `machine-timeouts`, `maps`, `audio`, `bluetooth`, `wlan`, `usb-device`, `usb-xhci`,
+`buttons` and `filesystems`, keeps one core and no `/psci`, and `adt_check.py` passes. Its OLED assumptions:
 
 | Added | Assumption | Status for the Erista |
 | --- | --- | --- |
@@ -87,5 +89,34 @@ OLED max77812) and only `SwitchThermal` and `SwitchPMIC` know about them, so the
 
 - First boot would run the three unconditional drivers above. None was approved for the Erista. They are reported, not
   changed.
-- The Erista tree has not been through `adt_edit.py`, the loader's layout step or a build (Phase N3).
+- The Erista tree has not been through the real Apple tree, the loader's layout step or a Bazel build (Phase N3, below).
 - `random-seed` repeats on every Erista boot because the loader only mixes SE2's output.
+
+## Verifying the single-core build (Mac, boot stays 0)
+
+Nothing below boots anything. Run each under `--config=ios17` and `--config=ios27`.
+
+```
+bazel test --config=ios17 //boot/loader/test:carveout_test //tools/package/test:carveout_fixture_test \
+  //tools/package/test:native_erista_adt_test //tools/package/test:native_oled_adt_board_test \
+  //tools/package/test:boot_script_board_test //tools/package/test:adt_check_test \
+  //tools/package/test:erista_adt_edit_test //tools/package/test:adt_media_test \
+  //tools/package/test:diag_boot_test //tools/package/test:diag_loader_test //tools/package/test:d0_run_test \
+  //tools/mc_carveout:test_dump
+bazel build --config=ios17 //boot:adt //boot:erista_adt //boot:package
+python3 tools/package/adt_check.py bazel-bin/boot/erista-full-ram.adt --cores 1
+```
+
+What each answers, and what is expected:
+
+| Check | Expected |
+| --- | --- |
+| `erista_adt_edit_test` | passes on both kinds: the real Apple tree gives one core, no `/psci`, no OLED strings, the Erista's board entry kept |
+| `adt_check.py` on `erista-full-ram.adt` | `ADT OK (1 core(s))`; with `--cores 4` it must fail |
+| `shasum -a 256 bazel-bin/boot/full-ram.adt` | the same as built from `85757fc66` in a worktree: the OLED's tree did not change |
+| the seven diagnostic images | the hashes in `boot/diag/erista-diag-image-hashes.txt`, built as in `ERISTA_T1V3_RUN.md` section 1. They do not compile `loader.c` or `carveout.h`, and `mc_table.h` changed in a comment only |
+| the normal loader (`//boot:package`) | its `loader.bin` is expected to differ from `85757fc66`: `native_gate` now calls `carveout.h`. Compare the OLED's behaviour by `carveout_test`, not by hash |
+| `--//boot:smp=false` for the OLED | an OLED package without `--smp` must still build; it is the OLED's own single-core path |
+
+The `boot:package` rule takes its ADT from `//boot:adt` (the OLED's). Nothing builds a package from `//boot:erista_adt`:
+doing so is a later step and needs the Erista row at `boot 1`.
