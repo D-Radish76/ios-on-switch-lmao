@@ -159,14 +159,22 @@ host_test(
     deps = [":t2"],
 )
 
-# T2's bus layer: single sensor transfers over T1 v3's register table with a wider allowlist. No image links it yet.
+# The T2 image's logic: prelude, bus layer, sensor sequence and screen lines, against a model of the CAR words, I2C1 and a TMP451.
 host_library(
-    name = "t2_bus",
+    name = "t2_image",
     srcs = [
-        "//boot:diag/loader/t1v3.h",
-        "//boot:diag/loader/t1v3_regs.c",
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
         "//boot:diag/loader/t2_bus.c",
         "//boot:diag/loader/t2_bus.h",
+        "//boot:diag/loader/t2_image.c",
+        "//boot:diag/loader/t2_image.h",
+        "//boot:diag/loader/t2_prelude.c",
+        "//boot:diag/loader/t2_prelude.h",
+        "//boot:diag/loader/t2_regs.c",
+        "//boot:diag/loader/t2_regs.h",
+        "//boot:diag/loader/t2_report.c",
+        "//boot:diag/loader/t2_report.h",
         "//boot:diag/t2/t2.c",
         "//boot:diag/t2/t2.h",
     ],
@@ -176,7 +184,7 @@ host_library(
 host_test(
     name = "t2_bus_test",
     srcs = ["t2_bus_test.cpp"],
-    deps = [":t2_bus"],
+    deps = [":t2_image"],
 )
 
 exports_files([

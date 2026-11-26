@@ -141,8 +141,7 @@ Still open:
 `boot/diag/t2/t2.c` is the sensor sequence over a bus of single register transfers (ID, configuration, offsets, status, old
 sample, the one write, the wait, configuration again, new sample with the repeated high read). `t2_test` runs it against a model
 of the part: one write only, none before the entry checks pass, no completion before 31 ms, the 100 ms bound, a failed read at
-every position, an inconsistent pair, a cleared shutdown bit. No image links it and no BUILD target packages it: the I2C1
-controller steps are T1 v3's and would be reused as they are.
+every position, an inconsistent pair, a cleared shutdown bit. The image section below links it.
 
 ## Bus layer (N8)
 
@@ -153,10 +152,20 @@ the pointers and the two `CNFG` values added; `CLK_DIVISOR` is refused outright,
 `CMD_ADDR0`, `CMD_DATA1` and `CONFIG_LOAD` written, the allowlist exhaustive over 16 bits, nothing written after a stop, NOACK,
 no BUSY and a sticky load each stopping the transfer. Stop codes `0730` to `0736`.
 
-Not done: the image. T1 v3's prelude (CAR checks, controller checks, idle samples, the divisor write) is static inside `t1v3.c`, and
-exposing it would change T1 v3's compiled bytes, whose hash is pinned. The image therefore needs either a copy of the prelude
-under `SWITCH_DIAG_T2` or a build flag in `t1v3.c`, then `diag.c`, `loader.bzl`, the audit tool's `--t2` mode, a script test and a new
-line in `erista-diag-image-hashes.txt`. Each of those needs a Mac build to check, so they wait for approval.
+## Image (N8, offline)
+
+`//boot:diag_t2` is an independent diagnostic image. It copies T1 v3's prelude (CAR checks, controller checks, idle samples, the
+one divisor write) into `t2_prelude.c` instead of exposing it, so T1 v3's compiled bytes and hash do not change. T2 has its own
+register table and allowlist (`t2_regs.c`), write gate (`t2_gate.c`), bus layer, screen lines (`t2_report.c`) and entry
+(`t2_image.c`). Nothing in it names a T1 v3 symbol.
+
+Stop codes: `0701` to `071b` controller prelude, `0720` to `0725` sequence, `0730` to `0736` bus. The flat image hash is the
+`diag_t2` line of `erista-diag-image-hashes.txt` (`7f5a91a4...`, Linux clang 18.1.3); the seven earlier lines are unchanged.
+`diag_loader_inspect.py` checks it as it checks the others: raw register accesses sit in one instruction each, only the gate
+calls them, and each of the 13 register addresses appears once in the linked image.
+
+Checked offline: `t2_bus_test` (host), `diag_t2_test` (image inspection, link, allowlist, entry, hashes). Not run here: Bazel,
+and the Mac build of `//boot:diag_t2`. The audit tool has no `--t2` mode yet. No hardware run is approved; T2 stays HOLD.
 
 ## Host tests, when approved
 

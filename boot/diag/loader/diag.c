@@ -26,9 +26,12 @@
 #ifdef SWITCH_DIAG_T1T
 #include "t1t_report.h"
 #endif
+#ifdef SWITCH_DIAG_T2
+#include "t2_report.h"
+#endif
 
 #if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3) || \
-    defined(SWITCH_DIAG_T1T)
+    defined(SWITCH_DIAG_T1T) || defined(SWITCH_DIAG_T2)
 #define SWITCH_DIAG_SINGLE_CHECK 1
 #endif
 
@@ -73,6 +76,15 @@ enum {
     D_T1V3_PLLP_LOAD,
     D_T1V3_ID_STATUS,
 #endif
+#ifdef SWITCH_DIAG_T2
+    D_T2_STOP,
+    D_T2_WRITES_TRANSFERS,
+    D_T2_DIVISOR,
+    D_T2_ID_CONFIG_STATUS,
+    D_T2_OLD_SAMPLE,
+    D_T2_NEW_SAMPLE,
+    D_T2_TIMES,
+#endif
 #ifdef SWITCH_DIAG_T1T
     D_T1T_STOP_READS,
     D_T1T_CLOCKS_L,
@@ -88,6 +100,9 @@ _Static_assert(D_T1T_I2C5_TIMING < R_RECORD_WORDS, "T1-T results fit the probe r
 #endif
 #ifdef SWITCH_DIAG_T1V3
 _Static_assert(D_T1V3_ID_STATUS < R_RECORD_WORDS, "T1 v3 results fit the probe record");
+#endif
+#ifdef SWITCH_DIAG_T2
+_Static_assert(D_T2_TIMES < R_RECORD_WORDS, "T2 results fit the probe record");
 #endif
 
 /* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
@@ -509,6 +524,30 @@ static void report_t1v3(void)
 }
 #endif
 
+#ifdef SWITCH_DIAG_T2
+static void report_t2(void)
+{
+    struct switch_t2_image_result result;
+    switch_t2_run_on_hardware(&result);
+    struct switch_t2_line lines[SWITCH_T2_LINES];
+    switch_t2_lines(&result, lines);
+    for (unsigned i = 0; i < SWITCH_T2_LINES; ++i)
+        if (lines[i].text.length)
+            put(LEFT, 9 + i, &lines[i].text, lines[i].bad ? DISPLAY_RED : DISPLAY_WHITE);
+    const struct switch_t2_result *s = &result.sensor;
+    probe_record[D_T2_STOP] = (uint64_t)result.stop;
+    probe_record[D_T2_WRITES_TRANSFERS] = (uint64_t)result.writes << 32 | result.transfers;
+    probe_record[D_T2_DIVISOR] = (uint64_t)result.probe.divisor << 32 | result.probe.divisor_after;
+    probe_record[D_T2_ID_CONFIG_STATUS] = (uint64_t)s->id << 24 | (uint64_t)s->config_before << 16 | (uint64_t)s->status_before << 8 |
+                                          s->status_last;
+    probe_record[D_T2_OLD_SAMPLE] = (uint64_t)s->old_sample.remote_high << 24 | (uint64_t)s->old_sample.remote_low << 16 |
+                                    (uint64_t)s->old_sample.local_high << 8 | s->old_sample.local_low;
+    probe_record[D_T2_NEW_SAMPLE] = (uint64_t)s->new_sample.remote_high << 24 | (uint64_t)s->new_sample.remote_low << 16 |
+                                    (uint64_t)s->new_sample.local_high << 8 | s->new_sample.local_low;
+    probe_record[D_T2_TIMES] = (uint64_t)s->busy_first_us << 32 | s->done_us;
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1
 /* Rows 9 to 16, full width: T1 draws no register column. */
 static void report_t1(void)
@@ -539,6 +578,8 @@ void switch_diag_after_transition(void)
     put_text(0, "LOAD DIAG T1. I2C1 AND CAR READS. TMP451 POINTER WRITES ONLY. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1V3)
     put_text(0, "LOAD DIAG T1V3. I2C1 DIVISOR WRITE AND ONE TMP451 ID READ. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_T2)
+    put_text(0, "LOAD DIAG T2. I2C1 DIVISOR WRITE AND ONE TMP451 ONE-SHOT CONVERSION. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1T)
     put_text(0, "LOAD DIAG T1T. CAR AND I2C1/I2C5 REGISTER READS ONLY. NO I2C TRANSFER. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1R)
@@ -568,6 +609,11 @@ void switch_diag_after_transition(void)
             report_t1v3();
         else
             put_text(9, "NOT AN ERISTA. NO T1V3 REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_T2)
+        if (known && board->t210b01 == 0)
+            report_t2();
+        else
+            put_text(9, "NOT AN ERISTA. NO T2 REGISTER TOUCHED", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_T1T)
         if (known && board->t210b01 == 0)
             report_t1t();
@@ -597,6 +643,8 @@ void switch_diag_after_transition(void)
     put_text(18, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1V3)
     put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_T2)
+    put_text(24, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1T)
     put_text(26, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1R)

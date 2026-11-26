@@ -374,6 +374,25 @@ py_test(
     ],
 )
 
+# T2: the inspection of its own image, a real link, its register table and allowlist, its entry, and the recorded
+# hash of every image (the T2 line included).
+py_test(
+    name = "diag_t2_test",
+    size = "medium",
+    srcs = ["diag_t2_test.py"],
+    data = [
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+    ],
+)
+
 # hush_lint.py: the characters U-Boot's hush cannot take (a stray apostrophe broke page 1 on the Erista), over every script.
 py_test(
     name = "hush_lint_test",
