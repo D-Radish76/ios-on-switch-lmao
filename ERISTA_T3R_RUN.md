@@ -103,6 +103,8 @@ The owner decided to skip further rehearsal. What was reported, and what was not
 
 Unmeasured items stay unmeasured. The 26 s expectation and the 60 s cap in this document remain provisional assumptions. This record does not guarantee recovery from a hang: a read that never completes may not be left by POWER hold, and the past recovery after the D0-S v1 freeze is evidence about that one case, not a promise for this image. If the screen stops on a BEGIN line, the person holds POWER, and if that fails, uses the RCM jig; neither is asserted to work.
 
+On 2026-11-28 a POWER hold was rehearsed in normal hekate (screen dark after about 3 to 4 s, RCM return succeeded); see `ERISTA_T3_RUN.md`. It does not cover a hung read or a rail that is on.
+
 ## T3-R card preparation (not executed; copying stays on hold)
 
 Nothing is copied until the owner approves a run in writing. These steps are written so the card can be prepared and checked the same way as for T4-R, and the way back is kept. The package is `bazel-bin/boot/diag_t3r/package/` (the path the build prints). Its files are `switchroot/ios-diag-t3r/{bl31.bin,bl33.bin,script.txt}` and `bootloader/ini/ios-diag-t3r.ini`. Set `CARD=/Volumes/"NO NAME"` and `PKG=<that path>`. Every step before the copy only reads.

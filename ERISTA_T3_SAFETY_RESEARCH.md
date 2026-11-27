@@ -78,6 +78,8 @@ Findings 1 to 3 come from one tool summary of `regulator_5v.c` and should be rea
 | 24 | After a `SYSTEM_RESET` the A5 and CC4 pins' state is not known. Nothing was read through that path | U |
 | 25 | hekate re-initialises the fan on its own: `fan_set_from_temp` with a temperature at or below 39 C reaches `fan_set_duty(0)`, which calls `regulator_5v_disable` and drives A5 low (findings 2 and 6), and Nyx calls it every 5 s. So an A5 left high across a reset would be driven low by hekate once the SoC is at or below 39 C. Between 40 C and 41 C it does nothing, and above 42 C hekate keeps the rail on itself | I |
 
+Update, 2026-11-28 02:05 JST: the owner rehearsed a POWER hold in normal hekate at 24 C. The screen went dark after about 3 to 4 s and the RCM return worked. That is evidence for finding 22 in normal hekate only. It does not show a full power cut, and it does not cover a hang or a rail that is on. Details in `ERISTA_T3_RUN.md`.
+
 ## What this does to each remaining risk
 
 | Risk | Before | After | Status |

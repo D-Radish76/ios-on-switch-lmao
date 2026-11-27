@@ -46,14 +46,74 @@ The rail carries the fan and is shared. Detach both Joy-Con and every USB device
 ```
 bazel build --config=ios17 //boot:diag_t3
 bazel test --config=ios17 //boot/diag/loader/test:t3_test //boot/diag/loader/test:t3r_test //tools/package/test:diag_t3_test //tools/package/test:diag_t3r_test //tools/package/test:diag_t4r_test //tools/package/test:diag_loader_test //tools/package/test:diag_mmio_audit_test //tools/package/test:erista_t3_fan_design_test
-bazel run //tools/package:diag_images
+python3 tools/package/diag_images.py
 ```
 
-The audit must end with `AUDIT PASSED (T3)`; `boot/diag/erista-t3-mmio-audit.txt` is the Linux one. `diag_images` must report 12 inspections. The eleven earlier hashes, `diag_t3r` (`075d6816...` on Linux) included, must be unchanged. Compare them on the Mac against commit `907ae9923`, the first commit with the fixed T3-R; `6da4f57ee` predates the fix and is not a baseline for `diag_t3r`. The package entry is `ios-diag-t3`, the hekate name `iOS Diag T3`. The Linux flat hash of `diag_t3` is in `boot/diag/erista-diag-image-hashes.txt`; the Mac's differs by toolchain.
+The audit must end with `AUDIT PASSED (T3)`; `boot/diag/erista-t3-mmio-audit.txt` is the Linux one. Run `diag_images` directly from the repository root as above; `bazel run` fails on relative paths. It must report 12 inspections. The eleven earlier hashes, `diag_t3r` (`075d6816...` on Linux) included, must be unchanged. Compare them on the Mac against commit `907ae9923`, the first commit with the fixed T3-R; `6da4f57ee` predates the fix and is not a baseline for `diag_t3r`. The package entry is `ios-diag-t3`, the hekate name `iOS Diag T3`. The Linux flat hash of `diag_t3` is in `boot/diag/erista-diag-image-hashes.txt`; the Mac's differs by toolchain.
 
 ## Card preparation (not executed; copying stays on hold)
 
-Nothing is copied until the owner approves a run in writing. The procedure is `ERISTA_T3R_RUN.md`'s with `t3` for `t3r`: package `bazel-bin/boot/diag_t3/package/`, files `switchroot/ios-diag-t3/{bl31.bin,bl33.bin,script.txt}` and `bootloader/ini/ios-diag-t3.ini`, before and after hash lists `~/t3-before.txt` and `~/t3-after.txt`, a collision check, the optional ini stash, `rsync --ignore-existing`, the diff, and the way back. The last T3-R card diff ended with exit 1; it held only the four added T3-R files and the 82 existing files were unchanged (`ERISTA_T3R_RUN.md`). Expect the same shape for T3: three added files plus the ini, nothing else.
+Nothing is copied until the owner approves a run in writing. Every step before step 6 only reads. The commit is the one the owner approves; `35d04ec55` is the latest checked on the Mac and has no copy made from it.
+
+Set these in the shell on the Mac, from the repository root:
+
+```
+CARD=/Volumes/"NO NAME"
+PKG=<the path bazel prints for //boot:diag_t3, ending in package/>
+```
+
+The package holds four files: `switchroot/ios-diag-t3/bl31.bin`, `switchroot/ios-diag-t3/bl33.bin`, `switchroot/ios-diag-t3/script.txt` and `bootloader/ini/ios-diag-t3.ini`.
+
+1. Build and hash the package, and keep the list with the run record:
+   ```
+   bazel build --config=ios17 //boot:diag_t3
+   (cd "$PKG" && find . -type f | sort | xargs shasum -a 256) | tee ~/t3-pkg.txt
+   ```
+   The list must have four lines. Record the Mac `loader.uboot.bin` SHA256 next to it.
+2. Record the card, the way back:
+   ```
+   (cd "$CARD" && find bootloader switchroot -type f | sort | xargs shasum -a 256) > ~/t3-before.txt
+   ```
+3. Collision check, all three must show nothing found:
+   ```
+   ls "$CARD"/bootloader/ini/ios-diag-t3.ini "$CARD"/switchroot/ios-diag-t3 2>&1
+   grep -ril "diag-t3\|diag t3" "$CARD"/bootloader/ini
+   ```
+   The first command must report that both paths do not exist. `ios-diag-t3r` is a different name and does not collide, but the T3-R ini must not stay in the menu when T3 is chosen; see step 4.
+4. Menu: the owner decides whether the T3 entry stands alone. To do that, make `"$CARD"/_ini_stash` outside `bootloader`, `mv` each diagnostic ini into it one by one, and check the moved files with `shasum -a 256 "$CARD"/_ini_stash/*` against the same lines of `~/t3-before.txt`. No ini of a normal iOS package may be on the card. Nothing is deleted or renamed in place.
+5. Dry run of the copy, which writes nothing:
+   ```
+   rsync -rtvn --ignore-existing "$PKG"/ "$CARD"/
+   ```
+   It must list exactly the four paths above and nothing else.
+6. Copy, only after the written approval:
+   ```
+   rsync -rtv --ignore-existing "$PKG"/ "$CARD"/
+   sync
+   ```
+   Eject and re-insert the card.
+7. Check what is on the card against the package, then against the card as it was:
+   ```
+   (cd "$CARD" && shasum -a 256 -c ~/t3-pkg.txt)
+   (cd "$CARD" && find bootloader switchroot _ini_stash -type f 2>/dev/null | sort | xargs shasum -a 256) > ~/t3-after.txt
+   diff <(sed 's#  \./#  #' ~/t3-pkg.txt | sort -k2) <(diff ~/t3-before.txt ~/t3-after.txt | grep '^>' | sed 's/^> //' | sort -k2)
+   diff ~/t3-before.txt ~/t3-after.txt | grep -c '^<'
+   ```
+   The `-c` check prints four `OK` lines. The first `diff` prints nothing: the four added lines equal the package hashes. The last command prints `0`: no line of the old card changed or went missing. With a stash in use, the moved inis appear under `_ini_stash` in the after list; compare them to the before list by hash instead of by path. The earlier T3-R diff ended exit 1 with only the four added files and 82 unchanged ones, which is the expected shape.
+8. After the run, or if it is never made: `mv` the inis back, remove the empty `_ini_stash` (the only remove), repeat the `~/t3-after.txt` command, and check that it equals `~/t3-before.txt` plus the four T3 lines. The T3 files may stay or be removed by the owner; nothing is removed by this document.
+
+The card must not hold a root partition for XNU or an `ios.ini` that boots iOS during this run. Whether hekate ignores an unknown folder is looked at in the menu after the copy, as for T4-R.
+
+## POWER hold rehearsal in normal hekate (owner's report, 2026-11-28 02:05 JST)
+
+| Item | Result |
+| --- | --- |
+| Console temperature at the start | 24 C |
+| POWER hold to the screen going dark | about 3 to 4 s |
+| Return to hekate through RCM | succeeded |
+| Where it was done | normal hekate, no image of ours |
+
+What it shows: the POWER hold acts on a running hekate and the console is recoverable through RCM afterwards. What it does not show: that the console was fully off when the screen went dark, how long a full power cut takes, or anything about a hang inside a bus access or a run with the rail on. Nintendo's instruction is a hold of at least 12 s for an unresponsive console (`ERISTA_T3_SAFETY_RESEARCH.md`); the 3 to 4 s is a screen time, not a power time, and does not shorten that hold. At 24 C hekate keeps the fan off, so the rail was most likely off during the rehearsal (inference, not read). The rehearsal in `ERISTA_T3R_RUN.md` that was skipped stays skipped for the hung-read and rail-on cases.
 
 ## Mac record (owner's report, 2026-11-28 01:48 JST, commit `35d04ec55`)
 
@@ -88,24 +148,27 @@ Sources, classes (primary, secondary, inferred, not found) and what each one set
 
 ## Checklist before a run
 
-Offline, done for `35d04ec55`:
-- [x] Mac build, regression 10 of 10, `diag_images` 12 of 12, eleven hashes unchanged against `907ae9923`, `AUDIT PASSED (T3)`
+Offline, done:
+- [x] Mac build, regression 10 of 10, `diag_images` 12 of 12, eleven hashes unchanged against `907ae9923`, `AUDIT PASSED (T3)` (`35d04ec55`)
 - [x] The T3-R card diff explained: four added files, 82 unchanged, six inis
+- [x] Source search on CC4, the A5 rail, the fan and the POWER hold (`ERISTA_T3_SAFETY_RESEARCH.md`)
+- [x] POWER hold rehearsed in normal hekate, 24 C: screen dark in about 3 to 4 s, RCM return succeeded. Scope: no rail on, no hang, full power cut not shown
 
 Open, each needs the owner in writing:
+- [ ] The commit to run is named, and has its own Mac checks if it is not `35d04ec55`
 - [ ] The write list and the safety judgement of `ERISTA_T3_FAN_DESIGN.md` accepted
-- [ ] CC4 polarity and the loads on the A5 rail checked against the schematic or a bench measurement, or accepted as unknown
-- [ ] The recovery position accepted: POWER hold is the only recovery, unmeasured, untried with the rail on
-- [ ] The card procedure for T3 run through its diff, result as expected
-- [ ] Console state: both Joy-Con detached, nothing on USB, fan free, battery, auto boot off
-- [ ] Who holds the console, and the 30 s, 35 s and 60 s rules read
-- [ ] The Mac `loader.uboot.bin` SHA256 and the package hashes recorded for this commit
+- [ ] CC4 polarity and the loads on the A5 rail: the research narrows them at source level; confirm against a schematic or a bench measurement, or accept them as unconfirmed
+- [ ] The recovery position accepted: POWER hold is the only recovery for a hang with the rail on, it has been shown only in normal hekate, and Nintendo's figure for an unresponsive console is 12 s or more
+- [ ] The card procedure above run through step 5 (the dry run) and, after approval, through step 7, with the expected result
+- [ ] Console state: both Joy-Con detached, nothing on USB, fan free, battery, auto boot off, temperature noted (the state check expects hekate's idle state)
+- [ ] Who holds the console, and the 30 s, 35 s and 60 s rules read; on a red `0A0B` line the person keeps holding POWER well past the moment the screen goes dark
+- [ ] The Mac `loader.uboot.bin` SHA256 and the package hashes (`~/t3-pkg.txt`) recorded for this commit
 
 ## Opinion on running it
 
 Not ready. The image fails closed on everything the code can see: the state is checked before any write, every write is read back, the off sequence runs after any stop, and an unconfirmed rail halts the loader. What it cannot cover is a hang with the rail on, and the only answer to that is a POWER hold that has never been timed or tried in that state. CC4 polarity and the rail loads are also open, and they are checkable on paper without touching the console.
 
-Before an approval request, settle CC4 and the A5 loads from the schematic or a bench measurement, and decide whether the unrehearsed POWER hold is acceptable for a rail that stays on for up to 15 s. If both are accepted, the remaining risk is a short hang with the fan powered. That is the owner's call. This document does not approve a run.
+Before an approval request, settle CC4 and the A5 loads from the schematic or a bench measurement, and decide whether a POWER hold that was shown only in normal hekate is acceptable for a rail that stays on for up to 15 s. If both are accepted, the remaining risk is a short hang with the fan powered. That is the owner's call. This document does not approve a run.
 
 ## Before a run can be approved
 
