@@ -441,6 +441,30 @@ py_test(
     ],
 )
 
+# T3-R: the 21-register read allowlist, the PWM classification, the inspection of its image, a real link, the audit record and
+# the ten earlier image hashes (ERISTA_T3R_DESIGN.md, ERISTA_T3R_RUN.md).
+py_test(
+    name = "diag_t3r_test",
+    size = "medium",
+    srcs = ["diag_t3r_test.py"],
+    data = [
+        "//:ERISTA_T3R_DESIGN.md",
+        "//:ERISTA_T3R_RUN.md",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//boot:diag/erista-t3r-mmio-audit.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+        "//tools/package:diag_mmio_audit",
+    ],
+)
+
 # The recorded D0-S v2 run against the loader's own text and logic (ERISTA_D0S_V2_RESULT.md).
 py_test(
     name = "diag_s2_measured_test",
@@ -1020,6 +1044,7 @@ py_test(
         "//:ERISTA_T1R_RESULT.md",
         "//:ERISTA_T1_0507.md",
         "//:ERISTA_T3R_DESIGN.md",
+        "//:ERISTA_T3R_RUN.md",
         "//:ERISTA_T3T4_MINIMAL.md",
         "//:ERISTA_T3T4_REUSE.md",
         "//:ERISTA_T4A_DESIGN.md",

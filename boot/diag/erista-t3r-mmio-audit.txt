@@ -1,0 +1,42 @@
+1. Instructions that form an address in the device window 0x50000000 to 0x7fffffff
+   switch_diag_after_transition a0000a58: movk w0, #0x7000, lsl #16  -> 0x70000804
+   switch_diag_after_transition a0000a68: movk w0, #0x7000, lsl #16  -> 0x7000f9d8
+   loader_check_fdt_memory_ranges a0003700: mov w8, #0x7fd00000  -> 0x7fd00000
+2. Where those registers go (loads, stores, copies, calls)
+   switch_diag_after_transition a0000a5c: bl 0xa000023c <switch_diag_read32>  (bl switch_diag_read32 with x0=0x70000804)
+   switch_diag_after_transition a0000a6c: bl 0xa000023c <switch_diag_read32>  (bl switch_diag_read32 with x0=0x7000f9d8)
+3. The path from an address to its access
+   switch_diag_read32: ldr w0, [x8]; called by switch_diag_after_transition
+   switch_t3r_read32: ldr w0, [x8]; called by switch_t3r_access
+   T3-R: static table (switch_t3r_address) -> switch_t3r_access -> switch_t3r_read32 (one word load); switch_t3r_address called by head, switch_t3r_access, switch_t3r_screen_line
+4. Functions that load or store through a pointer that is not a constant (not bounded by this scan)
+   switch_diag_read32: load pointer x1
+   probe_before_transition: load pointer x11, store pointer x8
+   begin_screen: store pointer x1
+   put: load pointer x7, store pointer x20
+   switch_diag_after_transition: load pointer x9, store pointer x10
+   report_board: load pointer x5
+   switch_diag_el1_state: load pointer x7
+   switch_diag_fdt_reservations: load pointer x5, store pointer x4
+   switch_diag_line_add: load pointer x4, store pointer x3
+   switch_diag_line_clip: load pointer x1, store pointer x2
+   switch_diag_line_start: load pointer x4, store pointer x5
+   switch_diag_line_hex: load pointer x3, store pointer x3
+   switch_diag_line_decimal: load pointer x3, store pointer x4
+   switch_diag_register_line: load pointer x79, store pointer x114
+   switch_t3r_pwm_classify: store pointer x6
+   switch_t3r_run: load pointer x32, store pointer x11
+   switch_t3r_address: load pointer x1
+   switch_t3r_screen_line: load pointer x42, store pointer x11
+   head: store pointer x1
+   switch_t3r_read32: load pointer x1
+   io_expired: load pointer x1
+   loader_check_fdt_memory_ranges: load pointer x67, store pointer x21
+   be32: load pointer x5
+   be64: load pointer x10
+   overlaps_any: load pointer x3, store pointer x1
+   name_is: load pointer x3
+5. Memory accesses by base: load pointer x304, load stack x151, load static data x30, store pointer x225, store stack x102, store static data x43
+6. Flat image: register address words match the T3-R list
+
+AUDIT PASSED (T3-R): the image holds exactly the 21 listed fan state register addresses, each once; switch_t3r_access is the only caller of the one word load; no device store; in code only the two identity registers are formed.

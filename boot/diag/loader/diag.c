@@ -35,9 +35,13 @@
 #ifdef SWITCH_DIAG_T4R
 #include "t4r_report.h"
 #endif
+#ifdef SWITCH_DIAG_T3R
+#include "t3r_report.h"
+#endif
 
 #if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3) || \
-    defined(SWITCH_DIAG_T1T) || defined(SWITCH_DIAG_T2) || defined(SWITCH_DIAG_S2) || defined(SWITCH_DIAG_T4R)
+    defined(SWITCH_DIAG_T1T) || defined(SWITCH_DIAG_T2) || defined(SWITCH_DIAG_S2) || defined(SWITCH_DIAG_T4R) || \
+    defined(SWITCH_DIAG_T3R)
 #define SWITCH_DIAG_SINGLE_CHECK 1
 #endif
 
@@ -102,6 +106,17 @@ enum {
     D_T4R_PTV_CONFIG,
     D_T4R_STATUS_STATE,
 #endif
+#ifdef SWITCH_DIAG_T3R
+    D_T3R_STOP_READS,
+    D_T3R_TMRUS,
+    D_T3R_CAR,
+    D_T3R_PWM,
+    D_T3R_PINMUX_LCD_CAM1,
+    D_T3R_PINMUX_SATA_USB,
+    D_T3R_GPIO_A_CC_S,
+    D_T3R_GPIO_S_V,
+    D_T3R_PMC,
+#endif
 #ifdef SWITCH_DIAG_T1T
     D_T1T_STOP_READS,
     D_T1T_CLOCKS_L,
@@ -126,6 +141,9 @@ _Static_assert(D_S2_SDMMC1 < R_RECORD_WORDS, "S2 results fit the probe record");
 #endif
 #ifdef SWITCH_DIAG_T4R
 _Static_assert(D_T4R_STATUS_STATE < R_RECORD_WORDS, "T4-R results fit the probe record");
+#endif
+#ifdef SWITCH_DIAG_T3R
+_Static_assert(D_T3R_PMC < R_RECORD_WORDS, "T3-R results fit the probe record");
 #endif
 
 /* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
@@ -620,6 +638,55 @@ static void report_t4r(void)
 }
 #endif
 
+#ifdef SWITCH_DIAG_T3R
+/* The right column of the 22 read cells starts here; a cell is SWITCH_T3R_CELL characters wide. */
+#define T3R_RIGHT_COLUMN 656u
+_Static_assert(LEFT + SWITCH_T3R_CELL * GLYPH_WIDTH <= T3R_RIGHT_COLUMN, "the cells do not overlap");
+_Static_assert(T3R_RIGHT_COLUMN + SWITCH_T3R_CELL * GLYPH_WIDTH <= SCREEN_WIDTH, "the right column is on the screen");
+
+static int show_t3r(void *context, unsigned step, const struct switch_t3r_result *result)
+{
+    (void)context;
+    if (!diag.screen)
+        return 0;
+    struct switch_t3r_line line;
+    switch_t3r_screen_line(step, result, &line);
+    put(line.right ? T3R_RIGHT_COLUMN : LEFT, 9 + line.row, &line.text, line.bad ? DISPLAY_RED : DISPLAY_WHITE);
+    return switch_t3r_settle();
+}
+
+static uint64_t t3r_low_bytes(const struct switch_t3r_result *r, const unsigned regs[8])
+{
+    uint64_t packed = 0;
+    for (unsigned i = 0; i < 8; ++i)
+        packed |= (uint64_t)(r->value[regs[i]] & 0xffu) << (8 * i);
+    return packed;
+}
+
+static void report_t3r(void)
+{
+    put_text(26, "PERSON: NO NEW LINE FOR 30 S, HOLD POWER. THE READS END BY THEMSELVES AFTER 20 S. THEN 15 S AND A RESET", DISPLAY_WHITE);
+    put_text(27, "A READ THAT HANGS THE BUS IS NOT LEFT BY ANY TIMEOUT HERE. IF THE SCREEN STOPS, HOLD POWER", DISPLAY_WHITE);
+    put_text(28, "STATE SHOWN IS AFTER HEKATE AND U-BOOT. EXPECTED ASSUMES NYX RAN THE FAN OFF. A DIFFERENCE IS NOT A FAULT", DISPLAY_WHITE);
+    put_text(29, "PMC AND GPIO READS AT NON-SECURE EL1 ARE UNTESTED. THE LINE ON SCREEN WHEN IT STOPS NAMES THE REGISTER", DISPLAY_WHITE);
+    struct switch_t3r_result result;
+    switch_t3r_run_on_hardware(&result, show_t3r);
+    static const unsigned gpio_a_cc_s[8] = {T3R_GPIO_A_CNF,  T3R_GPIO_A_OE, T3R_GPIO_A_OUT, T3R_GPIO_CC_CNF,
+                                            T3R_GPIO_CC_OE, T3R_GPIO_CC_OUT, T3R_GPIO_S_CNF, T3R_GPIO_S_OE};
+    probe_record[D_T3R_STOP_READS] = (uint64_t)result.stop << 32 | result.reads;
+    probe_record[D_T3R_TMRUS] = (uint64_t)result.value[T3R_TMRUS] << 32 | result.tmrus_second;
+    probe_record[D_T3R_CAR] = (uint64_t)result.value[T3R_CAR_RST_DEVICES_L] << 32 | result.value[T3R_CAR_CLK_OUT_ENB_L];
+    probe_record[D_T3R_PWM] = (uint64_t)result.value[T3R_PWM_CSR_1] << 32 | result.gate << 16 | result.pwm << 8 | result.pwm_why;
+    probe_record[D_T3R_PINMUX_LCD_CAM1] = (uint64_t)result.value[T3R_PINMUX_LCD_GPIO2] << 32 | result.value[T3R_PINMUX_CAM1_PWDN];
+    probe_record[D_T3R_PINMUX_SATA_USB] =
+        (uint64_t)result.value[T3R_PINMUX_SATA_LED_ACTIVE] << 32 | result.value[T3R_PINMUX_USB_VBUS_EN0];
+    probe_record[D_T3R_GPIO_A_CC_S] = t3r_low_bytes(&result, gpio_a_cc_s);
+    probe_record[D_T3R_GPIO_S_V] = (result.value[T3R_GPIO_S_IN] & 0xffu) | (result.value[T3R_GPIO_V_CNF] & 0xffu) << 8 |
+                                   (result.value[T3R_GPIO_V_OE] & 0xffu) << 16;
+    probe_record[D_T3R_PMC] = (uint64_t)result.value[T3R_PMC_NO_IOPOWER] << 32 | result.value[T3R_PMC_PWR_DET_VAL];
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1
 /* Rows 9 to 16, full width: T1 draws no register column. */
 static void report_t1(void)
@@ -654,6 +721,8 @@ void switch_diag_after_transition(void)
     put_text(0, "LOAD DIAG T2. I2C1 DIVISOR WRITE AND ONE TMP451 ONE-SHOT CONVERSION. NO CAR WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T4R)
     put_text(0, "LOAD DIAG T4R. FOUR TKE REGISTER READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_T3R)
+    put_text(0, "LOAD DIAG T3R. FAN STATE READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_S2)
     put_text(0, "LOAD DIAG S2. CAR AND SDMMC1 REGISTER READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1T)
@@ -695,6 +764,11 @@ void switch_diag_after_transition(void)
             report_t4r();
         else
             put_text(9, "NOT AN ERISTA. NO T4R REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_T3R)
+        if (known && board->t210b01 == 0)
+            report_t3r();
+        else
+            put_text(9, "NOT AN ERISTA. NO T3R REGISTER TOUCHED", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_S2)
         if (known && board->t210b01 == 0)
             report_s2();
@@ -733,6 +807,8 @@ void switch_diag_after_transition(void)
     put_text(24, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T4R)
     put_text(28, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_T3R)
+    put_text(30, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_S2)
     put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T1T)

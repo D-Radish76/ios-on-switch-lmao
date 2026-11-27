@@ -202,6 +202,28 @@ host_test(
     deps = [":t4r"],
 )
 
+# T3-R's read logic: 21 allowlisted registers, 22 reads each between two shown steps, the PWM gate and classification, the stop
+# conditions and the read budget.
+host_library(
+    name = "t3r",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/loader/t3r.c",
+        "//boot:diag/loader/t3r.h",
+        "//boot:diag/loader/t3r_regs.c",
+        "//boot:diag/loader/t3r_report.c",
+        "//boot:diag/loader/t3r_report.h",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t3r_test",
+    srcs = ["t3r_test.cpp"],
+    deps = [":t3r"],
+)
+
 # The T2 image's logic: prelude, bus layer, sensor sequence and screen lines, against a model of the CAR words, I2C1 and a TMP451.
 host_library(
     name = "t2_image",

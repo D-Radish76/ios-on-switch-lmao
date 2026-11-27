@@ -1,6 +1,6 @@
 # T3-R: read the fan state at the handoff
 
-Design of 2026-11-27. Nothing is built, approved or run. T3-R is a read-only diagnostic: no store to a device address, no fan, no rail, no pinmux or GPIO change. `boot` stays 0, the feature mask 0, T3 and T4 are not waived, T4-A1, T4-A2 and T4-P are not implemented, the first XNU run is on HOLD, the ten existing diagnostic hashes stay as they are. Implementation waits for review; a run needs its own written approval. T4 work is paused.
+Design of 2026-11-27, implemented the same day as code and offline checks only (`ERISTA_T3R_RUN.md`). Nothing is approved or run. T3-R is a read-only diagnostic: no store to a device address, no fan, no rail, no pinmux or GPIO change. `boot` stays 0, the feature mask 0, T3 and T4 are not waived, T4-A1, T4-A2 and T4-P are not implemented, the first XNU run is on HOLD, the ten existing diagnostic hashes stay as they are. A run needs its own written approval. T4 work is paused.
 
 Marks: **confirmed** (read in the file or run named), **inferred**, **unknown**. hekate v6.5.5 files were read through a fetch tool that summarises, so quotes are close and not byte-checked.
 
@@ -23,7 +23,9 @@ From `bdk/thermal/fan.c` and `bdk/power/regulator_5v.c` at v6.5.5.
 
 The bit values come from hekate's headers: `PINMUX_TRISTATE` bit 4, `PINMUX_PARKED` bit 5, `PINMUX_INPUT_ENABLE` bit 6, `PINMUX_LPDR` bit 8, pull down `1 << 2`, pull up `2 << 2`, `PWM_CSR_EN` bit 31. **Confirmed** at the file level; not byte-checked.
 
-What hekate's off state is then, by the code (not seen on this console): `PWM_CSR_1` `0x81000000`, `LCD_GPIO2` `0x74`, A5 and CC4 low, `NO_IOPOWER` bit 21 and `PWR_DET_VAL` bit 21 left as the enable path last wrote them. Whether the first-call initialisation ran before the off branch depends on call order in `hw_deinit` that was not read, so `CAM1_PWDN` `0x59` (T210, by the init line) is a prediction too. T3-R compares to these and treats a difference as information, not as failure.
+What hekate's off state is then, by the code (not seen on this console): `PWM_CSR_1` `0x81000000`, `LCD_GPIO2` `0x74`, A5 and CC4 low, `NO_IOPOWER` bit 21 and `PWR_DET_VAL` bit 21 left as the enable path last wrote them. The off word carries `PWM_CSR_EN` and, in the `0x100 << 16` field, bit 24 (the PWM block's "absolute 0 percent", the same bit `fan_set_duty` writes for duty 0). The duty counter in `fan.c` starts at -1, so the first call always runs the initialisation before either branch; that settles the order question, and `CAM1_PWDN` `0x59` follows if Nyx ran `hw_deinit` at all. Only `BDK_HW_EXTRA_DEINIT` in Nyx calls it, so the prediction assumes Nyx did. T3-R compares to these and treats a difference as information, not as failure.
+
+Cross-check against hekate v6.5.5 (2026-11-27): no contradiction with the code was found, so nothing in the implementation is a guess. Register values, bit positions and the duty formula are the ones in the tables here. A caveat stays: mainline-style PWM documentation describes an 8 bit duty field at bits 23:16 with no "absolute 0" bit. Whether bit 24 means that on this block cannot be settled without the TRM. T3-R therefore reports bit 24 only as part of the one exact off word and calls every other word with it set UNKNOWN.
 
 ## What is reused
 
@@ -69,36 +71,69 @@ Dropped: `OUT` of S and V, `IN` of A, CC and V (nothing the design needs), every
 ## Order
 
 1. `TMRUS` (start).
-2. CAR `RST_DEVICES_L`, `CLK_OUT_ENB_L`. Gate: if bit 17 of the first is set or bit 17 of the second is clear, row 1 is shown as SKIPPED and not read; the run goes on, since no other block depends on PWM.
-3. Row 1 if the gate passes.
-4. Pinmux rows 2 to 5.
-5. GPIO rows in the order A, CC, S, V.
-6. PMC rows 17 and 18.
-7. `TMRUS` (end), classification lines, the timed exit.
+2. CAR `RST_DEVICES_L`, `CLK_OUT_ENB_L`. The PWM gate is open only when `CLK_OUT_ENB_L` bit 17 is set and `RST_DEVICES_L` bit 17 is clear. Otherwise the PWM read is shown as `NOT READ` with the reason and skipped; the run goes on, since no other block depends on PWM.
+3. `PWM_CSR_1` if the gate is open.
+4. Pinmux: `LCD_GPIO2`, `CAM1_PWDN`, `SATA_LED_ACTIVE`, `USB_VBUS_EN0`.
+5. GPIO in the order A, CC, S, V.
+6. PMC `NO_IOPOWER`, `PWR_DET_VAL` last.
+7. `TMRUS` (end), the FAN, ROUTE, RAIL and TACH lines, COMPLETE, the timed exit.
 
-Each read is a BEGIN line and a RESULT line, drawn as T4-R draws them, and each settles about 100 ms (T4-R's measured arithmetic: about ten shown steps in 1.01 s). 22 reads and a few state lines come to about 50 shown steps, roughly 5 s, plus the 15 s dwell of `switch_diag_exit`. That is arithmetic from T4-R, not a measurement of this image.
+Each read is a BEGIN line, the read, and a RESULT line. Each line is drawn and then settles 100 ms before the next step runs.
+
+## Time limits
+
+Two limits exist in code, one is a person's rule, and the overall figure is provisional. None is a safety guarantee, and none is measured on this image.
+
+| Limit | Value | Where |
+| --- | --- | --- |
+| One shown step | 100 ms at 19.2 MHz; a counter at another frequency counts as not settled and stops the run (`0x902`) | `t3r_settle.c` |
+| All reads | 20 s from the start of the run, checked before every read; spent means stop `0x903` | `t3r_settle.c`, `t3r.c` |
+| Dwell and reset | 15 s `wfe`, then PSCI `SYSTEM_RESET` | `switch_diag_exit` |
+| No new line | 30 s: the person holds POWER | on the screen |
+| From selection to hekate's menu | provisional 60 s; later than that, hold POWER | the run sheet |
+
+The arithmetic: about 50 shown steps at 100 ms is about 5 s of reads, plus the 15 s dwell, plus a return to hekate that no run has timed (about 6 s is an assumption, not a figure). That is about 26 s, so 60 s is more than twice the expectation. A read that hangs the bus cannot be left by any of this: the 20 s budget is only checked between reads.
 
 ## Stop conditions
 
-A read ends the reads at once, and goes to the exit, when:
-- the allowlist refuses its address or width (the allowlist is exactly the table above and the gate words);
-- the word is all ones (a fault sign; a plain word of these blocks has none set in the upper bits, **inferred**);
-- a BEGIN or RESULT line did not settle.
+The run ends at once, shows COMPLETE with the stop code, and goes to the exit when:
+- the allowlist refuses a register or width (`0x901`, a loader bug);
+- a line did not settle, or the counter is not 19.2 MHz (`0x902`);
+- the read budget is spent before the next read (`0x903`);
+- a word reads as all ones (`0x904`); `TMRUS` is exempt because a counter may read any value.
 
-Not stopping reads: a value that differs from hekate's off state. It is printed with its prediction.
+Not stopping: a value that differs from hekate's off state. It is printed with its prediction.
 
-Person's rule, unchanged: no new line for 30 s means hold POWER. The run is not extended to wait for anything.
+## PWM classification
+
+`PWM_CSR_1` is classified by what hekate writes, and nothing else is called known:
+
+| Word | State |
+| --- | --- |
+| not read (gate closed) | NOT CLASSIFIED |
+| `0` | DISABLED |
+| `0x81000000` | OFF AS HEKATE |
+| bit 31 set, bit 24 clear, bits 30:25 and 15:0 clear, field 0 to 235 | DUTY `236 - field` |
+| bit 31 set, bit 24 clear, field 236 | UNKNOWN, special zero duty (hekate never writes it) |
+| bit 31 set, bit 24 clear, field 237 to 255 | UNKNOWN, out of range |
+| bit 31 clear and any other bit | UNKNOWN, enable clear with bits |
+| bit 24 set with any bit besides 31 and 24 | UNKNOWN, absolute 0 with bits |
+| bits 30:25 or 15:0 set | UNKNOWN, other bits |
+| `0xFFFFFFFF` | UNKNOWN, all ones (also a stop) |
+
+A DUTY line is a reading of hekate's formula, not a statement that a fan turns.
 
 ## Screen
 
-BEGIN and RESULT per read with the address and the raw word; then four decoded lines:
+1280 by 720, two columns of 50 character cells. Reads 1 to 11 are in the left column at rows 9 to 19, reads 12 to 22 in the right at the same rows; a BEGIN line is overwritten in place by its RESULT line. The glyph set has no comma and no plus, so lines use letters, digits and `: - . = / ( ) _ ?`. Rows 21 to 25 hold FAN, ROUTE, RAIL, TACH and COMPLETE; rows 26 to 29 the person's rules and the notes (the reads end by themselves after 20 s; a hung read is not left by a timeout; the state is after hekate and U-Boot; GPIO and PMC reads at non-secure EL1 are untested); row 30 `BOOT STAYS 0`; the exit status from row 31.
 
-- FAN: PWM word, duty field (`236 - ((word >> 16) & 0xFF)` when bit 24 clear), and `OFF AS HEKATE`, `DUTY n`, or `UNKNOWN`;
-- ROUTE: `LCD_GPIO2` as parked (`0x74`), function 1, or other;
-- RAIL: A5 and CC4 as GPIO output with their `OUT` bits, `USB_VBUS_EN0` and `SATA_LED_ACTIVE` words, the two PMC bits;
-- TACH: pin S7 configuration and its one level.
+- FAN: the PWM word, its state, the duty or the reason it is UNKNOWN.
+- ROUTE: `LCD_GPIO2` against `0x74`, `CAM1_PWDN` against `0x59`.
+- RAIL: A5 and CC4 `OUT` bits, the two rail pinmux words, the two PMC words.
+- TACH: S7 `CNF`, `OE` and the one `IN` sample.
+- COMPLETE: reads made, stop code, `NO WRITES`.
 
-Then COMPLETE with the number of reads and `NO WRITES`.
+An Erista gate runs first; on another board it prints `NOT AN ERISTA. NO T3R REGISTER TOUCHED`. The nine record words 55 to 63 keep the stop code, the read count and the raw words for a later photograph.
 
 ## Exit
 
@@ -125,15 +160,15 @@ The T4-A design takes its period from "video timings of the first run". If that 
 
 T3-R's result is an input to T3: if the fan is already on, or the rail is on, or the PWM clock is off, T3's order and its off sequence change before anything is written. A single `IN` sample cannot show a fan turning; only T3's edge count can.
 
-## Implementation, when reviewed
+## Implementation
 
-Mirrors T4-R: `boot/diag/loader/t3r*.c` (state machine, register table, gate, report, settle, access), image `//boot:diag_t3r`, entry `ios-diag-t3r`, hekate name `iOS Diag T3R`, define `SWITCH_DIAG_T3R`. The table holds exactly the 22 reads; the one device-read function is the only place an address is used; the audit asserts no store to a device address. Host model tests: allowlist equals the table, the gate skips row 1, all-ones stops, a refused address stops, the classifier on hekate's predicted words and on perturbed ones. The ten existing images keep their hashes; `diag_images` then reports eleven inspections. None of this is started.
+`boot/diag/loader/t3r*.c` (state machine, register table, gate, report, settle, access), image `//boot:diag_t3r`, entry `ios-diag-t3r`, hekate name `iOS Diag T3R`, define `SWITCH_DIAG_T3R`. The one device-read function is the only place an address is used; the audit asserts the 21 address words appear once each and no store to a device address exists. Checks: `boot/diag/loader/test/t3r_test.cpp`, `tools/package/test/diag_t3r_test.py`. The ten existing images keep their hashes; `diag_images` reports eleven inspections.
 
 ## Open
 
 - Whether non-secure EL1 reads of GPIO and PMC words answer (only T3-R shows).
-- Whether the first-call initialisation ran in `hw_deinit` before the off branch (decides the `CAM1_PWDN` prediction).
-- Which of Nyx and the bootloader ran `hw_deinit` last on this launch path.
+- Whether Nyx ran `hw_deinit` before our loader on this launch path (decides the `CAM1_PWDN` prediction).
+- Whether bit 24 of `PWM_CSR_1` is "absolute 0 percent" on this block (the TRM).
 - The fan's rpm range and tachometer edge rate (a running Linux, or T3).
 
 ## Sources
