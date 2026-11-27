@@ -148,6 +148,8 @@ Sources, classes (primary, secondary, inferred, not found) and what each one set
 
 ## Checklist before a run
 
+Status 2026-11-28 02:33 JST: the owner put the T3 real device run on HOLD, because recovery from an MMIO hang with the 5 V rail on is not established. The offline checks, the card pre-check and the dry run are complete. The watchdog route is in `ERISTA_T4_RECOVERY_DESIGN.md`.
+
 Offline, done:
 - [x] Mac build, regression 10 of 10, `diag_images` 12 of 12, eleven hashes unchanged against `907ae9923`, `AUDIT PASSED (T3)` (`35d04ec55`)
 - [x] The T3-R card diff explained: four added files, 82 unchanged, six inis
