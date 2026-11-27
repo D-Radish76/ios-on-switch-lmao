@@ -12,8 +12,17 @@ HERE = Path('tools/t4a0')
 SOURCES = ('gate.c', 'sim.c', 'sequence.c')
 TARGET = 't4a0_gate_test'
 SOURCE_SUFFIXES = ('.c', '.h', '.py', '.bazel')
-# What rules_python writes next to a py_test inside its runfiles tree: the launcher, its build data and its manifest.
-BAZEL_GENERATED = (TARGET, f'{TARGET}.build_data.txt', f'{TARGET}.exe', f'{TARGET}.runfiles_manifest', f'{TARGET}.runfiles')
+# Entries Bazel puts next to the test in its runfiles tree. MEASURED were listed on the Mac (2f3f8314b, 2026-11-27);
+# ESTIMATED are what other platforms or rules_python versions may write and have not been seen. 'entry' is a file or a
+# link to one, 'dir' is a directory.
+MEASURED = {
+    f'_{TARGET}_stage2_bootstrap.py': 'entry',
+    f'_{TARGET}.venv': 'dir',
+    TARGET: 'entry',
+    f'{TARGET}.build_data.txt': 'entry',
+}
+ESTIMATED = {f'{TARGET}.exe': 'entry', f'{TARGET}.runfiles_manifest': 'entry', f'{TARGET}.runfiles': 'dir'}
+BAZEL_GENERATED = {**MEASURED, **ESTIMATED}
 DESIGN = Path('ERISTA_T4A_DESIGN.md').read_text()
 
 
@@ -39,29 +48,65 @@ def in_bazel() -> bool:
     return bool(os.environ.get('TEST_SRCDIR') and os.environ.get('TEST_TARGET'))
 
 
+def generated_as_bazel_writes_it(path: Path) -> bool:
+    kind = BAZEL_GENERATED.get(path.name)
+    return kind == 'dir' and path.is_dir() and not path.is_symlink() or kind == 'entry' and not path.is_dir()
+
+
 def unexpected(directory: Path, bazel: bool) -> list[str]:
-    """Names in the directory that are neither a source nor, inside a Bazel test run only, a file Bazel writes for this test."""
+    """Names that are neither a source nor, inside a Bazel test run only, an entry Bazel writes for this test by its name and kind."""
     return sorted(
         p.name
         for p in directory.iterdir()
         if p.name != '__pycache__'
-        and p.suffix not in SOURCE_SUFFIXES
-        and not (bazel and p.name in BAZEL_GENERATED)
+        and not (bazel and generated_as_bazel_writes_it(p))
+        and (p.suffix not in SOURCE_SUFFIXES or p.name in BAZEL_GENERATED)
     )  # fmt: skip
 
 
 class Isolation(unittest.TestCase):
-    def test_the_check_tells_a_runfiles_tree_from_a_source_tree(self) -> None:
+    def make_tree(self, directory: Path) -> None:
+        for name in ('BUILD.bazel', 'gate_test.c', 'gate.c', 'gate.h', 'sequence.c', 'sequence.h', 'sim.c', 'sim.h', 't4a0_gate_test.py'):
+            (directory / name).write_text('')
+        target = directory / 'real_target'
+        target.write_text('')
+        for name, kind in MEASURED.items():
+            if kind == 'dir':
+                (directory / name).mkdir()
+            else:
+                (directory / name).symlink_to(target)
+        target.unlink()
+        (directory / 'real_target').write_text('')
+
+    def test_the_measured_runfiles_tree_passes_only_inside_bazel(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
-            for name in ('gate.c', 'gate.h', 'BUILD.bazel', 'a.py', *BAZEL_GENERATED):
-                (d / name).write_text('')
+            self.make_tree(d)
+            self.assertEqual(['real_target'], unexpected(d, bazel=True))
+            (d / 'real_target').unlink()
             self.assertEqual([], unexpected(d, bazel=True))
-            self.assertEqual(sorted(BAZEL_GENERATED), unexpected(d, bazel=False))
-            for stray in ('x.bin', 'other.txt', 'loader', f'{TARGET}2', 'gate.o', 'gate.cc'):
-                (d / stray).write_text('')
-                self.assertEqual([stray], [n for n in unexpected(d, bazel=True) if n == stray], stray)
-                (d / stray).unlink()
+            self.assertEqual(sorted(MEASURED), unexpected(d, bazel=False))
+
+    def test_estimated_entries_are_allowed_in_bazel_and_refused_in_a_source_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            for name, kind in ESTIMATED.items():
+                (d / name).mkdir() if kind == 'dir' else (d / name).write_text('')
+            self.assertEqual([], unexpected(d, bazel=True))
+            self.assertEqual(sorted(ESTIMATED), unexpected(d, bazel=False))
+
+    def test_a_generated_name_of_the_wrong_kind_and_unknown_entries_are_refused_in_bazel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / f'_{TARGET}.venv').write_text('')
+            (d / TARGET).mkdir()
+            (d / '_other.venv').mkdir()
+            (d / f'_{TARGET}2.venv').mkdir()
+            (d / 'x.bin').write_text('')
+            (d / 'gate.o').write_text('')
+            (d / 'subdir').mkdir()
+            expected = [f'_{TARGET}.venv', TARGET, '_other.venv', f'_{TARGET}2.venv', 'x.bin', 'gate.o', 'subdir']
+            self.assertEqual(sorted(expected), unexpected(d, bazel=True))
 
     def test_the_real_directory_has_only_sources_and_what_bazel_writes(self) -> None:
         self.assertEqual([], unexpected(HERE, bazel=in_bazel()))
