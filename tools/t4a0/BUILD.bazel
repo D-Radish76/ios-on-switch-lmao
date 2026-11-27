@@ -1,0 +1,24 @@
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//bazel/lint:defs.bzl", "lint_files")
+
+package(default_visibility = ["//visibility:public"])
+
+lint_files()
+
+# Host only: a state machine over a modelled watchdog block. No cc target here on purpose; nothing links it into a loader.
+py_test(
+    name = "t4a0_gate_test",
+    size = "medium",
+    srcs = ["t4a0_gate_test.py"],
+    data = [
+        "BUILD.bazel",
+        "gate.c",
+        "gate.h",
+        "gate_test.c",
+        "sequence.c",
+        "sequence.h",
+        "sim.c",
+        "sim.h",
+        "//:ERISTA_T4A_DESIGN.md",
+    ],
+)
