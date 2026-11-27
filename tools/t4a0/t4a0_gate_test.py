@@ -1,5 +1,6 @@
 """T4-A0: the gate state machine against a modelled watchdog block, host only."""
 
+import os
 import re
 import shutil
 import subprocess
@@ -8,8 +9,11 @@ import unittest
 from pathlib import Path
 
 HERE = Path('tools/t4a0')
-BAZEL_GENERATED = ('t4a0_gate_test.build_data.txt',)
 SOURCES = ('gate.c', 'sim.c', 'sequence.c')
+TARGET = 't4a0_gate_test'
+SOURCE_SUFFIXES = ('.c', '.h', '.py', '.bazel')
+# What rules_python writes next to a py_test inside its runfiles tree: the launcher, its build data and its manifest.
+BAZEL_GENERATED = (TARGET, f'{TARGET}.build_data.txt', f'{TARGET}.exe', f'{TARGET}.runfiles_manifest', f'{TARGET}.runfiles')
 DESIGN = Path('ERISTA_T4A_DESIGN.md').read_text()
 
 
@@ -31,9 +35,36 @@ class Host(unittest.TestCase):
         self.assertIn('fault pairs:', ran.stdout)
 
 
+def in_bazel() -> bool:
+    return bool(os.environ.get('TEST_SRCDIR') and os.environ.get('TEST_TARGET'))
+
+
+def unexpected(directory: Path, bazel: bool) -> list[str]:
+    """Names in the directory that are neither a source nor, inside a Bazel test run only, a file Bazel writes for this test."""
+    return sorted(
+        p.name
+        for p in directory.iterdir()
+        if p.name != '__pycache__'
+        and p.suffix not in SOURCE_SUFFIXES
+        and not (bazel and p.name in BAZEL_GENERATED)
+    )  # fmt: skip
+
+
 class Isolation(unittest.TestCase):
-    def test_the_only_exempt_file_is_the_one_bazel_writes_for_this_test(self) -> None:
-        self.assertEqual(('t4a0_gate_test.build_data.txt',), BAZEL_GENERATED)
+    def test_the_check_tells_a_runfiles_tree_from_a_source_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            for name in ('gate.c', 'gate.h', 'BUILD.bazel', 'a.py', *BAZEL_GENERATED):
+                (d / name).write_text('')
+            self.assertEqual([], unexpected(d, bazel=True))
+            self.assertEqual(sorted(BAZEL_GENERATED), unexpected(d, bazel=False))
+            for stray in ('x.bin', 'other.txt', 'loader', f'{TARGET}2', 'gate.o', 'gate.cc'):
+                (d / stray).write_text('')
+                self.assertEqual([stray], [n for n in unexpected(d, bazel=True) if n == stray], stray)
+                (d / stray).unlink()
+
+    def test_the_real_directory_has_only_sources_and_what_bazel_writes(self) -> None:
+        self.assertEqual([], unexpected(HERE, bazel=in_bazel()))
 
     def test_nothing_reaches_a_device_or_the_loader(self) -> None:
         for name in (*SOURCES, 'gate.h', 'sim.h', 'sequence.h', 'gate_test.c'):
@@ -54,10 +85,6 @@ class Isolation(unittest.TestCase):
         for path in Path('boot').rglob('*'):
             if path.suffix in ('.c', '.h', '.S', '.bazel', '.bzl'):
                 self.assertNotIn('t4a0', path.read_text(errors='ignore'), str(path))
-
-    def test_only_the_allowed_source_extensions_exist(self) -> None:
-        for path in (p for p in HERE.iterdir() if p.is_file() and p.name not in BAZEL_GENERATED):
-            self.assertIn(path.suffix, ('.c', '.h', '.py', '.bazel'), str(path))
 
 
 class Design(unittest.TestCase):
