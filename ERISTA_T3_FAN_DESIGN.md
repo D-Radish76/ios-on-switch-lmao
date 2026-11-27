@@ -46,6 +46,18 @@ Second review (ce85b1572, Mac 10 of 10 PASS):
 | Stop processing is not skipped by time | No off write is conditioned on a clock |
 | Software limits fail on a hang | Stated here, in the run sheet and on the screen |
 
+Third review (302788696, Mac 10 of 10 PASS, 12 of 12 images, `AUDIT PASSED (T3)`):
+
+| Review point | In the code |
+| --- | --- |
+| A zeroed result counted as off confirmed | The enum value 0 is now unchecked. Off confirmed is set only after the state check passed, or after a rail readback of zero following the off write |
+| Pre-read failure, no write, and off failure after a write look alike | Three endings: unchecked (reads failed, no write, `0A03` to `0A05`), off confirmed, and maybe on or unknown (`0A0B`, halt). The screen and the host tests tell them apart |
+| No on write from an unchecked or unknown rail | The on-write gate stops with `0A05` in either state; the run cannot reach it, so it is checked in the source only |
+| Rail timer read before it was started | The limit counts as spent until `rail_mark` is called, and the rail limit is only asked while the rail is maybe on or unknown. The host fake counts any ask before the mark and the tests expect none |
+| Off confirmation read as a voltage | Off confirmed is a read of the GPIO output latch, not a measurement of the 5 V rail. Stated here, in the run sheet and on the screen |
+
+No write was added and the allowlist is the same six words.
+
 ## Where the state at our entry comes from
 
 The owner starts every diagnostic from Nyx. The chain, from the sources:

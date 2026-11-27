@@ -353,9 +353,19 @@ class RunSheet(unittest.TestCase):
 
     def test_the_rail_is_called_off_only_by_the_off_readback_and_a_failure_does_not_reset(self) -> None:
         text = (LOADER / 't3.c').read_text()
-        self.assertEqual(1, text.count('result->rail = T3_RAIL_OFF_CONFIRMED;'))
+        self.assertEqual(2, text.count('result->rail = T3_RAIL_OFF_CONFIRMED;'))
+        header = (LOADER / 't3.h').read_text()
+        self.assertRegex(header, r'T3_RAIL_UNCHECKED = 0')
+        self.assertIn('latch', header)
         write = text[text.index('static int write_checked(') : text.index('static int read_state(')]
         self.assertLess(write.index('io->read('), write.index('T3_RAIL_OFF_CONFIRMED'))
+        state = text[text.index('static int read_state(') : text.index('static void off_sequence(')]
+        self.assertLess(state.index('switch_t3_state_check'), state.index('T3_RAIL_OFF_CONFIRMED'))
+        gate = text[text.index('static int on_write_allowed(') : text.index('/* Sends a write')]
+        self.assertIn('T3_RAIL_UNCHECKED', gate)
+        self.assertIn('T3_RAIL_UNKNOWN', gate)
+        access = (LOADER / 't3_access.c').read_text()
+        self.assertIn('rail_marked', access)
         self.assertIn('SWITCH_T3_RAIL_NOT_OFF', text[text.index('static void finish(') :])
         diag = (LOADER / 'diag.c').read_text()
         tail = diag[diag.index('r[R_STAGE] = 0xd0;') :]

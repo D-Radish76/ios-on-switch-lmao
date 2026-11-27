@@ -50,6 +50,12 @@ static void state_line(struct switch_t3_line *out, const struct switch_t3_result
         switch_diag_line_add(&out->text, "READING 20 REGISTERS. NO WRITE YET");
         return;
     }
+    if (r->rail == T3_RAIL_UNCHECKED && r->state == T3_STATE_OK) {
+        switch_diag_line_add(&out->text, "READS DID NOT FINISH. RAIL NOT CHECKED. NO WRITE WAS MADE. READS ");
+        switch_diag_line_decimal(&out->text, r->reads);
+        out->bad = 1;
+        return;
+    }
     switch_diag_line_add(&out->text, r->state == T3_STATE_OK ? "AS EXPECTED. " : "DIFFERS: ");
     if (r->state != T3_STATE_OK) {
         switch_diag_line_add(&out->text, state_text[r->state]);
@@ -83,9 +89,10 @@ static void off_line(struct switch_t3_line *out, const struct switch_t3_result *
     switch_diag_line_add(&out->text, ". ");
     write_text(&out->text, r, T3_O_PARK_PAD, "PAD");
     switch_diag_line_add(&out->text, ". ");
-    switch_diag_line_add(&out->text, r->rail == T3_RAIL_OFF_CONFIRMED  ? "RAIL OFF CONFIRMED"
-                                     : r->rail == T3_RAIL_MAYBE_ON ? "RAIL MAY BE ON. TREAT IT AS ON"
-                                                                   : "RAIL STATE UNKNOWN. TREAT IT AS ON");
+    switch_diag_line_add(&out->text, r->rail == T3_RAIL_OFF_CONFIRMED ? "RAIL OFF CONFIRMED BY LATCH READ"
+                                     : r->rail == T3_RAIL_MAYBE_ON    ? "RAIL MAY BE ON. TREAT IT AS ON"
+                                     : r->rail == T3_RAIL_UNKNOWN     ? "RAIL STATE UNKNOWN. TREAT IT AS ON"
+                                                                      : "RAIL NOT CHECKED. NO WRITE MADE");
     out->bad = r->mismatched >> T3_O_PWM_OFF != 0 || r->rail != T3_RAIL_OFF_CONFIRMED;
 }
 

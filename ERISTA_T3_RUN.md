@@ -8,7 +8,9 @@ D0's loader, then 20 allowlisted 32 bit reads, a state check, and only if every 
 
 Duty 51 is the only duty. The off sequence runs after every ending that followed a write, continues past a readback that differs, and is the only thing that puts the registers back. A reset is not claimed to do it.
 
-The rail has three states in the code: off confirmed (read as off at entry, or read back as zero after the off write), maybe on (the on write was sent, or the off readback still shows A5 high) and unknown (the off readback shows something else). Nothing is called off before that readback. A failed rail off readback is sent again twice, after the other off writes ran. If it is still not confirmed, the run ends with `0A0B`, a red line, and no reset: the 15 s dwell and `SYSTEM_RESET` are skipped and the loader halts.
+The rail has four states in the code. Unchecked is the state at entry: nothing has been read, or the state reads failed, and no write was ever allowed. Off confirmed means GPIO A_OUT read as zero, either in the state reads or in the readback after the off write. Maybe on means the on write was sent, or the off readback still shows A5 high. Unknown means the off readback shows something else. Nothing is called off before a read says so, and a run that ends unchecked made no write.
+
+Off confirmed is a read of the GPIO output latch. It is not a measurement of the 5 V rail, and the screen says so. A failed rail off readback is sent again twice, after the other off writes ran. If it is still not confirmed, the run ends with `0A0B`, a red line, and no reset: the 15 s dwell and `SYSTEM_RESET` are skipped and the loader halts.
 
 ## Stop codes
 
@@ -17,9 +19,9 @@ The rail has three states in the code: off confirmed (read as off at entry, or r
 | `0000` | pass: more tach changes at duty 51 than before | yes, then undone |
 | `0A01` | the allowlist refused an access (a loader bug) | no |
 | `0A02` | a line was not drawn and settled | no write after it; the off sequence if a write was made |
-| `0A03` | the state reads ran past 20 s | no |
-| `0A04` | a state word read as all ones | no |
-| `0A05` | the state differs from the one the writes assume; the screen names the first difference | no |
+| `0A03` | the state reads ran past 20 s | no; rail not checked |
+| `0A04` | a state word read as all ones | no; rail not checked |
+| `0A05` | the state differs from the one the writes assume; the screen names the first difference | no; rail not checked |
 | `0A06` | a write did not read back as written | the off sequence follows |
 | `0A07` | the rail limit of 15 s was spent, checked on every tach pass, after every drawn line and before every on write | no on write after it; the off sequence follows |
 | `0A08` | no pass: the spin window did not show more changes than the two before it | undone |
@@ -66,4 +68,18 @@ Record per run: commit, `loader.uboot.bin` SHA256, package hashes, video file, t
 
 ## Mac record (owner's report, 2026-11-27 20:41 JST, commit `ce85b1572`)
 
-Regression tests 10 of 10 pass. Build, audit and hash lines were not reported in that message. The code review that followed produced the second-review changes listed in `ERISTA_T3_FAN_DESIGN.md`; that commit has no Mac check yet.
+Regression tests 10 of 10 pass. Build, audit and hash lines were not reported in that message. The code review that followed produced the second-review changes listed in `ERISTA_T3_FAN_DESIGN.md`.
+
+## Mac record (owner's report, 2026-11-28 01:31 JST, commit `302788696`)
+
+| Item | Result |
+| --- | --- |
+| Toolchain | Homebrew clang 23.1.6 |
+| Regression tests | 10 of 10 pass |
+| `diag_images` | 12 of 12 pass |
+| Eleven earlier hashes | unchanged against `907ae9923` |
+| Audit | `AUDIT PASSED (T3)`, exit 0 |
+| Mac flat SHA256 of `diag_t3r` | `74731b78275545fe695e47e21a9e68266dd5894efa2c56e7cd14a4e9dc1d28ff` |
+| Mac flat SHA256 of `diag_t3` | `ac29f11a13e0745779ee5365df6c81a883a4fb12b6d320035de24fa5a9a93292` |
+
+`bazel run` of `diag_images` failed on relative path references. Run `python3 tools/package/diag_images.py` from the repository root instead; that worked. The Mac flat hashes differ from the Linux ones by toolchain. The review that followed found that a zeroed result counted as off confirmed; the fix is in the third-review table of `ERISTA_T3_FAN_DESIGN.md`. That commit has no Mac check yet, and its Linux `diag_t3` hash is `405adc93...`; the Mac one will differ from `ac29f11a...`.

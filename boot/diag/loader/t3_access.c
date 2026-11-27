@@ -15,6 +15,7 @@ __attribute__((noinline)) void switch_t3_write32(uint32_t address, uint32_t valu
 struct clocks {
     uint64_t start;
     uint64_t rail;
+    int rail_marked;
     uint64_t window;
     unsigned window_ms;
 };
@@ -38,12 +39,15 @@ static int io_read_expired(void *context)
 
 static void io_rail_mark(void *context)
 {
-    ((struct clocks *)context)->rail = switch_t3_counter();
+    struct clocks *clocks = context;
+    clocks->rail = switch_t3_counter();
+    clocks->rail_marked = 1;
 }
 
 static int io_rail_expired(void *context)
 {
-    return switch_t3_spent(((const struct clocks *)context)->rail, SWITCH_T3_RAIL_LIMIT_MS);
+    const struct clocks *clocks = context;
+    return !clocks->rail_marked || switch_t3_spent(clocks->rail, SWITCH_T3_RAIL_LIMIT_MS);
 }
 
 static void io_window_begin(void *context, unsigned milliseconds)
@@ -61,7 +65,7 @@ static int io_window_over(void *context)
 
 void switch_t3_run_on_hardware(struct switch_t3_result *result, switch_t3_show_fn show)
 {
-    struct clocks clocks = {switch_t3_counter(), 0, 0, 0};
+    struct clocks clocks = {switch_t3_counter(), 0, 0, 0, 0};
     const struct switch_t3_io io = {
         &clocks, io_read, io_write, show, io_read_expired, io_rail_mark, io_rail_expired, io_window_begin, io_window_over,
     };

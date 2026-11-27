@@ -12,7 +12,7 @@ static int shown(const struct switch_t3_io *io, struct switch_t3_result *result,
     const int drawn = !io->show || io->show(io->context, step, result);
     if (!drawn)
         stop(result, SWITCH_T3_NOT_SHOWN);
-    if (result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context))
+    if (SWITCH_T3_RAIL_LIVE(result->rail) && io->rail_expired(io->context))
         stop(result, SWITCH_T3_RAIL_TIME);
     return drawn;
 }
@@ -26,7 +26,9 @@ static int turns_on(unsigned write)
  * never held back by either. */
 static int on_write_allowed(const struct switch_t3_io *io, struct switch_t3_result *result)
 {
-    if (!result->stop && result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context))
+    if (result->rail == T3_RAIL_UNCHECKED || result->rail == T3_RAIL_UNKNOWN)
+        stop(result, SWITCH_T3_STATE);
+    else if (!result->stop && SWITCH_T3_RAIL_LIVE(result->rail) && io->rail_expired(io->context))
         stop(result, SWITCH_T3_RAIL_TIME);
     return !result->stop;
 }
@@ -88,12 +90,14 @@ static int read_state(const struct switch_t3_io *io, struct switch_t3_result *re
     result->state = switch_t3_state_check(result->value);
     if (result->state != T3_STATE_OK)
         stop(result, SWITCH_T3_STATE);
+    else
+        result->rail = T3_RAIL_OFF_CONFIRMED;
     return result->state == T3_STATE_OK;
 }
 
 static int rail_ok(const struct switch_t3_io *io, struct switch_t3_result *result)
 {
-    if (result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context))
+    if (SWITCH_T3_RAIL_LIVE(result->rail) && io->rail_expired(io->context))
         stop(result, SWITCH_T3_RAIL_TIME);
     return !result->stop;
 }
@@ -109,7 +113,7 @@ static void off_sequence(const struct switch_t3_io *io, struct switch_t3_result 
     for (unsigned i = 0; i < sizeof(undo) / sizeof(undo[0]); ++i)
         if (result->issued & 1u << undo[i].on)
             write_checked(io, result, undo[i].off);
-    for (unsigned retry = 0; retry < SWITCH_T3_OFF_RETRIES && result->rail != T3_RAIL_OFF_CONFIRMED; ++retry)
+    for (unsigned retry = 0; retry < SWITCH_T3_OFF_RETRIES && SWITCH_T3_RAIL_LIVE(result->rail); ++retry)
         write_checked(io, result, T3_O_RAIL_OFF);
 }
 
@@ -150,7 +154,7 @@ static void spin(const struct switch_t3_io *io, struct switch_t3_result *result)
 
 static void finish(const struct switch_t3_io *io, struct switch_t3_result *result)
 {
-    if (result->rail != T3_RAIL_OFF_CONFIRMED)
+    if (SWITCH_T3_RAIL_LIVE(result->rail))
         result->stop = SWITCH_T3_RAIL_NOT_OFF;
     else if (!result->stop) {
         result->verdict = switch_t3_verdict(result->window);

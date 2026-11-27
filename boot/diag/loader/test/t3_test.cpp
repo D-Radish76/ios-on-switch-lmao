@@ -26,6 +26,8 @@ struct Fake {
     int expire_checks = 0;
     uint64_t now = 0;
     uint64_t rail_start = 0;
+    bool rail_marked = false;
+    unsigned unmarked_rail_checks = 0;
     uint64_t rail_limit = 15000;
     uint64_t window_start = 0;
     uint64_t window_ticks = 0;
@@ -120,11 +122,13 @@ struct Fake {
     {
         Fake *f = static_cast<Fake *>(c);
         f->events.push_back("rail_mark");
+        f->rail_marked = true;
         f->rail_start = f->now;
     }
     static int rail_expired(void *c)
     {
         Fake *f = static_cast<Fake *>(c);
+        f->unmarked_rail_checks += !f->rail_marked;
         return f->no_clock || f->now - f->rail_start >= f->rail_limit;
     }
     static void window_begin(void *c, unsigned ms)
@@ -677,4 +681,80 @@ TEST(T3, TheRailLineSaysWhatIsKnown)
     stuck.rail_off_ignored = 100;
     stuck.run();
     EXPECT_NE(std::string::npos, text_of(SWITCH_T3_STEP_DONE(T3_PHASE_OFF), stuck.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_OFF)]).find("RAIL MAY BE ON"));
+}
+
+TEST(T3, TheRailIsUncheckedUntilTheStateReadsSucceed)
+{
+    Fake fake;
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_UNCHECKED), fake.drawn[SWITCH_T3_STEP_START].rail);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_UNCHECKED), fake.drawn[SWITCH_T3_STEP_BEGIN(T3_PHASE_STATE)].rail);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), fake.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_STATE)].rail);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), result.rail);
+}
+
+TEST(T3, AFailedStateReadLeavesTheRailUncheckedAndWritesNothing)
+{
+    Fake mismatch;
+    mismatch.reg[T3_GPIO_A_OUT] = 0x20; // the rail already reads on
+    const switch_t3_result a = mismatch.run();
+    Fake budget;
+    budget.expire_reads_after = 5;
+    const switch_t3_result b = budget.run();
+    Fake ones;
+    ones.reg[T3_PMC_NO_IOPOWER] = 0xffffffffu;
+    const switch_t3_result c = ones.run();
+    for (const switch_t3_result *r : {&a, &b, &c}) {
+        EXPECT_EQ(static_cast<unsigned>(T3_RAIL_UNCHECKED), r->rail);
+        EXPECT_EQ(0u, r->issued);
+        EXPECT_EQ(0u, r->writes);
+        EXPECT_NE(SWITCH_T3_RAIL_NOT_OFF, r->stop);
+    }
+    EXPECT_EQ(SWITCH_T3_STATE, a.stop);
+    EXPECT_EQ(SWITCH_T3_TIME, b.stop);
+    EXPECT_EQ(SWITCH_T3_STOP_ALL_ONES, c.stop);
+    for (Fake *f : {&mismatch, &budget, &ones}) {
+        EXPECT_TRUE(f->writes().empty());
+        EXPECT_EQ(0u, f->first("rail_mark") < f->events.size());
+    }
+}
+
+TEST(T3, TheRailTimerIsNeverAskedBeforeItIsStarted)
+{
+    Fake normal;
+    normal.run();
+    EXPECT_EQ(0u, normal.unmarked_rail_checks);
+    Fake mismatch;
+    mismatch.reg[T3_PWM_CSR_1] = 1;
+    mismatch.run();
+    EXPECT_EQ(0u, mismatch.unmarked_rail_checks);
+    Fake stopped;
+    stopped.refuse_step = SWITCH_T3_STEP_BEGIN(T3_PHASE_RAIL);
+    stopped.run();
+    EXPECT_EQ(0u, stopped.unmarked_rail_checks);
+}
+
+TEST(T3, ThreeEndingsAreToldApart)
+{
+    Fake before;
+    before.reg[T3_PWM_CSR_1] = 1;
+    const switch_t3_result unchecked = before.run();
+    Fake clean;
+    const switch_t3_result off = clean.run();
+    Fake stuck;
+    stuck.rail_off_ignored = 100;
+    const switch_t3_result live = stuck.run();
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_UNCHECKED), unchecked.rail);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), off.rail);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_MAYBE_ON), live.rail);
+    EXPECT_EQ(0u, unchecked.writes);
+    EXPECT_GT(off.writes, 0u);
+    EXPECT_NE(SWITCH_T3_RAIL_NOT_OFF, unchecked.stop);
+    EXPECT_NE(SWITCH_T3_RAIL_NOT_OFF, off.stop);
+    EXPECT_EQ(SWITCH_T3_RAIL_NOT_OFF, live.stop);
+    EXPECT_NE(std::string::npos, text_of(SWITCH_T3_STEP_DONE(T3_PHASE_OFF), off).find("LATCH READ"));
+    Fake reads;
+    reads.expire_reads_after = 3;
+    reads.run();
+    EXPECT_NE(std::string::npos, text_of(SWITCH_T3_STEP_DONE(T3_PHASE_STATE), reads.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_STATE)]).find("RAIL NOT CHECKED"));
 }

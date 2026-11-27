@@ -117,10 +117,13 @@ enum switch_t3_cut {
 
 /* What is known about the rail. Only a read of GPIO_A_OUT after the off write that returns the off word confirms it. */
 enum switch_t3_rail {
-    T3_RAIL_OFF_CONFIRMED = 0, /* read as off at entry, or read back as off after the off write */
+    T3_RAIL_UNCHECKED = 0,     /* nothing read yet, or the state reads failed: no write was ever allowed */
+    T3_RAIL_OFF_CONFIRMED,     /* GPIO_A_OUT read as zero at entry, or read back as zero after the off write */
     T3_RAIL_MAYBE_ON,          /* the on write was sent, or the off readback still shows A5 high */
     T3_RAIL_UNKNOWN,           /* the off readback shows something else: neither on nor off is known */
 };
+/* Off confirmed is a read of the GPIO output latch. It is not a measurement of the 5 V rail. */
+#define SWITCH_T3_RAIL_LIVE(rail) ((rail) >= T3_RAIL_MAYBE_ON)
 
 struct switch_t3_window {
     int ran;
