@@ -171,14 +171,34 @@ Common conditions of a run, if one is ever approved in writing: those of `ERISTA
 
 A static screen is normal for the 15 s between `RESET IN 15 S` and the reset, so the 30 s no-change rule applies before COMPLETE only. BUSY, DORMANT, CONFIGURED and UNKNOWN are results: nothing is touched whatever they are. Nothing was armed, so there is nothing to clean up, and the return to hekate carries no loop risk from this stage.
 
+## Mac final check of `18bc5871f` and the card as found (reported 2026-11-27 10:24 JST)
+
+| Item | Result |
+| --- | --- |
+| Docs test `diag_first_xnu_docs_test` | PASS |
+| `tools/lint/duplicate_labels.py` | `no label is listed twice` |
+| Nine earlier images, Mac LLVM, commit before T4-R (`a3275ff5f`, a detached worktree) against the current commit without `diag_t4r` | no difference, comparison exit 0 |
+
+Card as found (read only, nothing written): device `disk10s1`, volume `NO NAME`, FAT32, 32.0 GB, 23.3 GB free, partition offset 8192 sectors, 512 byte blocks, not read-only. `bootloader/ini` and `switchroot` hold no T4-R file and no ini refers to T4-R. The active diagnostic inis are `ios-diag-loader.ini`, `ios-diag-t1t.ini`, `ios-diag-t1v3.ini` and `ios-diag-t2.ini`. They stay on the card; none is deleted or edited.
+
+## Host side verification is complete when
+
+All of these hold for the commit a run would use: the Mac build, 9 of 9 regression tests, the real gtest, `AUDIT PASSED (T4-R)`, 10 of 10 inspection, the nine earlier images identical to the commit before T4-R, the package hashes above, the docs test and the duplicate label lint. All were met at `18bc5871f`. It does not show anything the audit and tests cannot show (see that section): the real bus, a read that hangs, the meaning of status bits 0 and 1.
+
 ## Card procedure (not executed; copying stays on hold)
 
-1. Mount the card read-only if the OS allows it, and run the two `find` and `ls` commands above. The four package paths must not exist, or must hash to the list above.
-2. List the entry names already in `bootloader/ini`. `ios-diag-t4r` and the hekate name `iOS Diag T4R` must be unused by any other file.
-3. Take a before record: `find bootloader/ini switchroot -type f | sort | xargs shasum -a 256 > before.txt`.
-4. Copy only the four package files, keeping their relative paths. Nothing is deleted or overwritten on the card.
-5. Eject, remove, re-insert. Take `after.txt` the same way.
-6. `diff before.txt after.txt` must show exactly the four added lines, and each added hash must equal the package hash list. Any other difference stops the procedure.
+Set `CARD=/Volumes/"NO NAME"` and `PKG=<the package path the build prints>`. Every step before the copy only reads.
+
+1. Record the card before anything: `cd "$CARD" && find bootloader switchroot -type f | sort | xargs shasum -a 256 > ~/t4r-before.txt`. Keep the file; it is the way back.
+2. Collision check: `ls "$CARD"/bootloader/ini/ios-diag-t4r.ini "$CARD"/switchroot/ios-diag-t4r 2>&1` must report that neither exists, and `grep -ril t4r "$CARD"/bootloader/ini` must print nothing.
+3. Package check: `cd "$PKG" && find . -type f | sort | xargs shasum -a 256` must equal the four hashes in this file.
+4. Setting the four existing inis aside, if the owner wants the T4-R entry alone in the menu. Nothing is deleted. Make a stash on the card outside `bootloader`, `mkdir "$CARD"/_ini_stash`, then `mv` each of the four inis into it one by one. Take a record of the stash (`shasum -a 256 "$CARD"/_ini_stash/*`) and compare it with the same four lines of `~/t4r-before.txt`; they must be equal before step 5. The `switchroot` folders of those diagnostics are not touched. Whether hekate ignores a folder it does not know has not been checked here; look at the menu after the copy. Do not rename the inis in place: hekate's rule for the extension has not been checked.
+5. Copy only the four package paths with their relative paths: `rsync -rtv --ignore-existing "$PKG"/ "$CARD"/` (or `cp -n`). The flags stop it from replacing anything.
+6. `sync`, eject, remove, re-insert, wait for the mount, then `cd "$CARD" && find bootloader switchroot _ini_stash -type f 2>/dev/null | sort | xargs shasum -a 256 > ~/t4r-after.txt`.
+7. Compare. Without a stash, `diff ~/t4r-before.txt ~/t4r-after.txt` must show exactly the four added lines, each equal to its package hash. With a stash, the four inis show as moved (same hash, new path) and nothing else differs.
+8. After the run, or if the run is never made: `mv` the four inis back from `_ini_stash`, remove the empty `_ini_stash` folder (the only remove), repeat step 6 and check the result is `~/t4r-before.txt` plus the four T4-R lines. The T4-R files stay unless the owner says otherwise.
+
+Any difference not named above stops the procedure and is reported with both files.
 
 ## Checklist for a run, if one is ever approved in writing
 

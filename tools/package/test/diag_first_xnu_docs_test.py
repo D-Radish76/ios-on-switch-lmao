@@ -567,6 +567,13 @@ class T4Documents(unittest.TestCase):
         self.assertIn('Final review at `f27f19d42`', review)
         self.assertIn('Nothing found that needs a code change', review)
 
+    def test_t4r_card_record_and_stash_procedure(self) -> None:
+        run = read('ERISTA_T4R_RUN.md')
+        for phrase in ('## Mac final check of `18bc5871f`', 'disk10s1', 'ios-diag-t1t.ini', '## Host side verification is complete when',
+                       '_ini_stash', 'Do not rename the inis in place', '--ignore-existing', 'Nothing is deleted'):
+            self.assertIn(phrase, run, phrase)
+        self.assertNotRegex(run, '[\\u2013\\u2014]')
+
     def test_t4r_revision_and_the_corrected_stop_conditions(self) -> None:
         run = read('ERISTA_T4R_RUN.md')
         review = read('ERISTA_T4R_REVIEW.md')
