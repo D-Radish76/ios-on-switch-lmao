@@ -68,21 +68,20 @@ The audit must end with `AUDIT PASSED (T3-R)`. The Linux flat hash is `fc904cfc.
 
 The Mac flat hash differs from the Linux one (`fc904cfc...`) because the toolchains differ (clang 23.1.6 against Ubuntu clang 18.1.3), as for every other image. This is a build and static-check record. It says nothing about the console: no run, no card copy, `boot` 0, feature mask 0, T3 and T4 not waived, the first XNU run on HOLD. The Mac `loader.uboot.bin` SHA256 and the package file hashes are not in the report and are recorded when the package is built for a run.
 
-## Recovery rehearsal
+## Recovery rehearsal (owner's report, 2026-11-27 14:47 JST)
 
-The rehearsal uses no image of ours, so it can happen now and needs no approval to run anything. It gives the recovery times the run sheet needs, and it shows what works from a calm state only. It says nothing about a console hung inside a read.
+The owner decided to skip further rehearsal. What was reported, and what was not measured:
 
-Prepare: the console on its charger or a charged battery, the card with only the owner's normal hekate setup, a phone or camera with a clock in frame, the RCM jig, a payload sender with `hekate_ctcaer_6.5.5.bin`, the hekate version noted on screen.
+| Item | State |
+| --- | --- |
+| Time from POWER hold to fully off | not measured; the moment the console is off is hard to tell from outside |
+| hekate start time | about 4 to 5 s (owner's estimate) |
+| Auto Boot | confirmed off |
+| RCM entry, payload injection, manual recovery after the D0-S v1 freeze | succeeded in the past (D0-S v1 freeze and recovery, earlier runs); not repeated for this run |
+| Time from injection to the menu | not measured |
+| POWER hold from a console hung inside a read | not tried and not to be tried |
 
-| Step | Do | Record |
-| --- | --- | --- |
-| 1 | Boot hekate from the card to its main menu and let it sit 10 s | seconds from power-on to the menu |
-| 2 | Hold POWER until the console is off, stopwatch from the first press | seconds held until the screen goes dark; repeat three times |
-| 3 | Power on again and note whether hekate starts normally | yes or no |
-| 4 | From off, enter RCM with the jig, send hekate, stopwatch from the send | seconds from injection to the menu; repeat twice |
-| 5 | Note how the console behaves with the jig removed afterwards | what was seen |
-
-Write down the shortest and the longest time of each row. A POWER hold that fails once is the finding, not a number to average away. These figures replace the guesses in the run sheet (the 26 s expectation and the 60 s cap); until they exist those stay provisional. Nothing here rehearses a hang inside a read, and it must not be tried by forcing one.
+Unmeasured items stay unmeasured. The 26 s expectation and the 60 s cap in this document remain provisional assumptions. This record does not guarantee recovery from a hang: a read that never completes may not be left by POWER hold, and the past recovery after the D0-S v1 freeze is evidence about that one case, not a promise for this image. If the screen stops on a BEGIN line, the person holds POWER, and if that fails, uses the RCM jig; neither is asserted to work.
 
 ## T3-R card preparation (not executed; copying stays on hold)
 
@@ -103,7 +102,7 @@ The card must not hold a root partition for XNU or an `ios.ini` that boots iOS d
 
 All of these, in writing, from the owner:
 - The Mac build and checks of the commit to be used (the record above covers `4a903d590`; a later commit needs its own).
-- The recovery rehearsal figures above.
+- The owner's recovery position above (rehearsal skipped, figures unmeasured), accepted in writing for this run.
 - The card procedure run through step 7 with the diff as expected.
 - A stated reading of the 30 s and 60 s rules, and who holds the console.
 
