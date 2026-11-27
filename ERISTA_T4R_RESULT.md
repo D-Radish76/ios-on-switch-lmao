@@ -32,10 +32,26 @@ Formal pass: not claimed. The run sheet also asks for conditions this report doe
 | a hand on POWER for the whole run | not recorded |
 | card holds only this entry | yes, the menu showed one entry |
 | COMPLETE to hekate timed | an impression of about 15 s, not measured; it does not fit the exit path (see the timing section of the run sheet) |
-| card hash record after the run | not done |
-| inis moved back from `_ini_stash` | not done |
+| card hash record after the run | done by the owner on the Mac after the run (reported 2026-11-27 12:08 JST): comparison exit 0. Which two records were compared was not stated; the hash lists themselves are not stored here |
+| inis moved back from `_ini_stash` | done (2026-11-27 12:08 JST report): the four inis are back and the empty `_ini_stash` is removed |
 
-The run is not turned into a formal pass by this record, and no stop condition or time figure of the run sheet is changed by it.
+Two of the eight rows were open at the first report and are now closed by the card record below. Cold start, video, a hand on POWER and the timing are still not recorded, so the formal pass is still not claimed. The run is not turned into a formal pass by this record, and no stop condition or time figure of the run sheet is changed by it.
+
+## Card after the run (reported 2026-11-27 12:08 JST)
+
+The owner's Mac measurements after the run; nothing was run on the console for this.
+
+| Step | Result |
+| --- | --- |
+| Card hash comparison after the T4-R run | exit 0 |
+| The four existing inis restored from `_ini_stash` | done |
+| The empty `_ini_stash` folder removed | done (the only remove, as the run sheet says) |
+| Difference after the restore, against the record before the copy | the four T4-R files added, nothing else |
+| The 78 files that existed before | 78 of 78 hashes unchanged |
+| Files on the card now | 82 (78 plus the four T4-R files) |
+| T4-A0 Bazel test at `e473fcd44` | internal 9 of 9 PASS (the Bazel line is in `ERISTA_T4A_DESIGN.md`) |
+
+What this closes: the card holds its old files unchanged and the T4-R entry files are the only addition. The four T4-R files are still on the card and the entry `ios-diag-t4r` stays in hekate's menu until the owner removes them; that is not a run approval. What it does not close: whether hekate's menu was affected by `_ini_stash` while it existed (the owner's note on the menu was not part of this report), and the open rows above.
 
 ## What the run shows
 

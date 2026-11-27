@@ -215,6 +215,8 @@ The procedure above was run on the Mac by the owner. It is the first time the T4
 
 State of the card now: the four diagnostic inis sit in `_ini_stash`, so hekate's menu should show `iOS Diag T4R` and no other diagnostic. Not yet looked at: the menu itself, and whether hekate ignores `_ini_stash`. The inis are to be moved back after the run (step 8 of the procedure). Until then the other diagnostics cannot be started from the card.
 
+Update of 2026-11-27 12:08 JST (owner's report): after the run the card hash comparison gave exit 0, the four inis were moved back, the empty `_ini_stash` was removed, and the only difference from the record before the copy is the four T4-R files (78 files unchanged, 82 now). The paragraph above describes the state during the run. `ERISTA_T4R_RESULT.md` has the table.
+
 Having the files on the card is not a run approval. The run is not approved.
 
 ## Timing reported after a run (2026-11-27 10:37 JST, owner's impression, not measured)
