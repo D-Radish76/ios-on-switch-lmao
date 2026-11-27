@@ -449,6 +449,7 @@ py_test(
     srcs = ["diag_t3r_test.py"],
     data = [
         "//:ERISTA_T3R_DESIGN.md",
+        "//:ERISTA_T3R_RESULT.md",
         "//:ERISTA_T3R_RUN.md",
         "//bazel/pinned:firmware/erista-sku0.dtb",
         "//boot:all_sources",
@@ -1044,6 +1045,7 @@ py_test(
         "//:ERISTA_T1R_RESULT.md",
         "//:ERISTA_T1_0507.md",
         "//:ERISTA_T3R_DESIGN.md",
+        "//:ERISTA_T3R_RESULT.md",
         "//:ERISTA_T3R_RUN.md",
         "//:ERISTA_T3T4_MINIMAL.md",
         "//:ERISTA_T3T4_REUSE.md",

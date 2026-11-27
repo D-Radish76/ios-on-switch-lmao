@@ -322,5 +322,27 @@ class RunSheet(unittest.TestCase):
             self.assertIn(phrase.lower(), text.lower())
 
 
+class ResultRecord(unittest.TestCase):
+    TEXT = (ROOT / 'ERISTA_T3R_RESULT.md').read_text()
+
+    def test_the_raw_timer_values_give_the_recorded_difference(self) -> None:
+        first, last = 0x0680CFDD, 0x06C1B6A5
+        self.assertEqual(4253384, (last - first) & 0xFFFFFFFF)
+        for text in ('0x0680CFDD', '0x06C1B6A5', '4,253,384'):
+            self.assertIn(text, self.TEXT)
+
+    def test_read_success_and_the_display_faults_are_kept_apart(self) -> None:
+        for phrase in ('display bug', 'screen layout bug', 'PWM_CSR_1', 'Fixes, not made', 'not run again', 'HOLD'):
+            self.assertIn(phrase.lower(), self.TEXT.lower())
+        self.assertNotRegex(self.TEXT, '[\u2013\u2014]')
+
+    def test_the_summary_rows_of_the_defect_are_what_the_code_does(self) -> None:
+        report = (LOADER / 't3r_report.c').read_text()
+        self.assertIn('out->row = index % SWITCH_T3R_COLUMN_ROWS;', report)
+        self.assertIn('place(out, SWITCH_T3R_COLUMN_ROWS + 1);', report)
+        loop = (LOADER / 't3r.c').read_text()
+        self.assertLess(loop.index('result->tmrus_advanced = '), loop.index('return 1;\n}\n\nvoid switch_t3r_run('))
+
+
 if __name__ == '__main__':
     unittest.main()
