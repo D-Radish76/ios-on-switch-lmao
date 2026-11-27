@@ -552,6 +552,21 @@ class T4Documents(unittest.TestCase):
         for doc in (run, review, BLOCKERS):
             self.assertNotRegex(doc, '[\\u2013\\u2014]')
 
+    def test_t4r_final_mac_record_and_procedures(self) -> None:
+        run = read('ERISTA_T4R_RUN.md')
+        review = read('ERISTA_T4R_REVIEW.md')
+        for value in ('4116a2b2082331ff8ac8d9e8aecb2f52491d39d8a3e2a41fdc888cdf7a89bc17',
+                      '13338028a1bb3baddda8dc79ca8f03036d391448a41b110798389da3a25be99b',
+                      'd83af011684668de10ddfd8f41909e1592f227f13db88f3d58f0e12b57f5fbd1',
+                      'dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4',
+                      'ea89ffba1b256cbd3cc530857d26d895baf439803cfc75f54835aef06fbdcbcb',
+                      'f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef'):
+            self.assertIn(value, run)
+        for phrase in ('## Card procedure', '## Checklist for a run', '## Moving on to T4-A', 'T4-A is not implemented and not approved'):
+            self.assertIn(phrase, run, phrase)
+        self.assertIn('Final review at `f27f19d42`', review)
+        self.assertIn('Nothing found that needs a code change', review)
+
     def test_t4r_revision_and_the_corrected_stop_conditions(self) -> None:
         run = read('ERISTA_T4R_RUN.md')
         review = read('ERISTA_T4R_REVIEW.md')

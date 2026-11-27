@@ -32,3 +32,15 @@ Made on 2026-11-27 at the owner's approval (the T4-R hash may change within this
 - `TMR5_PTV`, the config word and the status layout come from mainline Linux and this tree's panic path. L4T's DTB names timer index 7 and `0x60005088` for WDT0; T4-R does not read them, so that disagreement is not settled by this stage.
 - The state is the state after hekate's init and after hekate launched the loader. It is not the state right after a reset.
 - `TMRUS` counting and a return to hekate do not show a watchdog reset.
+
+## Final review at `f27f19d42` (2026-11-27, before any run)
+
+Read again: `t4r.c`, `t4r_gate.c`, `t4r_access.c`, `t4r_regs.c`, `t4r_report.c`, the T4R blocks of `diag.c`, and `exit.c`. No code was changed.
+
+- Reads: five, over four addresses (`TMRUS` twice). The only device load is the word load in `t4r_access.c`, reached through the gate. Writes: none to a device address; the Mac audit agrees.
+- Stop codes: `0x901` for a refused read, `0x902` for a line that did not settle. Both end the run before the next read. `COMPLETE` prints the stop code, so the screen and the run record agree.
+- Screen: `SWITCH_DIAG_SINGLE_CHECK` is defined for T4R, so the register column on the right is not drawn and a left line may use the full width. The longest T4R line is 96 columns, the state line with the longest reason is under 80, both within the 104 column limit. The rows used are 9 to 22, 24 to 26 and 28, all above the last row (34).
+- Stop conditions in `ERISTA_T4R_RUN.md` use the strings the code draws: `RESET IN 15 S`, `PSCI SYSTEM_RESET RETURNED`, `NO RESET`, `EXIT CALLED OUTSIDE EL1`.
+
+Nothing found that needs a code change.
+

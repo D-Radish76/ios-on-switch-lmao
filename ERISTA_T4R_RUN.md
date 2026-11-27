@@ -59,6 +59,33 @@ python3 tools/package/diag_mmio_audit.py --disassembly bazel-bin/boot/diag_t4r/l
 
 The audit must end with `AUDIT PASSED (T4-R)`. The Linux flat hash is `de467deb...` after the 2026-11-27 revision (`boot/diag/erista-diag-image-hashes.txt`; `9418d085...` before it); the Mac's `loader.uboot.bin` is a different file, as for every other image, and is recorded after the Mac build. The package entry is `ios-diag-t4r`, the hekate name `iOS Diag T4R`: it does not collide with the normal `ios` entry or with any other diagnostic.
 
+## Mac record of the revised build (reported 2026-11-27 10:10 JST, commit `f27f19d42`)
+
+The Mac repeated the build, the regression tests and the audit on the revised image.
+
+| Item | Result |
+| --- | --- |
+| `bazel build --config=ios17 //boot:diag_t4r` | success |
+| Mac `loader.uboot.bin` SHA256 | `4116a2b2082331ff8ac8d9e8aecb2f52491d39d8a3e2a41fdc888cdf7a89bc17` |
+| Mac LLVM 23.1.6 flat `diag_t4r` SHA256 | `13338028a1bb3baddda8dc79ca8f03036d391448a41b110798389da3a25be99b` |
+| Regression tests | 9 of 9 pass, the real gtest included |
+| Audit | `AUDIT PASSED (T4-R)` |
+| Inspection | 10 of 10 passed |
+| The nine earlier flat hashes | identical to the previous Mac measurement, 64 digits each (the table below); only `diag_t4r` changed |
+
+Package files (Mac Bazel build):
+
+| File | SHA256 |
+| --- | --- |
+| `bootloader/ini/ios-diag-t4r.ini` | `d83af011684668de10ddfd8f41909e1592f227f13db88f3d58f0e12b57f5fbd1` |
+| `switchroot/ios-diag-t4r/bl31.bin` | `dea0ecd406cd110b8d475641900ed23223d24d32dd5cef4d8a9ea2459c34e2b4` |
+| `switchroot/ios-diag-t4r/bl33.bin` | `ea89ffba1b256cbd3cc530857d26d895baf439803cfc75f54835aef06fbdcbcb` |
+| `switchroot/ios-diag-t4r/script.txt` | `f762d2a30ce57ee1a4f38a96f7e2c2bc8e347669814dedb07d615dec48da01ef` |
+
+This is the build a run would use. The first-build section after this one is kept as history; its `diag_t4r` values are superseded. The table in it for the other nine images still holds.
+
+The "nine unchanged" statement rests on comparing two Mac measurements of the same toolchain. The comparison against the commit before T4-R (`a3275ff5f`, commands below) is still the stronger check and can be run at any time. It was not part of this report.
+
 ## Mac build record of the first build (reported 2026-11-27 03:41 JST, commit `d3aea29e7`)
 
 The T4-R image changed afterwards (the classification and the screen lines, below), so the Mac `loader.uboot.bin` and `diag_t4r` flat hashes in this section describe the first build only. The other nine flat hashes did not change. The revised build is to be run again on the Mac.
@@ -143,3 +170,26 @@ Common conditions of a run, if one is ever approved in writing: those of `ERISTA
 | What a pass does not show | that a write works, that a watchdog resets the console, anything about the state right after a reset, or anything about XNU |
 
 A static screen is normal for the 15 s between `RESET IN 15 S` and the reset, so the 30 s no-change rule applies before COMPLETE only. BUSY, DORMANT, CONFIGURED and UNKNOWN are results: nothing is touched whatever they are. Nothing was armed, so there is nothing to clean up, and the return to hekate carries no loop risk from this stage.
+
+## Card procedure (not executed; copying stays on hold)
+
+1. Mount the card read-only if the OS allows it, and run the two `find` and `ls` commands above. The four package paths must not exist, or must hash to the list above.
+2. List the entry names already in `bootloader/ini`. `ios-diag-t4r` and the hekate name `iOS Diag T4R` must be unused by any other file.
+3. Take a before record: `find bootloader/ini switchroot -type f | sort | xargs shasum -a 256 > before.txt`.
+4. Copy only the four package files, keeping their relative paths. Nothing is deleted or overwritten on the card.
+5. Eject, remove, re-insert. Take `after.txt` the same way.
+6. `diff before.txt after.txt` must show exactly the four added lines, and each added hash must equal the package hash list. Any other difference stops the procedure.
+
+## Checklist for a run, if one is ever approved in writing
+
+Before: the hash list of the package matches this file; the card record of the previous section is clean; cold start; temperature written down and under the provisional 40 C; video on; a person with a hand on POWER; the card holds only this entry. On the screen, read in this order and write each line down: the title line, `T4R START. EL1 STATE PASS`, each BEGIN and RESULT pair, `TMRUS` advance, the count and expiry line, the state line with its reason, `T4R COMPLETE. READS 5. STOP 0000`, `RESET IN 15 S`. After: note whether hekate came back by itself and how long it took, and whether anything else on the card changed (re-run the hash record).
+
+## Moving on to T4-A
+
+T4-A is not implemented and not approved. It arms and expires a watchdog. These are the conditions the owner would check before asking for it, all after a real T4-R run:
+
+- The run passed as defined above: five reads, STOP 0000, hekate back by itself, nothing on the card changed.
+- The raw words and the state are recorded. If WDT0 read BUSY or UNKNOWN with a running count, T4-A does not start until that is explained.
+- The three open items are answered or accepted in writing: WDT0 answered at EL1 without a hang; status bits 0 and 1 have a meaning for WDT0 (this run shows the values, it does not name the bits); the timer-number disagreement with L4T's DTB does not matter for the registers read.
+- The measured time from COMPLETE to hekate is on record, so a T4-A time limit rests on a number.
+- The owner approves T4-A separately: its writes, its allowlist, its recovery by POWER hold and cold start, and its loop risk. The T4-R pass approves none of that.
