@@ -68,6 +68,18 @@ The audit must end with `AUDIT PASSED (T3-R)`. The Linux flat hash is `075d6816.
 
 The Mac flat hash differs from the Linux one (`fc904cfc...`) because the toolchains differ (clang 23.1.6 against Ubuntu clang 18.1.3), as for every other image. This is a build and static-check record. It says nothing about the console: no run, no card copy, `boot` 0, feature mask 0, T3 and T4 not waived, the first XNU run on HOLD. The Mac `loader.uboot.bin` SHA256 and the package file hashes are not in the report and are recorded when the package is built for a run.
 
+## Mac record of the fixed image (owner's report, 2026-11-27 20:14 JST, commit `907ae9923`)
+
+| Item | Result |
+| --- | --- |
+| Regression tests | 8 of 8 pass |
+| Mac flat SHA256 of the fixed `diag_t3r` | not reported |
+| Card hash comparison after the T3-R run | exit 0 |
+| Existing inis | the five restored; six in total now |
+| Diff after the restore | exit 1; the differences were not reported |
+
+The exit 1 is recorded as it came. Its cause is not known here and is not guessed: it can be an expected difference (the sixth ini) or something else, and only the diff text says which. The fixed image has had no run. The Linux flat hash of the fixed image is `075d6816...`.
+
 ## First run
 
 Run once by the owner on 2026-11-27 (report 16:10 JST): reads 22, stop 0000, no writes, automatic return to hekate. Two defects of the image were found (the `DID NOT ADVANCE` flag and the overlapping summary lines) and `PWM_CSR_1` read `0x00000000`, not hekate's off word. Details and the separation of read success from display faults: `ERISTA_T3R_RESULT.md`. This run is not repeated. The display defects are fixed in the code and checked offline; the fixed image has no Mac check and no run, and the Mac record below is of the image that was run. GPIO and PMC reads at non-secure EL1 answered in that one run; the "unconfirmed" wording below is the state before it.

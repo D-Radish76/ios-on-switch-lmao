@@ -450,6 +450,7 @@ py_test(
         "//:ERISTA_T3R_RESULT.md",
         "//:ERISTA_T3R_DESIGN.md",
         "//:ERISTA_T3_FAN_DESIGN.md",
+        "//:ERISTA_T3_RUN.md",
         "//:ERISTA_THERMAL_DESIGN.md",
         "//boot:all_sources",
         "//boot:build_file",
@@ -471,6 +472,30 @@ py_test(
         "//boot:build_file",
         "//boot:diag/erista-diag-image-hashes.txt",
         "//boot:diag/erista-t3r-mmio-audit.txt",
+        "//kits/SwitchBoard:SwitchBoard.h",
+    ],
+    deps = [
+        "//tools/package:diag_images",
+        "//tools/package:diag_loader",
+        "//tools/package:diag_loader_inspect",
+        "//tools/package:diag_mmio_audit",
+    ],
+)
+
+# T3: the 20-register read allowlist, the six-word write allowlist, the inspection of its image, a real link, the audit record and
+# the eleven earlier image hashes (ERISTA_T3_FAN_DESIGN.md, ERISTA_T3_RUN.md).
+py_test(
+    name = "diag_t3_test",
+    size = "medium",
+    srcs = ["diag_t3_test.py"],
+    data = [
+        "//:ERISTA_T3_FAN_DESIGN.md",
+        "//:ERISTA_T3_RUN.md",
+        "//bazel/pinned:firmware/erista-sku0.dtb",
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot:diag/erista-diag-image-hashes.txt",
+        "//boot:diag/erista-t3-mmio-audit.txt",
         "//kits/SwitchBoard:SwitchBoard.h",
     ],
     deps = [

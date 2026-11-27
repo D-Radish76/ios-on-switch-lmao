@@ -224,6 +224,29 @@ host_test(
     deps = [":t3r"],
 )
 
+# T3's logic: the allowlists, the state check, the order and readback of the writes, the off sequence, the rail limit inside the tach
+# loop and the tach verdict.
+host_library(
+    name = "t3",
+    srcs = [
+        "//boot:diag/loader/report.c",
+        "//boot:diag/loader/report.h",
+        "//boot:diag/loader/t3.c",
+        "//boot:diag/loader/t3.h",
+        "//boot:diag/loader/t3_regs.c",
+        "//boot:diag/loader/t3_report.c",
+        "//boot:diag/loader/t3_report.h",
+        "//boot:diag/loader/t3_tach.c",
+    ],
+    copts = ["-O1"],
+)
+
+host_test(
+    name = "t3_test",
+    srcs = ["t3_test.cpp"],
+    deps = [":t3"],
+)
+
 # The T2 image's logic: prelude, bus layer, sensor sequence and screen lines, against a model of the CAR words, I2C1 and a TMP451.
 host_library(
     name = "t2_image",

@@ -339,7 +339,7 @@ class OtherImages(unittest.TestCase):
             self.skipTest(f'hashes were recorded with {recorded_clang}; this is {current}')
         recorded = {fields[0]: fields[1] for fields in (ln.split() for ln in lines[1:]) if len(fields) >= 2}
         existing = ('diag_loader', 'diag_loader_r', 'diag_loader_sd', 'diag_t1', 'diag_t1r')
-        self.assertEqual(set(existing) | {'diag_t1v3', 'diag_t1t', 'diag_t2', 'diag_state_v2', 'diag_t4r'}, set(recorded))
+        self.assertEqual(set(existing) | {'diag_t1v3', 'diag_t1t', 'diag_t2', 'diag_state_v2', 'diag_t4r', 'diag_t3r', 'diag_t3'}, set(recorded))
         built = build(existing)
         for name in existing:
             self.assertEqual(recorded[name], built[name], f'{name} changed')

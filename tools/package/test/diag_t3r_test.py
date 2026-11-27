@@ -264,7 +264,7 @@ class RealLink(unittest.TestCase):
 
 class Isolation(unittest.TestCase):
     def test_the_ten_earlier_hashes_are_unchanged_and_t3r_is_the_eleventh(self) -> None:
-        lines = [ln.split() for ln in HASHES.splitlines() if ln.startswith('diag_')]
+        lines = [ln.split() for ln in HASHES.splitlines() if ln.startswith('diag_') and ln.split()[0] != 'diag_t3']
         self.assertEqual([*EARLIER, 'diag_t3r'], [ln[0] for ln in lines])
         recorded = {ln[0]: ln[1] for ln in lines}
         for name, short in EARLIER.items():
@@ -275,6 +275,7 @@ class Isolation(unittest.TestCase):
             if name == 'diag_t3r':
                 continue
             self.assertFalse([s for s in sources if 't3r' in s], name)
+            self.assertFalse(name != 'diag_t3' and [s for s in sources if '/t3_' in s or s.endswith('/t3.c')], name)
             self.assertNotIn('-DSWITCH_DIAG_T3R=1', defines)
 
     def test_the_target_is_its_own_and_boots_nothing(self) -> None:

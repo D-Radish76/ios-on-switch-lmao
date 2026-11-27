@@ -150,6 +150,8 @@ def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
         'switch_s2_read16',
         'switch_t4r_read32',
         'switch_t3r_read32',
+        'switch_t3_read32',
+        'switch_t3_write32',
         'switch_t2_read32',
         'switch_t2_write32',
     ):
@@ -178,6 +180,12 @@ def path_lines(code: dict[str, list[tuple[str, str]]]) -> list[str]:
         lines.append(
             '   T3-R: static table (switch_t3r_address) -> switch_t3r_access -> switch_t3r_read32 (one word load); '
             f'switch_t3r_address called by {", ".join(callers(code, "switch_t3r_address"))}'
+        )
+    if 'switch_t3_access' in code:
+        lines.append(
+            '   T3: static table (switch_t3_address) -> switch_t3_access (switch_t3_may_read / switch_t3_may_write decide first) -> '
+            'switch_t3_read32 / switch_t3_write32; '
+            f'switch_t3_address called by {", ".join(callers(code, "switch_t3_address"))}'
         )
     if 'switch_t2_access' in code:
         lines.append(
@@ -224,6 +232,12 @@ def judge(found: Findings, code: dict[str, list[tuple[str, str]]]) -> list[str]:
     ]
     problems += [
         f'{raw} is called by {c}'
+        for raw in ('switch_t3_read32', 'switch_t3_write32')
+        for c in callers(code, raw)
+        if c != 'switch_t3_access'
+    ]
+    problems += [
+        f'{raw} is called by {c}'
         for raw in ('switch_t1v3_read32', 'switch_t1v3_write32')
         for c in callers(code, raw)
         if c != 'switch_t1v3_access'
@@ -247,6 +261,7 @@ def audit(  # noqa: PLR0913
     t2: bool = False,
     t4r: bool = False,
     t3r: bool = False,
+    t3: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Return the report lines and the problems."""
     code = parse(disassembly)
@@ -277,10 +292,12 @@ def audit(  # noqa: PLR0913
         problems += inspect_disassembly(disassembly, t4r=True)
     if t3r:
         problems += inspect_disassembly(disassembly, t3r=True)
+    if t3:
+        problems += inspect_disassembly(disassembly, t3=True)
     if flat is not None:
-        listed = inspect_image(flat, t1t=t1t, t1v3=t1v3, s2=s2, t2=t2, t4r=t4r, t3r=t3r)
-        name = 'D0-S v2' if s2 else 'T1-T' if t1t else 'T2' if t2 else 'T4-R' if t4r else 'T3-R' if t3r else 'T1 v3'
-        checked = t1t or t1v3 or s2 or t2 or t4r or t3r
+        listed = inspect_image(flat, t1t=t1t, t1v3=t1v3, s2=s2, t2=t2, t4r=t4r, t3r=t3r, t3=t3)
+        name = 'D0-S v2' if s2 else 'T1-T' if t1t else 'T2' if t2 else 'T4-R' if t4r else 'T3-R' if t3r else 'T3' if t3 else 'T1 v3'
+        checked = t1t or t1v3 or s2 or t2 or t4r or t3r or t3
         report.append(
             '6. Flat image: '
             + (
@@ -304,6 +321,7 @@ def main() -> int:
     parser.add_argument('--s2', action='store_true', help='the image is D0-S v2: check its register address words')
     parser.add_argument('--t4r', action='store_true', help='the image is T4-R: check its register address words')
     parser.add_argument('--t3r', action='store_true', help='the image is T3-R: check its register address words')
+    parser.add_argument('--t3', action='store_true', help='the image is T3: check its register address words and raw accesses')
     parser.add_argument(
         '--t2', action='store_true', help='the image is T2: check its register address words and raw accesses'
     )
@@ -319,7 +337,7 @@ def main() -> int:
             print('not a legacy U-Boot image', file=sys.stderr)
             return 2
         flat = raw[UIMAGE_HEADER:]
-    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t, t1v3=args.t1v3, s2=args.s2, t2=args.t2, t4r=args.t4r, t3r=args.t3r)
+    report, problems = audit(args.disassembly.read_text(), flat, t1t=args.t1t, t1v3=args.t1v3, s2=args.s2, t2=args.t2, t4r=args.t4r, t3r=args.t3r, t3=args.t3)
     if args.t2 and args.t2_sources:
         directory = args.t2_sources
         bus = (directory / 't2_bus.c').read_text() + (directory.parent / 't2' / 't2.h').read_text()
@@ -350,6 +368,13 @@ def main() -> int:
             '\nAUDIT PASSED (T3-R): the image holds exactly the 21 listed fan state register addresses, each once; '
             'switch_t3r_access is the only caller of the one word load; no device store; '
             'in code only the two identity registers are formed.'
+        )
+        return 0
+    if args.t3:
+        print(
+            '\nAUDIT PASSED (T3): the image holds exactly the 20 listed fan state register addresses, each once; '
+            'switch_t3_access is the only caller of the one word load and the one word store, and calls the read and '
+            'write allowlists first; in code only the two identity registers are formed.'
         )
         return 0
     if args.t2:

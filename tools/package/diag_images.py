@@ -98,6 +98,15 @@ T3R = (
     'diag/loader/t3r_settle.c',
     'diag/loader/t3r_access.c',
 )
+T3 = (
+    'diag/loader/t3.c',
+    'diag/loader/t3_tach.c',
+    'diag/loader/t3_regs.c',
+    'diag/loader/t3_gate.c',
+    'diag/loader/t3_report.c',
+    'diag/loader/t3_settle.c',
+    'diag/loader/t3_access.c',
+)
 RESERVATIONS = ('diag/loader/reservations.c',)
 SD = ('diag/sd_loader/sd_report.c', 'storage/sd_reference.c')
 
@@ -118,6 +127,7 @@ IMAGES = {
     'diag_state_v2': (COMMON + S2 + TAIL, ('-DSWITCH_DIAG_S2=1',), 's2'),
     'diag_t4r': (COMMON + T4R + TAIL, ('-DSWITCH_DIAG_T4R=1',), 't4r'),
     'diag_t3r': (COMMON + T3R + TAIL, ('-DSWITCH_DIAG_T3R=1',), 't3r'),
+    'diag_t3': (COMMON + T3 + TAIL, ('-DSWITCH_DIAG_T3=1',), 't3'),
 }
 
 
@@ -143,7 +153,7 @@ def build(name: str, tools: argparse.Namespace, scratch: Path) -> tuple[str, lis
     )
     flags = {flag: True} if flag else {}
     problems = inspect_map(linkmap.read_text(), **flags) + inspect_disassembly(dis.stdout, **flags)
-    problems += inspect_image(flat.read_bytes(), **{k: True for k in ('t1v3', 't1t', 't2', 's2', 't4r', 't3r') if flag == k})
+    problems += inspect_image(flat.read_bytes(), **{k: True for k in ('t1v3', 't1t', 't2', 's2', 't4r', 't3r', 't3') if flag == k})
     return hashlib.sha256(flat.read_bytes()).hexdigest(), problems
 
 

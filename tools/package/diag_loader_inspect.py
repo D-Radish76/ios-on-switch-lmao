@@ -220,6 +220,41 @@ T3R_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <switch_t3r_read32>')
 T3R_ADDRESS_HOLDERS = ('switch_t3r_address', 'switch_t3r_may_read', 'switch_t3r_read32')
 S2_ADDRESSES = frozenset({0x60006004, 0x60006010, 0x700B0024, 0x700B002C})
 
+# T3 (boot/diag/loader/t3*.c) reads 20 registers and writes three of them, six reviewed words in all. It is T2's shape under
+# its own names: every access runs through switch_t3_access, whose allowlist (t3_regs.c) refuses any register or value it does
+# not list. It links nothing of the other stages, T3-R included.
+T3_SYMBOLS = (
+    'switch_t3_run_on_hardware',
+    'switch_t3_run',
+    'switch_t3_access',
+    'switch_t3_read32',
+    'switch_t3_write32',
+    'switch_t3_may_read',
+    'switch_t3_may_write',
+    'switch_t3_address',
+    'switch_t3_state_check',
+    'switch_t3_count_window',
+    'switch_t3_verdict',
+    'switch_t3_spent',
+)
+T3_GATE = 'switch_t3_access'
+T3_CALL = re.compile(r'\b(?:bl|b)\s+0x[0-9a-f]+ <(switch_t3_read32|switch_t3_write32)>')
+# T3's allowlist as the linker laid it out: T3-R's read set without the TKE counter.
+T3_PAGES = (
+    (0x60006000, 0x60007000),
+    (0x6000D000, 0x6000E000),
+    (0x70003000, 0x70004000),
+    (0x7000A000, 0x7000B000),
+    (0x7000E400, 0x7000E800),
+)
+T3_ADDRESSES = frozenset(
+    {
+        0x60006004, 0x60006010, 0x7000A010, 0x7000320C, 0x700031EC, 0x7000304C, 0x700031A8,
+        0x6000D000, 0x6000D010, 0x6000D020, 0x6000D700, 0x6000D710, 0x6000D720,
+        0x6000D408, 0x6000D418, 0x6000D438, 0x6000D504, 0x6000D514, 0x7000E444, 0x7000E4E4,
+    }
+)  # fmt: skip
+
 # T4-R's allowlist (boot/diag/loader/t4r_regs.c) as the linker laid it out: TMRUS, timer 5's PTV, WDT0's config and status.
 T4R_PAGES = ((0x60005000, 0x60006000),)
 T4R_ADDRESSES = frozenset({0x60005010, 0x60005060, 0x60005100, 0x60005104})
@@ -273,6 +308,7 @@ def inspect_map(  # noqa: PLR0913
     s2: bool = False,
     t4r: bool = False,
     t3r: bool = False,
+    t3: bool = False,
 ) -> list[str]:
     forbidden = [name for name in FORBIDDEN_SYMBOLS if not (sd and name == 'switch_sd_')]
     problems = [f'the link has {name}' for name in forbidden if name in text]
@@ -287,6 +323,7 @@ def inspect_map(  # noqa: PLR0913
         *(S2_SYMBOLS if s2 else ()),
         *(T4R_SYMBOLS if t4r else ()),
         *(T3R_SYMBOLS if t3r else ()),
+        *(T3_SYMBOLS if t3 else ()),
     )
     problems += [f'the link lacks {name}' for name in wanted if name not in text]
     problems += [f'the link has {name} outside T1' for name in T1_SYMBOLS if not t1 and name in text]
@@ -297,10 +334,20 @@ def inspect_map(  # noqa: PLR0913
     problems += [f'the link has {name} outside D0-S v2' for name in S2_SYMBOLS if not s2 and name in text]
     problems += [f'the link has {name} outside T4-R' for name in T4R_SYMBOLS if not t4r and name in text]
     problems += [f'the link has {name} outside T3-R' for name in T3R_SYMBOLS if not t3r and name in text]
+    problems += [f'the link has {name} outside T3' for name in T3_SYMBOLS if not t3 and name in text]
+    if t3:
+        problems += [
+            f'T3 links {name}'
+            for name in (
+                'switch_t1_', 'switch_t1r_', 'switch_t1v3_', 'switch_t1t_', 'switch_t2_', 'switch_s2_', 'switch_t4r_',
+                'switch_t3r_',
+            )
+            if name in text
+        ]
     if t3r:
         problems += [
             f'T3-R links {name}'
-            for name in ('switch_t1_', 'switch_t1r_', 'switch_t1v3_', 'switch_t1t_', 'switch_t2_', 'switch_s2_', 'switch_t4r_', 'switch_t3r_write')
+            for name in ('switch_t1_', 'switch_t1r_', 'switch_t1v3_', 'switch_t1t_', 'switch_t2_', 'switch_s2_', 'switch_t4r_', 'switch_t3r_write', 'switch_t3_')
             if name in text
         ]
     if t4r:
@@ -424,6 +471,7 @@ def inspect_t1(code: dict[str, list[str]], prefix: str = 'switch_t1_') -> list[s
         'switch_t1_': (T1_GATE, T1_CALL),
         'switch_t1v3_': (T1V3_GATE, T1V3_CALL),
         'switch_t2_': (T2_GATE, T2_CALL),
+        'switch_t3_': (T3_GATE, T3_CALL),
     }[prefix]
     problems = []
     write32, read32 = code.get(f'{prefix}write32'), code.get(f'{prefix}read32')
@@ -501,9 +549,10 @@ def inspect_image(  # noqa: PLR0913
     s2: bool = False,
     t4r: bool = False,
     t3r: bool = False,
+    t3: bool = False,
 ) -> list[str]:
     """Return what is wrong with the linked flat image: the register addresses it holds as data, each once."""
-    if not (t1v3 or t1t or t2 or s2 or t4r or t3r):
+    if not (t1v3 or t1t or t2 or s2 or t4r or t3r or t3):
         return []
     name, pages, listed = (
         ('T1 v3', T1V3_PAGES, T1V3_ADDRESSES)
@@ -516,6 +565,8 @@ def inspect_image(  # noqa: PLR0913
         if t4r
         else ('T3-R', T3R_PAGES, T3R_ADDRESSES)
         if t3r
+        else ('T3', T3_PAGES, T3_ADDRESSES)
+        if t3
         else ('T1-T', T1T_PAGES, T1T_ADDRESSES)
     )
     found = [
@@ -547,6 +598,7 @@ def inspect_disassembly(  # noqa: C901, PLR0913
     s2: bool = False,
     t4r: bool = False,
     t3r: bool = False,
+    t3: bool = False,
 ) -> list[str]:
     code = functions(disassembly)
     writes, special, problems = count_instructions(code, sd)
@@ -579,6 +631,14 @@ def inspect_disassembly(  # noqa: C901, PLR0913
         problems += inspect_t4r(code)
     if t3r:
         problems += inspect_t3r(code)
+    if t3:
+        problems += inspect_t1(code, 'switch_t3_')
+        gate = '\n'.join(code.get(T3_GATE, []))
+        problems += [
+            f'{T3_GATE} does not call {check}'
+            for check in ('switch_t3_may_read', 'switch_t3_may_write')
+            if f'<{check}>' not in gate
+        ]
     return problems
 
 
@@ -603,10 +663,11 @@ def main() -> int:
     parser.add_argument('--s2', action='store_true', help='the D0-S v2 image: the CAR and SDMMC1 reads are linked')
     parser.add_argument('--t4r', action='store_true', help='the T4-R image: the four TKE register reads are linked')
     parser.add_argument('--t3r', action='store_true', help='the T3-R image: the 21 fan state register reads are linked')
+    parser.add_argument('--t3', action='store_true', help='the T3 image: the fan state reads and six reviewed writes are linked')
     args = parser.parse_args()
     flags = {
         'sd': args.sd, 't1': args.t1, 't1r': args.t1r, 't1v3': args.t1v3, 't1t': args.t1t, 't2': args.t2, 's2': args.s2,
-        't4r': args.t4r, 't3r': args.t3r,
+        't4r': args.t4r, 't3r': args.t3r, 't3': args.t3,
     }  # fmt: skip
     problems = inspect_map(args.map.read_text(), **flags) + inspect_disassembly(args.disassembly.read_text(), **flags)
     if args.report:

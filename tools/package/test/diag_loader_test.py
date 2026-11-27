@@ -46,7 +46,7 @@ DTB = (ROOT / 'bazel/pinned/firmware/erista-sku0.dtb').read_bytes()
 SOURCES = sorted(
     p
     for p in (ROOT / 'boot/diag/loader').glob('*.[chS]')
-    if p.name not in ('t1_access.c', 't1r_access.c', 't1v3_access.c', 't1t_access.c', 't2_access.c', 's2_access.c', 't4r_access.c', 't3r_access.c')
+    if p.name not in ('t1_access.c', 't1r_access.c', 't1v3_access.c', 't1t_access.c', 't2_access.c', 's2_access.c', 't4r_access.c', 't3r_access.c', 't3_access.c')
 )
 
 COMMANDS = {'setenv', 'test', 'echoe', 'base', 'itest.l', 'fdt', 'cp.b', 'bootm', 'sleep', 'reset', 'true'}

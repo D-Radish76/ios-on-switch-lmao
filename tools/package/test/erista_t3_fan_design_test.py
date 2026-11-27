@@ -1,4 +1,4 @@
-"""ERISTA_T3_FAN_DESIGN.md: a design only. Its write list is small and arithmetic, and no fan code exists."""
+"""ERISTA_T3_FAN_DESIGN.md: the write list is small arithmetic and matches the allowlist of the T3 image."""
 
 import re
 import unittest
@@ -19,9 +19,10 @@ def table_rows(prefix: str) -> list[list[str]]:
 
 
 class WriteList(unittest.TestCase):
-    def test_seven_writes_to_three_registers_and_nothing_else(self) -> None:
+    def test_six_writes_to_three_registers_and_no_duty_76(self) -> None:
         rows = table_rows(r'[WO]\d')
-        self.assertEqual(['W1', 'W2', 'W3', 'W4', 'O1', 'O2', 'O3'], [r[0] for r in rows])
+        self.assertEqual(['W1', 'W2', 'W3', 'O1', 'O2', 'O3'], [r[0] for r in rows])
+        self.assertNotIn('0x80A00000', TEXT.upper().replace('0X','0x'))
         for row in rows:
             self.assertIn(row[2].strip('`'), ALLOWED_WRITE_ADDRESSES, row[0])
 
@@ -30,9 +31,7 @@ class WriteList(unittest.TestCase):
             return f'0x{0x80000000 | (236 - duty) << 16:08X}'
 
         self.assertEqual('0x80B90000', word(51))
-        self.assertEqual('0x80A00000', word(76))
         self.assertIn(f'`{word(51)}`', TEXT)
-        self.assertIn(f'`{word(76)}`', TEXT)
         self.assertIn('`0x81000000`', TEXT)
 
     def test_the_entry_state_is_what_the_first_run_read(self) -> None:
@@ -47,19 +46,37 @@ class WriteList(unittest.TestCase):
             self.assertNotIn(forbidden, listing)
 
 
-class NothingIsBuilt(unittest.TestCase):
-    def test_no_fan_code_or_target_exists(self) -> None:
-        names = {p.name for p in Path('boot/diag/loader').glob('*') if p.is_file()}
-        self.assertEqual([], [n for n in names if re.match(r't3[^r]|t3$|fan', n)])
+class TheWriteListIsTheImages(unittest.TestCase):
+    def test_the_allowlist_holds_the_documented_words_and_no_other(self) -> None:
+        regs = Path('boot/diag/loader/t3_regs.c').read_text()
+        header = Path('boot/diag/loader/t3.h').read_text()
+        for word in ('0x80b90000u', '0x81000000u', '0x00000001u', '0x00000074u', '0x00000020u', '0x00000000u'):
+            self.assertIn(word, header)
+        self.assertEqual(6, len(re.findall(r'\[T3_[WO]_\w+\] = \{', regs)))
+        listing = '\n'.join('|'.join(r) for r in table_rows(r'[WO]\d'))
+        for word in ('0x00000020', '0x80B90000', '0x00000001', '0x81000000', '0x00000000', '0x00000074'):
+            self.assertIn(word, listing)
+
+    def test_the_target_exists_and_is_not_approved(self) -> None:
         build = Path('boot/BUILD.bazel').read_text()
-        self.assertEqual([], re.findall(r'name = "diag_t3[^r"][^"]*"', build))
-        self.assertNotIn('SWITCH_DIAG_T3=', build)
-        self.assertNotIn('t3 = True', build)
+        self.assertIn('name = "diag_t3"', build)
+        self.assertIn('Not approved to run', build)
 
     def test_the_holds_are_stated(self) -> None:
-        for phrase in ('nothing here is implemented', '`boot` stays 0', 'feature mask 0', 'T3 and T4 are not waived', 'HOLD', 'not run again'):
+        for phrase in ('not approved to run', '`boot` stays 0', 'feature mask 0', 'T3 and T4 are not waived', 'HOLD', 'not run again'):
             self.assertIn(phrase.lower(), TEXT.lower())
 
+    def test_the_safety_judgement_names_what_stays_open(self) -> None:
+        for phrase in ('CC4', 'unknown', 'not a safety guarantee', 'Not claimed', 'rail', 'duty 51 only'):
+            self.assertIn(phrase.lower(), TEXT.lower())
+        self.assertNotIn('restores every register', TEXT.lower())
+
+    def test_the_tach_level_is_not_fixed_to_zero(self) -> None:
+        self.assertIn('not required to be 0', TEXT)
+        self.assertNotIn('one sample low', TEXT)
+
+
+class Unknowns(unittest.TestCase):
     def test_the_unknowns_are_not_dressed_as_findings(self) -> None:
         for phrase in ('inferred', 'unknown', 'not safety guarantees', 'no absolute rpm'):
             self.assertIn(phrase.lower(), TEXT.lower())

@@ -38,10 +38,13 @@
 #ifdef SWITCH_DIAG_T3R
 #include "t3r_report.h"
 #endif
+#ifdef SWITCH_DIAG_T3
+#include "t3_report.h"
+#endif
 
 #if defined(SWITCH_DIAG_T1) || defined(SWITCH_DIAG_T1R) || defined(SWITCH_DIAG_T1V3) || \
     defined(SWITCH_DIAG_T1T) || defined(SWITCH_DIAG_T2) || defined(SWITCH_DIAG_S2) || defined(SWITCH_DIAG_T4R) || \
-    defined(SWITCH_DIAG_T3R)
+    defined(SWITCH_DIAG_T3R) || defined(SWITCH_DIAG_T3)
 #define SWITCH_DIAG_SINGLE_CHECK 1
 #endif
 
@@ -117,6 +120,17 @@ enum {
     D_T3R_GPIO_S_V,
     D_T3R_PMC,
 #endif
+#ifdef SWITCH_DIAG_T3
+    D_T3_STOP_STATE_WRITES,
+    D_T3_WINDOW_IDLE,
+    D_T3_WINDOW_RAIL,
+    D_T3_WINDOW_SPINUP,
+    D_T3_WINDOW_SPIN,
+    D_T3_WINDOW_STOPPED,
+    D_T3_READBACK_ON_PWM,
+    D_T3_READBACK_ROUTE_OFF,
+    D_T3_READBACK_RAIL_PAD,
+#endif
 #ifdef SWITCH_DIAG_T1T
     D_T1T_STOP_READS,
     D_T1T_CLOCKS_L,
@@ -144,6 +158,9 @@ _Static_assert(D_T4R_STATUS_STATE < R_RECORD_WORDS, "T4-R results fit the probe 
 #endif
 #ifdef SWITCH_DIAG_T3R
 _Static_assert(D_T3R_PMC < R_RECORD_WORDS, "T3-R results fit the probe record");
+#endif
+#ifdef SWITCH_DIAG_T3
+_Static_assert(D_T3_READBACK_RAIL_PAD < R_RECORD_WORDS, "T3 results fit the probe record");
 #endif
 
 /* 1280 x 720 as display_text draws it. The right column holds the registers, rows 0 to 30; the left column stops
@@ -689,6 +706,48 @@ static void report_t3r(void)
 }
 #endif
 
+#ifdef SWITCH_DIAG_T3
+_Static_assert(9 + SWITCH_T3_LINE_ROWS < 26, "the T3 lines end above the notes");
+_Static_assert(LEFT + SWITCH_DIAG_LINE_MAX * GLYPH_WIDTH <= SCREEN_WIDTH, "a full width line is on the screen");
+
+static int show_t3(void *context, unsigned step, const struct switch_t3_result *result)
+{
+    (void)context;
+    if (!diag.screen)
+        return 0;
+    struct switch_t3_line line;
+    switch_t3_screen_line(step, result, &line);
+    put(LEFT, 9 + line.row, &line.text, line.bad ? DISPLAY_RED : DISPLAY_WHITE);
+    return switch_t3_settle();
+}
+
+static uint64_t t3_window_word(const struct switch_t3_window *w)
+{
+    return (uint64_t)w->samples << 32 | (uint64_t)(w->transitions & 0xffffffu) << 8 | w->first_level << 4 | w->last_level << 1 |
+           (w->cut != 0);
+}
+
+static void report_t3(void)
+{
+    put_text(26, "PERSON: NO NEW LINE FOR 30 S: HOLD POWER. THE RAIL IS ON FOR 15 S AT MOST. THEN 15 S AND A RESET", DISPLAY_WHITE);
+    put_text(27, "PLUGGED INTO THE RAIL: NOTHING BUT THE FAN. NO JOY-CON AND NO USB. THE OFF STEPS RUN BEFORE THE RESET", DISPLAY_WHITE);
+    put_text(28, "A RESET IS NOT CLAIMED TO RESTORE ANY REGISTER. THE OFF STEPS ARE THE ONLY RESTORE AND EACH IS READ BACK", DISPLAY_WHITE);
+    put_text(29, "PASS NEEDS MORE TRANSITIONS AT DUTY 51 THAN IN THE TWO WINDOWS BEFORE. IT IS NOT AN RPM", DISPLAY_WHITE);
+    struct switch_t3_result result;
+    switch_t3_run_on_hardware(&result, show_t3);
+    probe_record[D_T3_STOP_STATE_WRITES] = (uint64_t)result.stop << 48 | (uint64_t)result.state << 40 |
+                                           (uint64_t)result.issued << 32 | result.mismatched << 24 | result.writes << 16 | result.reads;
+    probe_record[D_T3_WINDOW_IDLE] = t3_window_word(&result.window[T3_WINDOW_IDLE]);
+    probe_record[D_T3_WINDOW_RAIL] = t3_window_word(&result.window[T3_WINDOW_RAIL]);
+    probe_record[D_T3_WINDOW_SPINUP] = t3_window_word(&result.window[T3_WINDOW_SPINUP]);
+    probe_record[D_T3_WINDOW_SPIN] = t3_window_word(&result.window[T3_WINDOW_SPIN]);
+    probe_record[D_T3_WINDOW_STOPPED] = t3_window_word(&result.window[T3_WINDOW_STOPPED]);
+    probe_record[D_T3_READBACK_ON_PWM] = (uint64_t)result.readback[T3_W_RAIL_ON] << 32 | result.readback[T3_W_PWM_DUTY];
+    probe_record[D_T3_READBACK_ROUTE_OFF] = (uint64_t)result.readback[T3_W_ROUTE_PWM] << 32 | result.readback[T3_O_PWM_OFF];
+    probe_record[D_T3_READBACK_RAIL_PAD] = (uint64_t)result.readback[T3_O_RAIL_OFF] << 32 | result.readback[T3_O_PARK_PAD];
+}
+#endif
+
 #ifdef SWITCH_DIAG_T1
 /* Rows 9 to 16, full width: T1 draws no register column. */
 static void report_t1(void)
@@ -725,6 +784,8 @@ void switch_diag_after_transition(void)
     put_text(0, "LOAD DIAG T4R. FOUR TKE REGISTER READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T3R)
     put_text(0, "LOAD DIAG T3R. FAN STATE READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO FAN. NO KERNEL. NO BOOT", DISPLAY_GREEN);
+#elif defined(SWITCH_DIAG_T3)
+    put_text(0, "LOAD DIAG T3. FAN ON AT DUTY 51 FOR A FEW SECONDS. RAIL A5 HIGH. NO KERNEL. NO BOOT", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_S2)
     put_text(0, "LOAD DIAG S2. CAR AND SDMMC1 REGISTER READS ONLY. EACH READ SHOWN FIRST. NO WRITE. NO KERNEL. NO BOOT", DISPLAY_GREEN);
 #elif defined(SWITCH_DIAG_T1T)
@@ -771,6 +832,11 @@ void switch_diag_after_transition(void)
             report_t3r();
         else
             put_text(9, "NOT AN ERISTA. NO T3R REGISTER TOUCHED", DISPLAY_RED);
+#elif defined(SWITCH_DIAG_T3)
+        if (known && board->t210b01 == 0)
+            report_t3();
+        else
+            put_text(9, "NOT AN ERISTA. NO T3 REGISTER TOUCHED", DISPLAY_RED);
 #elif defined(SWITCH_DIAG_S2)
         if (known && board->t210b01 == 0)
             report_s2();
@@ -810,6 +876,8 @@ void switch_diag_after_transition(void)
 #elif defined(SWITCH_DIAG_T4R)
     put_text(28, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_T3R)
+    put_text(30, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
+#elif defined(SWITCH_DIAG_T3)
     put_text(30, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #elif defined(SWITCH_DIAG_S2)
     put_text(22, "BOOT STAYS 0. NO KERNEL WINDOW IN THIS BUILD. PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);

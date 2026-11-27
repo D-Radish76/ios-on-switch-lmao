@@ -302,7 +302,7 @@ class RealLink(unittest.TestCase):
 
 class Isolation(unittest.TestCase):
     def test_the_nine_earlier_hashes_are_unchanged_and_t4r_is_the_tenth(self) -> None:
-        lines = [ln.split() for ln in HASHES.splitlines() if ln.startswith('diag_') and ln.split()[0] != 'diag_t3r']
+        lines = [ln.split() for ln in HASHES.splitlines() if ln.startswith('diag_') and ln.split()[0] not in ('diag_t3r', 'diag_t3')]
         self.assertEqual(list(EARLIER) + ['diag_t4r'], [ln[0] for ln in lines])
         for name, short in EARLIER.items():
             self.assertTrue(dict((ln[0], ln[1]) for ln in lines)[name].startswith(short), name)

@@ -1,8 +1,36 @@
-# T3: fan rotation step, design after the first T3-R run
+# T3: fan rotation step
 
-Design of 2026-11-27, updating the T3 section of `ERISTA_THERMAL_DESIGN.md` with what `ERISTA_T3R_RESULT.md` measured. Nothing here is implemented, approved or run. No fan, PWM, GPIO, pinmux or PMC write code exists, and none is written by this round. `boot` stays 0, the feature mask 0, T3 and T4 are not waived, the first XNU run is on HOLD, T3-R is not run again.
+Design of 2026-11-27, revised after the 20:14 JST review. `//boot:diag_t3` implements it offline. It is not approved to run, not on any card and not run. `boot` stays 0, the feature mask 0, T3 and T4 are not waived, the first XNU run is on HOLD, T3-R and T4-R are not run again.
 
 Marks: **measured** (T3-R run of 2026-11-27, photograph), **source** (hekate v6.5.5 read through a summarising fetch, quotes not byte-checked), **inferred**, **unknown**.
+
+## Safety judgement
+
+The review said to stop and report if safety could not be judged. It was judged, relative to hekate's own behaviour and with the open points below kept open. This is not a safety guarantee.
+
+| Question | Answer | Mark |
+| --- | --- | --- |
+| Is the state T3 creates one hekate creates itself? | Yes. Nyx calls `fan_set_from_temp` every 5 s: from 42 C it sets duty 51, and the fan path enables the 5 V rail first (A5 high, and on the Erista CC4 low). T3 reaches the same register state with the same writes | source |
+| What does T3 leave alone? | CC4 and `USB_VBUS_EN0`, `SATA_LED_ACTIVE`, every PMC word, the CAR clock and reset words, `PWM_CSR_0` (backlight), the tach and rail pinmux words, every GPIO `CNF` and `OE` word | design, checked by the allowlist |
+| What if the entry state differs from the measured one? | T3 reads 20 registers first and compares them with what hekate's enabled state needs. Any difference ends the run before the first write | code |
+| CC4 | Its role is **unknown**. hekate labels the line "USB 5V VBUS EN" in the T210 branch and drives it low on enable, and does not say what low means. T3 requires it low and never writes it, so it is no different from hekate's own fan use | source |
+| Other loads on the A5 rail | **unknown**. A Joy-Con on the rail or a USB device would see 5 V, as with hekate's fan. The run sheet requires both detached. Fan current is not measured | unknown |
+| `PWR_DET_VAL` bit 21 | The photograph's digits are unreliable. T3 reads it itself and writes nothing if it is set | code |
+| After `SYSTEM_RESET` | **Not claimed** to restore any register or pin. The off sequence is the only restore, and each of its writes is read back | code |
+| A hang with the rail on | No timeout can leave a hung bus access. The rail limit is checked in the tach loop and between phases, which covers a slow run, not a hang. POWER hold is the only recovery and is unproven for that state | unknown |
+
+Go: the writes are the ones hekate makes in normal operation, under checked preconditions, with an off sequence that always runs. What stays open is absolute: CC4 polarity, rail loads, fan current, behaviour of the rail pin across a reset. The owner decides whether that is enough for a run.
+
+## Changes from the first design
+
+| Review point | In the code |
+| --- | --- |
+| Duty 51 only | The duty 76 word is not in the allowlist or in the image, and a test checks that the gate refuses it |
+| Continue off processing after a readback mismatch | Every off write that undoes a sent write runs, in the order PWM, rail, pad, whatever stopped the run; a mismatch sets the stop code and a mismatch bit and nothing else |
+| Rail limit inside the tach loop | The loop asks `rail_expired` on every pass; it also runs between phases and before each write. 15 s from the rail write |
+| No claim that `SYSTEM_RESET` restores registers | Dropped from the design and printed on the screen |
+| Tach level not fixed to 0 | The state check does not look at the level. Each window records its first and last level and counts changes; the verdict compares counts between windows |
+| Rail and CC4 re-checked | The section above |
 
 ## Where the state at our entry comes from
 
@@ -32,7 +60,7 @@ Each line must be read again by T3 itself before any write. A difference stops t
 | `USB_VBUS_EN0` pinmux | `0x700031A8` | `0x00000101` | already the value hekate writes, so no write |
 | GPIO A | `0x6000D000`, `D010`, `D020` | `0x20`, `0x20`, `0x00` | A5 is a GPIO output driven low (rail off) |
 | GPIO CC | `0x6000D700`, `D710`, `D720` | `0x18`, `0x18`, bit 4 `0` | CC4 is a GPIO output driven low |
-| GPIO S | `0x6000D408`, `D418`, `D438` | S7 `CNF` 1, `OE` 0, `IN` 0 | tach pin is an input, one sample low |
+| GPIO S | `0x6000D408`, `D418`, `D438` | S7 `CNF` 1, `OE` 0, `IN` 0 | tach pin is an input; its level is read and not required to be 0 |
 | GPIO V | `0x6000D504`, `D514` | `0x06`, `0x07`; V4 bits 0 | V4 already special function |
 | PMC `NO_IOPOWER` | `0x7000E444` | `0x00000000` | the GPIO bit is already clear, so no write |
 | PMC `PWR_DET_VAL` | `0x7000E4E4` | bit 21 not confirmed | hekate clears this bit; the photograph's digits are unreliable, so it is re-read before it is trusted |
@@ -40,66 +68,53 @@ Each line must be read again by T3 itself before any write. A difference stops t
 
 Consequence: if all of this holds at run time, hekate's whole `regulator_5v_enable` and fan init reduce to three writes. Nothing else in hekate's fan code has to be repeated, because the handoff already holds its result.
 
-## Write list (design, not code)
+## Write list
 
-Every write is 32 bit, followed at once by a 32 bit read of the same register compared with what was written; a mismatch runs the off sequence. Writes to GPIO bits are read-modify-write with the read-back after, the way hekate's `gpio_write` does it (the masked registers at `+0x80`, `+0x90`, `+0xA0` are not used by hekate and are not proposed).
+Every write is 32 bit and is followed at once by a 32 bit read of the same register. GPIO A is written as a whole word: the state check requires `GPIO_A_OUT` to be zero first, so `0x20` sets A5 and `0x00` returns the register to what it was. No read-modify-write is needed and none is made.
 
 | # | Phase | Register | Write | Basis |
 | --- | --- | --- | --- | --- |
-| W1 | rail on | `0x6000D020` | set bit 5 | `regulator_5v_enable`: A5 high |
-| W2 | duty 51 | `0x7000A010` | `0x80B90000` (`EN`, `236 - 51 = 185 = 0xB9`) | `fan_set_duty(51)`, lowest step of Nyx's curve |
+| W1 | rail on | `0x6000D020` | `0x00000020` | `regulator_5v_enable`: A5 high |
+| W2 | duty 51 | `0x7000A010` | `0x80B90000` (`EN`, `236 - 51 = 185 = 0xB9`) | `fan_set_duty(51)` |
 | W3 | duty 51 | `0x7000320C` | `0x00000001` | route PWM1 to the pad |
-| W4 | optional step | `0x7000A010` | `0x80A00000` (duty 76) | next step of the curve, only after W2 and W3 showed edges |
 | O1 | off | `0x7000A010` | `0x81000000` | hekate's off word |
-| O2 | off | `0x6000D020` | clear bit 5 | rail off |
-| O3 | off | `0x7000320C` | `0x00000074` | pad parked, tristate, pull down |
+| O2 | off | `0x6000D020` | `0x00000000` | rail off |
+| O3 | off | `0x7000320C` | `0x00000074` | pad parked as found |
 
-W3 follows W2 because hekate writes the word first; both happen with the rail already on. The off sequence runs in the order O1, O2, O3 and runs in every ending: a pass, a failed readback, no edges, a spent budget, a failed screen settle. After O3 the loader goes to the shared exit, whose `SYSTEM_RESET` returns every register to its reset state; that is the only restoring step beyond the off sequence, and no run has returned to hekate after a rail was on.
+O1 runs only if W2 was sent, O2 only if W1 was sent, O3 only if W3 was sent. After the off sequence `PWM_CSR_1` holds `0x81000000`, not the `0` found at entry; that is hekate's own off state.
 
-Not written, by design: the CAR reset and clock bits (a reset pulse such as `clock_enable` would zero `PWM_CSR_1` and also `PWM_CSR_0`, which holds the backlight), `PWM_CSR_0`, any PMC register, the pinmux words of the rail and the tach, GPIO CNF and OE. If any of those did not match, the state is not the one this design covers and T3 stops before W1.
+## Phases, windows and verdict
 
-## Tachometer, readback and time
+1. State: 20 reads, then the check. The first difference stops the run with no write.
+2. Idle window, 2 s, rail off.
+3. Rail on (W1), read back, window 2 s.
+4. Duty 51 (W2, W3), read back, spin-up window 1 s, spin window 2 s.
+5. Off (O1, O2, O3), each read back.
+6. Stopped window, 2 s, rail off.
 
-Order of a run, after the same screen conventions as T3-R (each line shown and settled before the step it announces):
+A line is drawn and settled before each phase starts and again when it ends. A line that does not draw stops the run before the next write; with the rail on, the off sequence follows.
 
-1. Read the table above. Stop with no write on any difference or a closed PWM gate.
-2. Count S7 edges for 2 s with the rail off and PWM off: expected none. Edges here mean the pin picks up noise or another source, and the counts below would not be comparable.
-3. W1, settle, count 2 s: rail on, fan not driven.
-4. W2, W3, 1 s spin-up, count 2 s.
-5. Optionally W4, 1 s, count 2 s.
-6. O1, O2, O3, read back each, one more 2 s count after a short settle to show the fan stopped.
-7. Shared exit.
+A window polls the tach pad (`GPIO_S_IN` bit 7) as fast as the loop goes and counts level changes and samples. Polling breaks the repository's rule to prefer interrupts. It is bounded to short windows with no kernel running, and an interrupt path needs GIC and GPIO interrupt writes that no run has tried. The review decides.
 
-Counting follows hekate's `fan_get_speed`: poll S7 (`0x6000D438` bit 7) and count a low to high transition each time, two edges per revolution (rpm is not claimed). The loop also counts its own iterations, so the screen shows how many samples a window got; a count taken with too few samples says nothing. Polling breaks the repository rule to prefer interrupts. For this diagnostic it is bounded to 2 s windows with no kernel running; an interrupt path would need GIC and GPIO interrupt writes that no run has tried, which adds risk for a one-time measurement. The review decides.
+Pass: the spin window has at least 4 changes, more than the idle window and the rail window, and each of the three has at least 1000 samples. No absolute rpm is claimed. A count with too few samples is no verdict. No pass runs the off sequence and reports; there is no retry and no higher duty.
 
-Time limits (provisional, none measured): each window is 2 s of `CNTPCT` at 19.2 MHz; the rail may stay on at most 15 s from W1, after which the off sequence runs whatever else is pending; the whole step is capped like T3-R at 20 s for its reads plus the 15 s dwell. A person holds POWER if no new line appears for 30 s. These are not safety guarantees.
+## Time limits
 
-Pass means: the edge count at duty 51 is above zero while the counts in steps 2 and 3 were zero. A higher count at duty 76 is reported, not required (the polling can lose edges, and the fan's range is unknown). No edge at duty 51: off sequence and report, no retry, no higher duty. No absolute rpm is claimed.
-
-## The shared 5 V rail
-
-Source: `regulator_5v.c` has a comment that A5 is "Fan and Rail power from battery 5V regulator EN". Neither the rail connector's consumers nor the fan's current are known here. What follows is open:
-
-- **Other loads on the same enable.** A5 high powers more than the fan; a Joy-Con on the rail or a USB device would see 5 V. Whether the owner's setup has either attached is unknown. The run sheet must state what is attached, ideally nothing.
-- **USB VBUS (CC4, `USB_VBUS_EN0`).** On the Erista hekate also switches this line when it enables the rail. At our entry it is already low with the pinmux word hekate writes; T3 leaves it alone. Whether low means VBUS off or a source select is not settled by this round.
-- **Order of the enable.** hekate's first enable also sets the source pins and PMC bits; those match at entry, so T3 does not repeat them. If a run shows otherwise, W1 is not safe to assume.
-- **After a reset with the rail left on.** A SoC reset puts A5 back to its reset state; what the pad does then is unknown. That is why the off sequence comes first.
-- **A hang with the rail on.** Not covered by any timeout; POWER hold is the only recovery and is unproven for that state.
+All on `CNTPCT` at 19.2 MHz, provisional and not measured on the console: state reads 20 s, windows 2 s and 1 s, rail on 15 s at most, a sample limit per window. A counter at another frequency makes every wait and limit count as spent. A person holds POWER if no new line appears for 30 s. These are not safety guarantees.
 
 ## Unknown, and what would settle it
 
 | Item | Settled by |
 | --- | --- |
 | Reset value of `PWM_CSR_1`, bit meaning of `0x100 << 16`, edge rate per revolution | the TRM, or the fan's own count |
-| Whether `PWR_DET_VAL` bit 21 is clear at entry | a reading by T3, or the fixed T3-R image |
-| The raw CAR words | the fixed T3-R image, or T3's own read |
-| Fan current, rail loads, spin-up time | not measurable by the loader; a bench measurement by the owner would |
+| CC4 polarity and what hangs on the rail | the schematic, or a bench measurement by the owner |
+| Whether `PWR_DET_VAL` bit 21 is clear at entry | T3's own state read |
+| Whether `PWM_CSR_1` and the pad word read back exactly as written | a run, after approval; if not, T3 stops and runs the off sequence |
 | U-Boot's and BL31's PWM handling | source of the pinned `bl33.bin`, not available; the offline scan is partial |
 | Behaviour of the rail pin across `SYSTEM_RESET` | a run, after approval |
 
 ## Order of work
 
-1. The owner reviews this design and the write list.
-2. A Mac check of the fixed T3-R image. A T3-R re-run is forbidden now; T3 reads every register it needs itself, so a re-run is optional and is the owner's decision.
-3. Implementation as a new image with its own allowlist (21 reads, 7 writes at most), audit, host tests and hash record, ten earlier hashes unchanged. Not begun.
-4. Run sheet, card procedure and approval as for T3-R, with what is plugged into the rail named.
+1. The owner reviews this design, the write list and the safety judgement.
+2. A Mac check of the T3 commit: build, host tests, audit, `diag_images`.
+3. Run sheet, card procedure and approval in `ERISTA_T3_RUN.md`, naming what is plugged into the rail.
