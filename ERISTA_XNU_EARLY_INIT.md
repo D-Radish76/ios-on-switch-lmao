@@ -39,7 +39,8 @@ Later subsystems (`KPRINTF` and after) run from `arm_init.c:567` and `kernel_boo
 ## Page tables on the A57
 
 - The tree has a native 4 KiB path for a non-Apple family: `pmap.h:118-121` (`!defined(APPLE_ARM64_ARCH_FAMILY) && !__ARM_16K_PG__`, "Native 4 KiB", `BOOTSTRAP_TABLE_SIZE` for two roots and seven L2 pages), `proc_reg.h:818-826` (`TCR_TG0_GRANULE_SIZE` is 4 KiB without `__ARM_16K_PG__`), `proc_reg.h:943-956` and `:972-1000` (`T0SZ_BOOT` and `T1SZ_BOOT` 26 with `__ARM64_PMAP_SUBPAGE_L1__`, `TCR_EL1_BASE` with 40 bit IPS, outer-shareable write-back walks, `TBI0`, no PAC bits, no E0PD, 8 bit ASIDs). **Confirmed.**
-- A Cortex-A57 has the 4 KiB granule and no 16 KiB granule, which is why the loader refuses a core that lacks TGran4 and says nothing about 16 KiB. Whether the final kernel defines `__ARM_16K_PG__` was not shown by a compile in this session: the recipes do not set it and the compiler may. **Unknown here**; the 4 KiB branch exists and the OLED boots with this tree, which is **inferred** evidence that the build is 4 KiB. A Mac check of the built kernel's `TCR_EL1` value or `PAGE_SIZE` would settle it.
+- A Cortex-A57 has the 4 KiB granule and no 16 KiB granule, which is why the loader refuses a core that lacks TGran4.
+- **Confirmed from the built binary** (owner's Mac, commit 15a868155, disassembly and data dump of `kernel.macho`): `common_start` loads the initial `TCR_EL1` from `0xfffffff0071ef290` (`adrp`/`add #0x290`, `ldr x1, [x0]`, `msr TCR_EL1, x1` at `0xfffffff0075cf3f4-0xfffffff0075cf400`). The data is `1a251aa5 22000000`, so `TCR_EL1` = `0x00000022A51A251A`: TG0 4 KiB, TG1 4 KiB, IPS 40 bit, T0SZ 26, T1SZ 26, TBI0 on. The initial MMU setup is 4 KiB in the built kernel. This is a static reading of the binary, not a run on the console: whether the A57 accepts it is still **unknown** until the first XNU run.
 - The framebuffer block entries of stage 3 use 2 MiB blocks at `0xf5a00000` and `0xf5c00000` with device attributes, which a 4 KiB granule allows at level 2 (**inferred**: `start.s` writes slots `0xd68` and `0xd70` of the bootstrap table).
 - 40 bit IPS suits the A57's 40 bit physical range (**inferred**; `ID_AA64MMFR0_EL1.PARange` was not recorded here). Erista DRAM and MMIO addresses are below `0x2_0000_0000`.
 - `__ARM_COHERENT_CACHE__ 1` tells XNU that device DMA is cache coherent. Whether the Tegra memory controller path to DRAM is coherent for the SD DMA and later clients is **unknown**; `NativeSwitchBlock` does its own handling (`SwitchAdma.h`, `SwitchClientCopy.h`; not read for this).
@@ -64,7 +65,6 @@ Effect, **inferred**: on arm64 `pe_arm_init_timer` only registers empty callback
 
 ## Still unknown after this reading
 
-- The `__ARM_16K_PG__` setting of the built kernel (a Mac check settles it).
 - Apple instructions in `osfmk/arm64` beyond `start.s`, and every macro-generated STARTUP entry.
 - What user space does with `hw.cpufamily` 0.
 - The coherency of the Tegra DMA paths.
