@@ -75,6 +75,8 @@ One-shot is the first choice (TI TMP451 datasheet):
 
 ### T3: fan
 
+Updated 2026-11-27 after the first T3-R run: the state at our entry, the write list and the 5 V rail are in `ERISTA_T3_FAN_DESIGN.md`. The text below is the earlier design.
+
 Source: hekate `fan.c`, `regulator_5v.c`, `gpio.c`, `pinmux.c`, `clock.c`. Initial state to read first, none written: CAR PWM clock and reset bits, `PWM_CSR_1` (0x7000A010), GPIO A5 and CC4 (CNF, OE, OUT), pinmux `SATA_LED_ACTIVE` (0x4C), `USB_VBUS_EN0` (0x1A8), `LCD_GPIO2` (0x20C), `CAM1_PWDN` (0x1EC). `PWM_CSR_1` is read only when the PWM clock is on.
 
 Order, as hekate does it, with one change at the front:

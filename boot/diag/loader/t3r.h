@@ -93,6 +93,7 @@ enum switch_t3r_step {
     T3R_STEP_START = 0,
     /* BEGIN of read i is 1 + 2 i, its RESULT 2 + 2 i, for i = 0 to 21 */
     T3R_STEP_SKIP_PWM = 1 + 2 * T3R_READ_COUNT,
+    T3R_STEP_CAR,
     T3R_STEP_FAN,
     T3R_STEP_ROUTE,
     T3R_STEP_RAIL,

@@ -643,6 +643,8 @@ static void report_t4r(void)
 #define T3R_RIGHT_COLUMN 656u
 _Static_assert(LEFT + SWITCH_T3R_CELL * GLYPH_WIDTH <= T3R_RIGHT_COLUMN, "the cells do not overlap");
 _Static_assert(T3R_RIGHT_COLUMN + SWITCH_T3R_CELL * GLYPH_WIDTH <= SCREEN_WIDTH, "the right column is on the screen");
+_Static_assert(9 + SWITCH_T3R_SUMMARY_FIRST_ROW + 5 < 26, "the summary rows end above the notes");
+_Static_assert(LEFT + SWITCH_DIAG_LINE_MAX * GLYPH_WIDTH <= SCREEN_WIDTH, "a full width line is on the screen");
 
 static int show_t3r(void *context, unsigned step, const struct switch_t3r_result *result)
 {

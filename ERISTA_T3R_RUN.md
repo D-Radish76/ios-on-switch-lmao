@@ -51,7 +51,7 @@ bazel test --config=ios17 //boot/diag/loader/test:t3r_test //tools/package/test:
 python3 tools/package/diag_mmio_audit.py --disassembly bazel-bin/boot/diag_t3r/loader.dis --uboot-image bazel-bin/boot/diag_t3r/loader.uboot.bin --t3r
 ```
 
-The audit must end with `AUDIT PASSED (T3-R)`. The Linux flat hash is `fc904cfc...` (`boot/diag/erista-diag-image-hashes.txt`); the Mac's flat hash is in the Mac record below, and its `loader.uboot.bin` is a different file. `boot/diag/erista-t3r-mmio-audit.txt` is the Linux audit; the Mac regenerates it from its own image. The package entry is `ios-diag-t3r`, the hekate name `iOS Diag T3R`.
+The audit must end with `AUDIT PASSED (T3-R)`. The Linux flat hash is `075d6816...` after the 2026-11-27 fixes (`boot/diag/erista-diag-image-hashes.txt`; `fc904cfc...` before them); the Mac's flat hash is in the Mac record below, and its `loader.uboot.bin` is a different file. `boot/diag/erista-t3r-mmio-audit.txt` is the Linux audit; the Mac regenerates it from its own image. The package entry is `ios-diag-t3r`, the hekate name `iOS Diag T3R`.
 
 ## Mac record (owner's report, 2026-11-27 13:58 JST, commit `4a903d590`)
 
@@ -70,7 +70,7 @@ The Mac flat hash differs from the Linux one (`fc904cfc...`) because the toolcha
 
 ## First run
 
-Run once by the owner on 2026-11-27 (report 16:10 JST): reads 22, stop 0000, no writes, automatic return to hekate. Two defects of the image were found (the `DID NOT ADVANCE` flag and the overlapping summary lines) and `PWM_CSR_1` read `0x00000000`, not hekate's off word. Details and the separation of read success from display faults: `ERISTA_T3R_RESULT.md`. This run is not repeated. GPIO and PMC reads at non-secure EL1 answered in that one run; the "unconfirmed" wording below is the state before it.
+Run once by the owner on 2026-11-27 (report 16:10 JST): reads 22, stop 0000, no writes, automatic return to hekate. Two defects of the image were found (the `DID NOT ADVANCE` flag and the overlapping summary lines) and `PWM_CSR_1` read `0x00000000`, not hekate's off word. Details and the separation of read success from display faults: `ERISTA_T3R_RESULT.md`. This run is not repeated. The display defects are fixed in the code and checked offline; the fixed image has no Mac check and no run, and the Mac record below is of the image that was run. GPIO and PMC reads at non-secure EL1 answered in that one run; the "unconfirmed" wording below is the state before it.
 
 ## Recovery rehearsal (owner's report, 2026-11-27 14:47 JST)
 

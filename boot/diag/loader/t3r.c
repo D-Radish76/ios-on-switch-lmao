@@ -19,7 +19,9 @@ static uint32_t get(const struct switch_t3r_io *io, struct switch_t3r_result *re
     return io->read(io->context, reg);
 }
 
-/* Shows BEGIN, reads, shows RESULT. Returns 0 when the run has to end: a refused read or a line that did not settle. */
+/* Shows BEGIN, reads, derives what the RESULT line shows, shows RESULT. Returns 0 when the run has to end: a refused read or a line that did not settle. */
+static void derive(struct switch_t3r_result *result, unsigned reg, int second_tmrus);
+
 static int step_read(const struct switch_t3r_io *io, struct switch_t3r_result *result, unsigned reg, uint32_t *value,
                      unsigned index)
 {
@@ -29,6 +31,7 @@ static int step_read(const struct switch_t3r_io *io, struct switch_t3r_result *r
     if (result->stop)
         return 0;
     result->seen |= 1u << reg;
+    derive(result, reg, index == T3R_READ_COUNT - 1);
     return shown(io, result, SWITCH_T3R_STEP_RESULT(index));
 }
 
@@ -124,12 +127,14 @@ int switch_t3r_advanced(uint32_t first, uint32_t second)
     return delta != 0 && delta < 0x80000000u;
 }
 
-static void after_read(struct switch_t3r_result *result, unsigned reg)
+static void derive(struct switch_t3r_result *result, unsigned reg, int second_tmrus)
 {
     if (reg == T3R_CAR_CLK_OUT_ENB_L)
         result->gate = switch_t3r_pwm_gate(result->value[T3R_CAR_RST_DEVICES_L], result->value[T3R_CAR_CLK_OUT_ENB_L]);
     if (reg == T3R_PWM_CSR_1)
         result->pwm = switch_t3r_pwm_classify(result->value[T3R_PWM_CSR_1], &result->pwm_why, &result->pwm_duty);
+    if (reg == T3R_TMRUS && second_tmrus)
+        result->tmrus_advanced = switch_t3r_advanced(result->value[T3R_TMRUS], result->tmrus_second);
 }
 
 static int read_sequence(const struct switch_t3r_io *io, struct switch_t3r_result *result)
@@ -153,15 +158,13 @@ static int read_sequence(const struct switch_t3r_io *io, struct switch_t3r_resul
             result->stop = SWITCH_T3R_STOP_ALL_ONES;
             return 0;
         }
-        after_read(result, reg);
     }
-    result->tmrus_advanced = switch_t3r_advanced(result->value[T3R_TMRUS], result->tmrus_second);
     return 1;
 }
 
 void switch_t3r_run(const struct switch_t3r_io *io, struct switch_t3r_result *result)
 {
-    static const unsigned summaries[] = {T3R_STEP_FAN, T3R_STEP_ROUTE, T3R_STEP_RAIL, T3R_STEP_TACH};
+    static const unsigned summaries[] = {T3R_STEP_CAR, T3R_STEP_FAN, T3R_STEP_ROUTE, T3R_STEP_RAIL, T3R_STEP_TACH};
     /* A struct assignment would call memset, which the loader image does not link. */
     for (volatile uint8_t *p = (volatile uint8_t *)result; p < (volatile uint8_t *)(result + 1); ++p)
         *p = 0;

@@ -6,6 +6,8 @@
 /* Cells of a read line are this many characters wide; the left and right column each hold 11 reads. */
 #define SWITCH_T3R_CELL        50u
 #define SWITCH_T3R_COLUMN_ROWS 11u
+/* The summary lines use the full width on the rows below the two read columns. */
+#define SWITCH_T3R_SUMMARY_FIRST_ROW SWITCH_T3R_COLUMN_ROWS
 
 struct switch_t3r_line {
     struct switch_diag_line text;

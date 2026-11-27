@@ -2,6 +2,7 @@
 // conditions, the read budget and the screen lines.
 #include <gtest/gtest.h>
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@ struct Fake {
     uint32_t value[T3R_REG_COUNT] = {};
     uint32_t tmrus_second = 1200000;
     std::vector<std::string> events; // "show N" and "read N" in the order they happened
+    std::map<unsigned, switch_t3r_result> drawn; // the result structure as each step was shown
     int refuse_step = -1;
     int expire_at_check = -1; // the nth call of expired() and every later one answer yes
     int checks = 0;
@@ -32,10 +34,11 @@ struct Fake {
         value[T3R_GPIO_S_CNF] = 0x80;
     }
 
-    static int show(void *context, unsigned step, const switch_t3r_result *)
+    static int show(void *context, unsigned step, const switch_t3r_result *result)
     {
         Fake *self = static_cast<Fake *>(context);
         self->events.push_back("show " + std::to_string(step));
+        self->drawn[step] = *result;
         return static_cast<int>(step) != self->refuse_step;
     }
 
@@ -329,12 +332,12 @@ TEST(T3R, TheSummariesAreShownOnlyWhenAllTheReadsWereMade)
 {
     Fake fake;
     fake.run();
-    for (unsigned step : {T3R_STEP_FAN, T3R_STEP_ROUTE, T3R_STEP_RAIL, T3R_STEP_TACH, T3R_STEP_COMPLETE})
+    for (unsigned step : {T3R_STEP_CAR, T3R_STEP_FAN, T3R_STEP_ROUTE, T3R_STEP_RAIL, T3R_STEP_TACH, T3R_STEP_COMPLETE})
         EXPECT_NE(fake.events.end(), std::find(fake.events.begin(), fake.events.end(), "show " + std::to_string(step)));
     Fake stopped;
     stopped.value[T3R_GPIO_S_OE] = 0xFFFFFFFF;
     stopped.run();
-    for (unsigned step : {T3R_STEP_FAN, T3R_STEP_ROUTE, T3R_STEP_RAIL, T3R_STEP_TACH})
+    for (unsigned step : {T3R_STEP_CAR, T3R_STEP_FAN, T3R_STEP_ROUTE, T3R_STEP_RAIL, T3R_STEP_TACH})
         EXPECT_EQ(stopped.events.end(), std::find(stopped.events.begin(), stopped.events.end(), "show " + std::to_string(step)));
     EXPECT_EQ("show " + std::to_string(T3R_STEP_COMPLETE), stopped.events.back());
 }
@@ -362,7 +365,7 @@ TEST(T3R, ScreenLinesNameTheAddressAndWidthBeforeAndTheValueAfterAndFitTheirCell
     EXPECT_NE(std::string::npos, text_of(SWITCH_T3R_STEP_RESULT(3), result).find("81000000 OFF AS HEKATE"));
     EXPECT_NE(std::string::npos, text_of(SWITCH_T3R_STEP_RESULT(4), result).find("00000074 AS EXPECTED"));
     EXPECT_NE(std::string::npos, text_of(SWITCH_T3R_STEP_RESULT(5), result).find("00000059 AS EXPECTED"));
-    EXPECT_NE(std::string::npos, text_of(SWITCH_T3R_STEP_RESULT(21), result).find("ADV 200000 US"));
+    EXPECT_NE(std::string::npos, text_of(SWITCH_T3R_STEP_RESULT(21), fake.drawn[SWITCH_T3R_STEP_RESULT(21)]).find("ADV 200000 US"));
     EXPECT_NE(std::string::npos, text_of(T3R_STEP_COMPLETE, result).find("READS 22. STOP 0000. NO WRITES"));
 }
 
@@ -400,4 +403,141 @@ TEST(T3R, AnUnknownPwmWordIsRedWithItsReason)
     EXPECT_NE(std::string::npos, text.find("UNKNOWN"));
     EXPECT_NE(std::string::npos, text.find("BITS OUTSIDE ENABLE"));
     EXPECT_TRUE(line.bad);
+}
+
+TEST(T3R, TheTimerLineIsDerivedBeforeItIsDrawnWithTheRawValuesOfTheFirstRun)
+{
+    Fake fake;
+    fake.value[T3R_TMRUS] = 0x0680CFDD;
+    fake.tmrus_second = 0x06C1B6A5;
+    fake.run();
+    const switch_t3r_result &shown = fake.drawn[SWITCH_T3R_STEP_RESULT(21)];
+    EXPECT_EQ(0x06C1B6A5u, shown.tmrus_second);
+    EXPECT_TRUE(shown.tmrus_advanced);
+    const std::string text = text_of(SWITCH_T3R_STEP_RESULT(21), shown);
+    EXPECT_NE(std::string::npos, text.find("06C1B6A5"));
+    EXPECT_NE(std::string::npos, text.find("ADV 4253384 US"));
+    EXPECT_EQ(std::string::npos, text.find("DID NOT ADVANCE"));
+    EXPECT_FALSE(fake.drawn[SWITCH_T3R_STEP_BEGIN(21)].tmrus_advanced);
+}
+
+TEST(T3R, ATimerThatDidNotMoveIsStillShownAsSuchAtDrawTime)
+{
+    Fake fake;
+    fake.tmrus_second = fake.value[T3R_TMRUS];
+    fake.run();
+    switch_t3r_line line;
+    const std::string text = text_of(SWITCH_T3R_STEP_RESULT(21), fake.drawn[SWITCH_T3R_STEP_RESULT(21)], &line);
+    EXPECT_NE(std::string::npos, text.find("DID NOT ADVANCE"));
+    EXPECT_TRUE(line.bad);
+}
+
+TEST(T3R, TheCarAndPwmResultLinesHoldTheirTagsWhenTheyAreDrawn)
+{
+    Fake fake;
+    fake.value[T3R_PWM_CSR_1] = 0;
+    fake.run();
+    switch_t3r_line clk;
+    const std::string clk_text = text_of(SWITCH_T3R_STEP_RESULT(2), fake.drawn[SWITCH_T3R_STEP_RESULT(2)], &clk);
+    EXPECT_NE(std::string::npos, clk_text.find("PWM CLOCK ON"));
+    EXPECT_FALSE(clk.bad);
+    const std::string pwm = text_of(SWITCH_T3R_STEP_RESULT(3), fake.drawn[SWITCH_T3R_STEP_RESULT(3)]);
+    EXPECT_NE(std::string::npos, pwm.find("00000000 DISABLED"));
+    EXPECT_EQ(static_cast<unsigned>(T3R_GATE_OPEN), fake.drawn[SWITCH_T3R_STEP_RESULT(2)].gate);
+}
+
+TEST(T3R, TheCarLineShowsBothRawWordsAndTheGate)
+{
+    Fake fake;
+    fake.run();
+    switch_t3r_line line;
+    std::string text = text_of(T3R_STEP_CAR, fake.drawn[T3R_STEP_CAR], &line);
+    EXPECT_NE(std::string::npos, text.find("RST_DEV_L 049102CA"));
+    EXPECT_NE(std::string::npos, text.find("CLK_ENB_L 9802D131"));
+    EXPECT_NE(std::string::npos, text.find("GATE OPEN"));
+    EXPECT_FALSE(line.bad);
+    Fake closed;
+    closed.value[T3R_CAR_CLK_OUT_ENB_L] = 0x9800D131;
+    closed.run();
+    text = text_of(T3R_STEP_CAR, closed.drawn[T3R_STEP_CAR], &line);
+    EXPECT_NE(std::string::npos, text.find("CLK_ENB_L 9800D131"));
+    EXPECT_NE(std::string::npos, text.find("GATE CLOSED"));
+    EXPECT_TRUE(line.bad);
+}
+
+namespace {
+struct Rect {
+    unsigned step, row, right, length;
+    bool read;
+};
+
+std::vector<Rect> layout(Fake &fake)
+{
+    std::vector<Rect> rects;
+    for (const auto &entry : fake.drawn) {
+        switch_t3r_line line;
+        switch_t3r_screen_line(entry.first, &entry.second, &line);
+        const bool read = entry.first >= SWITCH_T3R_STEP_BEGIN(0) && entry.first < T3R_STEP_SKIP_PWM;
+        rects.push_back({entry.first, line.row, line.right, static_cast<unsigned>(std::string(line.text.text).size()), read});
+    }
+    return rects;
+}
+
+std::vector<Fake> variants()
+{
+    std::vector<Fake> all(5);
+    all[1].value[T3R_PWM_CSR_1] = 0;
+    all[2].value[T3R_PWM_CSR_1] = 0x8000FFFF;
+    all[3].value[T3R_CAR_CLK_OUT_ENB_L] = 0x9800D131;
+    all[4].value[T3R_CAR_RST_DEVICES_L] = 0x049302CA;
+    all[4].value[T3R_GPIO_A_OUT] = 0x20;
+    return all;
+}
+} // namespace
+
+TEST(T3R, ReadLinesStayInTheirTwoColumnsAndSummariesInTheirOwnRowsBelow)
+{
+    for (Fake &fake : variants()) {
+        fake.run();
+        std::set<std::pair<unsigned, unsigned>> read_cells;
+        std::map<unsigned, unsigned> summary_rows;
+        for (const Rect &r : layout(fake)) {
+            if (r.read) {
+                EXPECT_LT(r.row, SWITCH_T3R_COLUMN_ROWS) << r.step;
+                EXPECT_LE(r.length, SWITCH_T3R_CELL) << r.step;
+                if (r.step % 2 == 0)
+                    EXPECT_TRUE(read_cells.insert({r.row, r.right}).second) << "two reads share a cell " << r.step;
+            } else if (r.step >= T3R_STEP_CAR) {
+                EXPECT_GE(r.row, static_cast<unsigned>(SWITCH_T3R_SUMMARY_FIRST_ROW)) << r.step;
+                EXPECT_EQ(0u, r.right) << r.step;
+                EXPECT_LE(r.length, static_cast<unsigned>(SWITCH_DIAG_LINE_MAX)) << r.step;
+                EXPECT_TRUE(summary_rows.insert({r.row, r.step}).second) << "two summaries share row " << r.row;
+            }
+        }
+        EXPECT_EQ(6u, summary_rows.size());
+        EXPECT_EQ(static_cast<unsigned>(SWITCH_T3R_SUMMARY_FIRST_ROW) + 5u, summary_rows.rbegin()->first);
+    }
+}
+
+TEST(T3R, ABeginLineAndItsResultLineShareACellAndNoLineUsesAGlyphTheFontLacks)
+{
+    const std::string font = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:-.=/()_? ";
+    for (Fake &fake : variants()) {
+        fake.run();
+        for (const auto &entry : fake.drawn) {
+            switch_t3r_line line;
+            switch_t3r_screen_line(entry.first, &entry.second, &line);
+            for (char c : std::string(line.text.text))
+                EXPECT_NE(std::string::npos, font.find(c)) << entry.first << " " << c;
+        }
+        for (unsigned i = 0; i < 22; ++i) {
+            if (!fake.drawn.count(SWITCH_T3R_STEP_BEGIN(i)))
+                continue;
+            switch_t3r_line begin, done;
+            switch_t3r_screen_line(SWITCH_T3R_STEP_BEGIN(i), &fake.drawn[SWITCH_T3R_STEP_BEGIN(i)], &begin);
+            switch_t3r_screen_line(SWITCH_T3R_STEP_RESULT(i), &fake.drawn[SWITCH_T3R_STEP_RESULT(i)], &done);
+            EXPECT_EQ(begin.row, done.row);
+            EXPECT_EQ(begin.right, done.right);
+        }
+    }
 }

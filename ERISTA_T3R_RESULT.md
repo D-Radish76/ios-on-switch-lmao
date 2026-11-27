@@ -11,7 +11,7 @@ Values below were read from the photograph and the owner's report. The photo is 
 | 1 | The 22 reads were made, the loader stopped with code 0000 and hekate came back by itself | success |
 | 2 | The last `TMRUS` line says `DID NOT ADVANCE` although the counter advanced | display bug in T3-R, not a timer fault |
 | 3 | The summary lines overwrite the result lines of reads 2 to 6 and spill into the right column | screen layout bug in T3-R |
-| 4 | `PWM_CSR_1` is `0x00000000`, not `0x81000000` | a result that differs from the prediction, cause open |
+| 4 | `PWM_CSR_1` is `0x00000000`, not `0x81000000` | a result that differs from the prediction; a likely cause is inferred from the source (below) |
 
 ### 1. Reads and return
 
@@ -40,20 +40,15 @@ What this hides on the screen: the result lines of `RST_DEV_L`, `CLK_ENB_L`, `PW
 
 Observed: `00000000`, shown as `DISABLED OUT OF RESET`. The enable bit and every other bit are clear. The classifier did its job: zero is a defined state (DISABLED), not UNKNOWN.
 
-What the source says (hekate v6.5.5 `fan.c`, read through a summarising fetch, not byte-checked): `fan_set_duty` writes `PWM_CSR_1` in its one-time initialisation and in every duty change; the off value is the enable bit with `0x100 << 16`. If `fan_set_duty` had run on this path and nothing reset the PWM block afterwards, the word would be `0x81000000`. It is not. So at least one of these holds, and this run cannot tell which:
+The follow-up reading of hekate v6.5.5 (2026-11-27, summarising fetch, quotes not byte-checked) gives a likely cause. The owner starts diagnostics from Nyx. Nyx's `_launch_hos` runs `hw_deinit(false)` with `BDK_HW_EXTRA_DEINIT`, whose `fan_set_duty(0)` writes `0x81000000`, and then jumps to hekate's `ipl_main`. `ipl_main` calls `display_backlight_pwm_init()`, which calls `clock_enable_pwm()`. `clock_enable` puts the PWM module into reset, enables the clock and releases the reset. A reset of the block clears `PWM_CSR_1` along with the backlight's `PWM_CSR_0`, which hekate then writes again. That ordering ends with `PWM_CSR_1` at zero, clock on and reset released, as seen. The first T3-R design did not follow `ipl_main` this far and predicted `0x81000000`. This is **inferred**: each step is in the source, nothing in the chain was observed on its own, and the reset value of the register is not confirmed (no TRM here). The pinned U-Boot `bl33.bin` has no PWM block literal (partial scan), so it is not the likely writer.
 
-| Candidate | What it needs | What would settle it |
-| --- | --- | --- |
-| `fan_set_duty` never ran on the Nyx, hekate and U-Boot path before our loader | no caller on that path | reading the callers of `fan_set_duty` in hekate and Nyx v6.5.5 for the launch path |
-| The PWM block was reset after it ran | a reset pulse of `RST_DEVICES_L` bit 17 with the clock left on | the `hw_deinit` and clock code of hekate and U-Boot; the raw CAR words (record word) do not show a past pulse |
-| The word was never anything but its reset value | the reset value of `PWM_CSR_1` is zero | the TRM, which is not in the repository |
+What stays unknown: the register's reset value, and whether anything else cleared it. The pinmux words `0x74` and `0x59` match what Nyx's deinit and fan init write, but may equal reset defaults too.
 
-The pinmux words do not choose between them. `LCD_GPIO2` `0x74` (input, parked, tristate, pull down) is what hekate's off branch writes, and `CAM1_PWDN` `0x59` is what its init writes on T210; both could equally be reset defaults. That is unknown here: the reset values are in the TRM.
-
-What it means for the fan work, and what it does not:
-- The handoff state is not hekate's off word. A later fan step must not assume `0x81000000`; it has to program the whole word itself and read it back.
-- `LCD_GPIO2` is tristated, parked and pulled down, so the pad is not driving the fan line. That is an inference from the pad word. No fan speed, tach edge or 5 V rail voltage was measured, so "the fan is off" is not established.
-- The one off-state word T3-R was built to confirm (`OFF AS HEKATE`) was not seen. The prediction table (`ERISTA_T3R_DESIGN.md`) is wrong for this row.
+What it means for the fan work (`ERISTA_T3_FAN_DESIGN.md`):
+- The state at our entry is `PWM_CSR_1` zero, not hekate's off word. A fan step writes the whole word itself and reads it back.
+- A fan step must not touch the PWM clock or reset bits: a reset pulse would zero `PWM_CSR_1` and `PWM_CSR_0`, which holds the backlight.
+- `LCD_GPIO2` is tristated, parked and pulled down, so the pad is not driving the fan line. That is an inference from the pad word. No fan speed, tach edge or 5 V voltage was measured, so "the fan is off" is not established.
+- The one off-state word T3-R was built to confirm (`OFF AS HEKATE`) was not seen; the prediction table in `ERISTA_T3R_DESIGN.md` was wrong for this row.
 
 ## Other values
 
@@ -76,10 +71,11 @@ What it means for the fan work, and what it does not:
 
 No fan rotation, tach edge count, 5 V voltage or temperature response was measured. A single run says nothing about repeatability. The state is the one after hekate and U-Boot on this launch path, with Auto Boot off.
 
-## Fixes, not made
+## Fixes made offline
 
-For a later round, only after an owner decision, and a changed image has a new hash and needs its own Mac check and approval. T3-R is not run again now.
-1. Compute the `TMRUS` advance in `step_read` before the last RESULT line is drawn, or have `result_line` compute it from the two values it already holds.
-2. Give the summary lines their own rows (21 to 25), not `place()`, and keep each under 50 cells or give it the full width on rows no read uses.
-3. Tests that look at the structure given to the screen callback at draw time, and a check that no summary row equals a read row.
-4. Show the two CAR words on screen so the gate decision is auditable from a photograph.
+Code changed after this analysis, checked offline only. T3-R is not run again, and the fixed image has no Mac check yet.
+1. The derived values (`TMRUS` advance, PWM gate, PWM class) are computed in `step_read` before the RESULT line is drawn; the end-of-loop assignment is gone. This also fixes the CLK and PWM result lines, whose tags came from fields that were still unset at draw time.
+2. Summary lines have their own rows: `SWITCH_T3R_SUMMARY_FIRST_ROW` (screen row 20) for the new CAR line, then FAN, ROUTE, RAIL, TACH and COMPLETE on rows 21 to 25, full width, below the two read columns and above the notes at row 26. A full-width line fits the screen (`LEFT + 104 * 12 <= 1280`, asserted in `diag.c`).
+3. A CAR line shows both raw words, bit 17 of each and whether the gate is open. A comma in two message strings (the font has none) is gone, and a test now checks every screen string against the font.
+4. Tests: the host test keeps a copy of the result structure as each step is drawn and checks the timer line with the raw words of this run (`0x0680CFDD`, `0x06C1B6A5`, `ADV 4253384 US`), the CLK and PWM tags, the CAR line, that no summary row equals a read row, that read cells do not collide, and that every string uses glyphs the font has. Changing the code back to the old order or the old rows makes these fail (checked with two mutations on the host).
+5. The Linux flat hash of `diag_t3r` is now `075d6816...`; the ten earlier hashes are unchanged and `diag_images` reports eleven inspections.

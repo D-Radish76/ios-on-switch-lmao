@@ -125,8 +125,9 @@ A DUTY line is a reading of hekate's formula, not a statement that a fan turns.
 
 ## Screen
 
-1280 by 720, two columns of 50 character cells. Reads 1 to 11 are in the left column at rows 9 to 19, reads 12 to 22 in the right at the same rows; a BEGIN line is overwritten in place by its RESULT line. The glyph set has no comma and no plus, so lines use letters, digits and `: - . = / ( ) _ ?`. Rows 21 to 25 hold FAN, ROUTE, RAIL, TACH and COMPLETE; rows 26 to 29 the person's rules and the notes (the reads end by themselves after 20 s; a hung read is not left by a timeout; the state is after hekate and U-Boot; GPIO and PMC reads at non-secure EL1 are untested); row 30 `BOOT STAYS 0`; the exit status from row 31.
+1280 by 720, two columns of 50 character cells. Reads 1 to 11 are in the left column at rows 9 to 19, reads 12 to 22 in the right at the same rows; a BEGIN line is overwritten in place by its RESULT line. The glyph set has no comma and no plus, so lines use letters, digits and `: - . = / ( ) _ ?`. Rows 20 to 25 hold CAR (both raw words and the gate), FAN, ROUTE, RAIL, TACH and COMPLETE, each the full width; rows 26 to 29 the person's rules and the notes (the reads end by themselves after 20 s; a hung read is not left by a timeout; the state is after hekate and U-Boot; GPIO and PMC reads at non-secure EL1 are untested); row 30 `BOOT STAYS 0`; the exit status from row 31.
 
+- CAR: `RST_DEVICES_L` and `CLK_OUT_ENB_L` as read, bit 17 of each, gate open or closed.
 - FAN: the PWM word, its state, the duty or the reason it is UNKNOWN.
 - ROUTE: `LCD_GPIO2` against `0x74`, `CAM1_PWDN` against `0x59`.
 - RAIL: A5 and CC4 `OUT` bits, the two rail pinmux words, the two PMC words.

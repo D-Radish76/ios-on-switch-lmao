@@ -36,6 +36,12 @@ static void place(struct switch_t3r_line *out, unsigned index)
     out->right = index >= SWITCH_T3R_COLUMN_ROWS;
 }
 
+static void summary(struct switch_t3r_line *out, unsigned number)
+{
+    out->row = SWITCH_T3R_SUMMARY_FIRST_ROW + number;
+    out->right = 0;
+}
+
 static void head(struct switch_t3r_line *out, unsigned index, unsigned reg)
 {
     place(out, index);
@@ -120,17 +126,29 @@ static const char *why_text(unsigned why)
     case T3R_PWM_WHY_ALL_ONES: return "A WORD OF ALL ONES";
     case T3R_PWM_WHY_ENABLE_CLEAR_BITS: return "ENABLE CLEAR BUT OTHER BITS SET";
     case T3R_PWM_WHY_ABSOLUTE_0_BITS: return "ABSOLUTE 0 PERCENT WITH OTHER BITS";
-    case T3R_PWM_WHY_OTHER_BITS: return "BITS OUTSIDE ENABLE, BIT 24 AND THE FIELD";
-    case T3R_PWM_WHY_SPECIAL_ZERO_DUTY: return "FIELD 236, A VALUE HEKATE NEVER WRITES";
+    case T3R_PWM_WHY_OTHER_BITS: return "BITS OUTSIDE ENABLE BIT 24 AND THE FIELD";
+    case T3R_PWM_WHY_SPECIAL_ZERO_DUTY: return "FIELD 236 A VALUE HEKATE NEVER WRITES";
     case T3R_PWM_WHY_OUT_OF_RANGE: return "FIELD ABOVE 236";
     default: return "";
     }
 }
 
+static void car_line(struct switch_t3r_line *out, const struct switch_t3r_result *r)
+{
+    summary(out, 0);
+    switch_diag_line_add(&out->text, "T3R CAR RST_DEV_L ");
+    switch_diag_line_hex(&out->text, r->value[T3R_CAR_RST_DEVICES_L], 8);
+    switch_diag_line_add(&out->text, " CLK_ENB_L ");
+    switch_diag_line_hex(&out->text, r->value[T3R_CAR_CLK_OUT_ENB_L], 8);
+    bit_text(&out->text, ". PWM BIT 17 RST ", r->value[T3R_CAR_RST_DEVICES_L], 17);
+    bit_text(&out->text, " CLK ", r->value[T3R_CAR_CLK_OUT_ENB_L], 17);
+    switch_diag_line_add(&out->text, r->gate == T3R_GATE_OPEN ? ". GATE OPEN" : ". GATE CLOSED");
+    out->bad = r->gate != T3R_GATE_OPEN;
+}
+
 static void fan_line(struct switch_t3r_line *out, const struct switch_t3r_result *r)
 {
-    place(out, SWITCH_T3R_COLUMN_ROWS + 1);
-    out->right = 0;
+    summary(out, 1);
     switch_diag_line_add(&out->text, "T3R FAN PWM_CSR_1");
     if (r->gate != T3R_GATE_OPEN) {
         switch_diag_line_add(&out->text, r->gate == T3R_GATE_IN_RESET ? " NOT READ. PWM BLOCK IN RESET" : " NOT READ. PWM CLOCK OFF");
@@ -155,8 +173,7 @@ static void fan_line(struct switch_t3r_line *out, const struct switch_t3r_result
 
 static void route_line(struct switch_t3r_line *out, const struct switch_t3r_result *r)
 {
-    place(out, SWITCH_T3R_COLUMN_ROWS + 2);
-    out->right = 0;
+    summary(out, 2);
     switch_diag_line_add(&out->text, "T3R ROUTE LCD_GPIO2 ");
     switch_diag_line_hex(&out->text, r->value[T3R_PINMUX_LCD_GPIO2], 8);
     switch_diag_line_add(&out->text, " (OFF STATE 00000074). CAM1_PWDN ");
@@ -166,8 +183,7 @@ static void route_line(struct switch_t3r_line *out, const struct switch_t3r_resu
 
 static void rail_line(struct switch_t3r_line *out, const struct switch_t3r_result *r)
 {
-    place(out, SWITCH_T3R_COLUMN_ROWS + 3);
-    out->right = 0;
+    summary(out, 3);
     switch_diag_line_add(&out->text, "T3R RAIL A5");
     bit_text(&out->text, " CNF ", r->value[T3R_GPIO_A_CNF], 5);
     bit_text(&out->text, " OE ", r->value[T3R_GPIO_A_OE], 5);
@@ -183,8 +199,7 @@ static void rail_line(struct switch_t3r_line *out, const struct switch_t3r_resul
 
 static void tach_line(struct switch_t3r_line *out, const struct switch_t3r_result *r)
 {
-    place(out, SWITCH_T3R_COLUMN_ROWS + 4);
-    out->right = 0;
+    summary(out, 4);
     switch_diag_line_add(&out->text, "T3R TACH S7");
     bit_text(&out->text, " CNF ", r->value[T3R_GPIO_S_CNF], 7);
     bit_text(&out->text, " OE ", r->value[T3R_GPIO_S_OE], 7);
@@ -221,13 +236,13 @@ void switch_t3r_screen_line(unsigned step, const struct switch_t3r_result *r, st
         out->bad = 1;
         pad(out);
         break;
+    case T3R_STEP_CAR: car_line(out, r); break;
     case T3R_STEP_FAN: fan_line(out, r); break;
     case T3R_STEP_ROUTE: route_line(out, r); break;
     case T3R_STEP_RAIL: rail_line(out, r); break;
     case T3R_STEP_TACH: tach_line(out, r); break;
     default:
-        place(out, SWITCH_T3R_COLUMN_ROWS + 5);
-        out->right = 0;
+        summary(out, 5);
         switch_diag_line_add(&out->text, "T3R COMPLETE. READS ");
         switch_diag_line_decimal(&out->text, r->reads);
         switch_diag_line_add(&out->text, ". STOP ");

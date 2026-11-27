@@ -161,7 +161,8 @@ class Sources(unittest.TestCase):
         text = (LOADER / 't3r.c').read_text()
         step = text[text.index('static int step_read(') : text.index('static void finish(')]
         self.assertLess(step.index('SWITCH_T3R_STEP_BEGIN(index)'), step.index('get(io, result, reg)'))
-        self.assertLess(step.index('get(io, result, reg)'), step.index('SWITCH_T3R_STEP_RESULT(index)'))
+        self.assertLess(step.index('get(io, result, reg)'), step.index('derive(result, reg,'))
+        self.assertLess(step.index('derive(result, reg,'), step.index('SWITCH_T3R_STEP_RESULT(index)'))
         self.assertEqual(1, len(re.findall(r'io->read\(', text)))
         self.assertEqual(1, len(re.findall(r'\bget\(io, result, reg\)', text)))
         self.assertEqual(1, len(re.findall(r'\bstep_read\(', text[text.index('static int read_sequence(') :])))
@@ -177,7 +178,7 @@ class Sources(unittest.TestCase):
 
     def test_classification_and_expectation_never_touch_the_device(self) -> None:
         text = (LOADER / 't3r.c').read_text()
-        pure = text[text.index('unsigned switch_t3r_pwm_gate(') : text.index('static void after_read(')]
+        pure = text[text.index('unsigned switch_t3r_pwm_gate(') : text.index('static void derive(')]
         self.assertNotRegex(pure, r'io->|read\(|write')
 
     def test_the_screen_callback_draws_then_settles_and_the_notes_are_drawn_first(self) -> None:
@@ -332,16 +333,28 @@ class ResultRecord(unittest.TestCase):
             self.assertIn(text, self.TEXT)
 
     def test_read_success_and_the_display_faults_are_kept_apart(self) -> None:
-        for phrase in ('display bug', 'screen layout bug', 'PWM_CSR_1', 'Fixes, not made', 'not run again', 'HOLD'):
+        for phrase in ('display bug', 'screen layout bug', 'PWM_CSR_1', 'Fixes made offline', 'not run again', 'HOLD'):
             self.assertIn(phrase.lower(), self.TEXT.lower())
         self.assertNotRegex(self.TEXT, '[\u2013\u2014]')
 
-    def test_the_summary_rows_of_the_defect_are_what_the_code_does(self) -> None:
+    def test_the_first_run_defects_are_fixed_in_the_code(self) -> None:
+        text = (LOADER / 't3r.c').read_text()
+        self.assertEqual(1, text.count('result->tmrus_advanced = '))
+        derive = text[text.index('static void derive(') : text.index('static int read_sequence(')]
+        self.assertIn('result->tmrus_advanced = ', derive)
+        self.assertNotIn('tmrus_advanced', text[text.index('static int read_sequence(') :])
         report = (LOADER / 't3r_report.c').read_text()
-        self.assertIn('out->row = index % SWITCH_T3R_COLUMN_ROWS;', report)
-        self.assertIn('place(out, SWITCH_T3R_COLUMN_ROWS + 1);', report)
-        loop = (LOADER / 't3r.c').read_text()
-        self.assertLess(loop.index('result->tmrus_advanced = '), loop.index('return 1;\n}\n\nvoid switch_t3r_run('))
+        self.assertNotIn('place(out, SWITCH_T3R_COLUMN_ROWS', report)
+        self.assertEqual(6, len(re.findall(r'\bsummary\(out, \d\);', report)))
+        self.assertIn('out->row = SWITCH_T3R_SUMMARY_FIRST_ROW + number;', report)
+
+    def test_every_screen_string_uses_only_glyphs_the_font_has(self) -> None:
+        font = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:-.=/()_? ')
+        for name in ('t3r_report.c', 't3r.c'):
+            for literal in re.findall(r'"([^"\\\n]*)"', (LOADER / name).read_text()):
+                if literal.endswith('.h'):
+                    continue
+                self.assertFalse(set(literal) - font, (name, literal))
 
 
 if __name__ == '__main__':

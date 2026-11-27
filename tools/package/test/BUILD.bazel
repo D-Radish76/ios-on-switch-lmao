@@ -441,6 +441,21 @@ py_test(
     ],
 )
 
+# The T3 fan design: a bounded write list of seven writes to three registers, the PWM words from hekate's formula, and no fan code
+# in the tree (ERISTA_T3_FAN_DESIGN.md).
+py_test(
+    name = "erista_t3_fan_design_test",
+    srcs = ["erista_t3_fan_design_test.py"],
+    data = [
+        "//:ERISTA_T3R_RESULT.md",
+        "//:ERISTA_T3R_DESIGN.md",
+        "//:ERISTA_T3_FAN_DESIGN.md",
+        "//:ERISTA_THERMAL_DESIGN.md",
+        "//boot:all_sources",
+        "//boot:build_file",
+    ],
+)
+
 # T3-R: the 21-register read allowlist, the PWM classification, the inspection of its image, a real link, the audit record and
 # the ten earlier image hashes (ERISTA_T3R_DESIGN.md, ERISTA_T3R_RUN.md).
 py_test(
