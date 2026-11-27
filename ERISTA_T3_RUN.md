@@ -84,6 +84,8 @@ None of these is measured, and the image cannot remove any of them.
 | Readback exactness | `PWM_CSR_1` and the pad word reading back as written is untested on hardware | A mismatch stops the run and runs the off sequence |
 | Provisional limits | 15 s, 30 s, 35 s and 60 s are unmeasured | They guide the person and guarantee nothing |
 
+Sources, classes (primary, secondary, inferred, not found) and what each one settles are in `ERISTA_T3_SAFETY_RESEARCH.md`. It narrows CC4 polarity, rail loads and fan current at source level and leaves the hang, the POWER hold with the rail on and the pins after a reset open.
+
 ## Checklist before a run
 
 Offline, done for `35d04ec55`:

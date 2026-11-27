@@ -130,6 +130,8 @@ All on `CNTPCT` at 19.2 MHz, provisional and not measured on the console: state 
 
 ## Unknown, and what would settle it
 
+A source search on CC4, the A5 rail, the fan and the POWER hold is in `ERISTA_T3_SAFETY_RESEARCH.md`; the table below is the earlier state.
+
 | Item | Settled by |
 | --- | --- |
 | Reset value of `PWM_CSR_1`, bit meaning of `0x100 << 16`, edge rate per revolution | the TRM, or the fan's own count |
