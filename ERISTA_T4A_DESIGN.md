@@ -77,7 +77,7 @@ Power removal is the only certain way out. Whether it clears a half-armed TKE bl
 
 | Stage | Content | State |
 | --- | --- | --- |
-| T4-A0 | host only: the gate state machine, a modelled watchdog block, the arming and stop models, refusal and fault injection tests (`tools/t4a0/`) | approved 2026-11-27 11:20 JST, implemented |
+| T4-A0 | host only: the gate state machine, a modelled watchdog block, the arming and stop models, refusal and fault injection tests (`tools/t4a0/`) | approved 2026-11-27 11:20 JST, implemented, Mac Bazel PASS at `e473fcd44` |
 | T4-A1 | the diagnostic image, its static audit and its build | not approved, not started |
 | T4-A2 | arming and expiry on the console | not approved, not started |
 
@@ -123,6 +123,23 @@ Walking all 2^32 values per target is not the plan. T4-A0 (`tools/t4a0/gate_test
 - a fixed-seed random request sequence from every state.
 
 What it does not show: that the real block behaves like the model (the model is this document's reading of Linux and hekate), that a write at EL1 is accepted, or anything about timing. The model's "counting" is a rule of the model.
+
+## T4-A0 Mac result and review (2026-11-27)
+
+Mac, commit `e473fcd44`: `t4a0_gate_test` Bazel 1 of 1 PASS (0.9 s), its 9 Python tests PASS (0.640 s), build completed. Earlier Mac runs of the same test failed three times on the runfiles tree (`build_data.txt`, the launcher, `_t4a0_gate_test.venv`), never on the C logic. The runfiles entries measured on the Mac are `_t4a0_gate_test_stage2_bootstrap.py`, `_t4a0_gate_test.venv` (directory), `t4a0_gate_test` and `t4a0_gate_test.build_data.txt` (links); `.exe`, `.runfiles_manifest` and `.runfiles` are estimates and are marked so in the test.
+
+Review of the model, found by reading `gate.c`, `sim.c` and `gate_test.c`. Nothing here changed the C code; each item is for T4-A1 or for the next change to the model.
+
+| Finding | Effect | What to do |
+| --- | --- | --- |
+| Read backs compare the full 32 bit word with what was written | the real block may read back differently (status bits in the config word, a write-only bit, a PTV that returns the running count); the gate would then stop a good arm. That fails safe, but it would end every real run | T4-A1 needs a read back mask taken from a measurement of the real words, not from Linux |
+| The stop check reads PTV only and the command register is not readable | `STOPPED` can hold while the counter state is unknown; already stated above | keep the wording; do not treat `STOPPED` as proof |
+| `HUNG` keeps no cause and no step | the gate counts writes, the sim logs accesses, but the real image has no such log | T4-A1 should record the access number before each access, in DRAM |
+| The idle check reads PTV, config and status; T4-R also read `TMRUS` twice | the model checks less than T4-R did | align when the image is written; the model is not the image |
+| At most two injected faults per run, one block, no timing, no expiry, no countdown | multiple independent faults, a slow access and the park loop are not covered | named limits; the park loop is a T4-A1 item |
+| Some tests set the gate's own flags (`line_drawn`, `read_back_ok`) to build a case | they are white box tests of the table, not of the public order | the order tests through `t4a_model_run` and the fault injection cover the public path |
+| `ARMED` after a faulted START: a bus fault on write 3 runs the stop sequence, and the START flag stays set | one START per run, even if it failed; a retry needs a new run | intended; recorded so nobody removes it |
+| The PTV word layout (bits 31 and 30 set, a 29 bit count) and the config word follow Linux and hekate, not a measurement; `T4-R` showed only zeros | the words are placeholders for the gate's shape, not values for the console | T4-A1 conditions 2 and 4 stay open |
 
 ## Case temperature and hangs during a run
 
