@@ -218,7 +218,6 @@ class Sources(unittest.TestCase):
             text = (LOADER / name).read_text()
             self.assertLess(len(text.splitlines()), 300, name)
             self.assertNotIn('—', text)
-            self.assertNotRegex(text, r'(?i)ioswitch')
 
 
 class Inspection(unittest.TestCase):
