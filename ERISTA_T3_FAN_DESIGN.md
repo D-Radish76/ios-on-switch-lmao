@@ -17,7 +17,8 @@ The review said to stop and report if safety could not be judged. It was judged,
 | Other loads on the A5 rail | **unknown**. A Joy-Con on the rail or a USB device would see 5 V, as with hekate's fan. The run sheet requires both detached. Fan current is not measured | unknown |
 | `PWR_DET_VAL` bit 21 | The photograph's digits are unreliable. T3 reads it itself and writes nothing if it is set | code |
 | After `SYSTEM_RESET` | **Not claimed** to restore any register or pin. The off sequence is the only restore, and each of its writes is read back | code |
-| A hang with the rail on | No timeout can leave a hung bus access. The rail limit is checked in the tach loop and between phases, which covers a slow run, not a hang. POWER hold is the only recovery and is unproven for that state | unknown |
+| A hang with the rail on | The software time limits do not work if a bus access hangs, because nothing runs to check them. The rail limit covers a slow run, not a hang. POWER hold is the only recovery and is unproven for that state | unknown |
+| Rail off not confirmed | Off is only what a readback of zero shows. Otherwise the rail is kept as maybe on or unknown, the off write is sent again twice, and the run ends without the 15 s dwell and without a reset | code |
 
 Go: the writes are the ones hekate makes in normal operation, under checked preconditions, with an off sequence that always runs. What stays open is absolute: CC4 polarity, rail loads, fan current, behaviour of the rail pin across a reset. The owner decides whether that is enough for a run.
 
@@ -31,6 +32,19 @@ Go: the writes are the ones hekate makes in normal operation, under checked prec
 | No claim that `SYSTEM_RESET` restores registers | Dropped from the design and printed on the screen |
 | Tach level not fixed to 0 | The state check does not look at the level. Each window records its first and last level and counts changes; the verdict compares counts between windows |
 | Rail and CC4 re-checked | The section above |
+
+Second review (ce85b1572, Mac 10 of 10 PASS):
+
+| Review point | In the code |
+| --- | --- |
+| `rail_on` cleared only after a successful off readback | One field with three values: off confirmed, maybe on, unknown. Only a rail readback of zero after the off write sets it to off |
+| Off failure continues the stop processing | The other off writes run first, then the rail off word is sent twice more |
+| Off failure is not a normal end | Stop `0A0B`, a red line, no dwell and no reset; the loader halts |
+| Limit after draw and settle | Checked after every drawn step while the rail is not confirmed off |
+| Limit between consecutive writes | Checked before each on write, so W3 is not sent after W2 spent the limit |
+| No on write after the limit | An on write is refused after any stop or a spent limit; off writes are never refused |
+| Stop processing is not skipped by time | No off write is conditioned on a clock |
+| Software limits fail on a hang | Stated here, in the run sheet and on the screen |
 
 ## Where the state at our entry comes from
 

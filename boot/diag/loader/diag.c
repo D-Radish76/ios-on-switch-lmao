@@ -729,13 +729,13 @@ static uint64_t t3_window_word(const struct switch_t3_window *w)
 
 static void report_t3(void)
 {
-    put_text(26, "PERSON: NO NEW LINE FOR 30 S: HOLD POWER. THE RAIL IS ON FOR 15 S AT MOST. THEN 15 S AND A RESET", DISPLAY_WHITE);
+    put_text(26, "PERSON: NO NEW LINE FOR 30 S: HOLD POWER. THE RAIL LIMIT IS SOFTWARE AND FAILS IF A BUS ACCESS HANGS", DISPLAY_WHITE);
     put_text(27, "PLUGGED INTO THE RAIL: NOTHING BUT THE FAN. NO JOY-CON AND NO USB. THE OFF STEPS RUN BEFORE THE RESET", DISPLAY_WHITE);
     put_text(28, "A RESET IS NOT CLAIMED TO RESTORE ANY REGISTER. THE OFF STEPS ARE THE ONLY RESTORE AND EACH IS READ BACK", DISPLAY_WHITE);
     put_text(29, "PASS NEEDS MORE TRANSITIONS AT DUTY 51 THAN IN THE TWO WINDOWS BEFORE. IT IS NOT AN RPM", DISPLAY_WHITE);
     struct switch_t3_result result;
     switch_t3_run_on_hardware(&result, show_t3);
-    probe_record[D_T3_STOP_STATE_WRITES] = (uint64_t)result.stop << 48 | (uint64_t)result.state << 40 |
+    probe_record[D_T3_STOP_STATE_WRITES] = (uint64_t)result.stop << 48 | (uint64_t)(result.state | result.rail << 4) << 40 |
                                            (uint64_t)result.issued << 32 | result.mismatched << 24 | result.writes << 16 | result.reads;
     probe_record[D_T3_WINDOW_IDLE] = t3_window_word(&result.window[T3_WINDOW_IDLE]);
     probe_record[D_T3_WINDOW_RAIL] = t3_window_word(&result.window[T3_WINDOW_RAIL]);
@@ -890,6 +890,12 @@ void switch_diag_after_transition(void)
     put_text(15, "PHOTOGRAPH THE SCREEN", DISPLAY_WHITE);
 #endif
     r[R_STAGE] = 0xd0;
+#ifdef SWITCH_DIAG_T3
+    if (probe_record[D_T3_STOP_STATE_WRITES] >> 44 & 0xfu) {
+        put_text(21, "RAIL OFF NOT CONFIRMED. NO RESET. HOLD POWER NOW AND KEEP HOLDING UNTIL THE CONSOLE IS OFF. THE FAN MAY STILL BE POWERED", DISPLAY_RED);
+        probe_halt();
+    }
+#endif
     switch_diag_exit(say);
 }
 

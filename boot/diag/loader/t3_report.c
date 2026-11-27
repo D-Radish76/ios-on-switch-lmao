@@ -82,7 +82,11 @@ static void off_line(struct switch_t3_line *out, const struct switch_t3_result *
     write_text(&out->text, r, T3_O_RAIL_OFF, "RAIL");
     switch_diag_line_add(&out->text, ". ");
     write_text(&out->text, r, T3_O_PARK_PAD, "PAD");
-    out->bad = r->mismatched >> T3_O_PWM_OFF != 0;
+    switch_diag_line_add(&out->text, ". ");
+    switch_diag_line_add(&out->text, r->rail == T3_RAIL_OFF_CONFIRMED  ? "RAIL OFF CONFIRMED"
+                                     : r->rail == T3_RAIL_MAYBE_ON ? "RAIL MAY BE ON. TREAT IT AS ON"
+                                                                   : "RAIL STATE UNKNOWN. TREAT IT AS ON");
+    out->bad = r->mismatched >> T3_O_PWM_OFF != 0 || r->rail != T3_RAIL_OFF_CONFIRMED;
 }
 
 static void complete_line(struct switch_t3_line *out, const struct switch_t3_result *r)

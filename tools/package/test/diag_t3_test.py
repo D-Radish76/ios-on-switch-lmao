@@ -343,15 +343,37 @@ class RunSheet(unittest.TestCase):
             'a reset is not claimed',
             'AUDIT PASSED (T3)',
             'duty 51 is the only duty',
-            '15 s at most',
+            'rail off not confirmed',
+            '907ae9923',
+            'does not run',
+            '60 s cap',
         ):
             self.assertIn(phrase.lower(), self.TEXT.lower())
         self.assertNotRegex(self.TEXT, '[\u2013\u2014]')
 
+    def test_the_rail_is_called_off_only_by_the_off_readback_and_a_failure_does_not_reset(self) -> None:
+        text = (LOADER / 't3.c').read_text()
+        self.assertEqual(1, text.count('result->rail = T3_RAIL_OFF_CONFIRMED;'))
+        write = text[text.index('static int write_checked(') : text.index('static int read_state(')]
+        self.assertLess(write.index('io->read('), write.index('T3_RAIL_OFF_CONFIRMED'))
+        self.assertIn('SWITCH_T3_RAIL_NOT_OFF', text[text.index('static void finish(') :])
+        diag = (LOADER / 'diag.c').read_text()
+        tail = diag[diag.index('r[R_STAGE] = 0xd0;') :]
+        self.assertLess(tail.index('probe_halt();'), tail.index('switch_diag_exit(say);'))
+        self.assertIn('RAIL OFF NOT CONFIRMED', tail)
+
+    def test_the_limit_is_checked_after_a_draw_and_before_each_on_write(self) -> None:
+        text = (LOADER / 't3.c').read_text()
+        shown = text[text.index('static int shown(') : text.index('static int turns_on(')]
+        self.assertIn('io->rail_expired', shown)
+        self.assertIn('on_write_allowed', text[text.index('static int write_checked(') :])
+        gate = text[text.index('static int on_write_allowed(') : text.index('/* Sends a write')]
+        self.assertIn('io->rail_expired', gate)
+
     def test_every_stop_code_of_the_header_is_in_the_table(self) -> None:
         header = (LOADER / 't3.h').read_text()
         codes = re.findall(r'= 0x(a0[0-9a-f])', header)
-        self.assertEqual(10, len(codes))
+        self.assertEqual(11, len(codes))
         for code in codes:
             self.assertIn(f'`0{code.upper()}`', self.TEXT)
 

@@ -81,6 +81,7 @@ enum {
     SWITCH_T3_NO_EDGES = 0xa08, /* the spin window did not show more transitions than the two before it */
     SWITCH_T3_SAMPLES = 0xa09,  /* a window held too few samples to say anything */
     SWITCH_T3_WINDOW = 0xa0a,   /* a window ended by its sample limit, not by its clock */
+    SWITCH_T3_RAIL_NOT_OFF = 0xa0b, /* the rail write was not read back as off: not a normal end, no reset follows */
 };
 
 /* Phase p is announced by step 1 + 2 p and reported by 2 + 2 p. */
@@ -114,6 +115,13 @@ enum switch_t3_cut {
     T3_CUT_LIMIT,    /* the sample limit ended it */
 };
 
+/* What is known about the rail. Only a read of GPIO_A_OUT after the off write that returns the off word confirms it. */
+enum switch_t3_rail {
+    T3_RAIL_OFF_CONFIRMED = 0, /* read as off at entry, or read back as off after the off write */
+    T3_RAIL_MAYBE_ON,          /* the on write was sent, or the off readback still shows A5 high */
+    T3_RAIL_UNKNOWN,           /* the off readback shows something else: neither on nor off is known */
+};
+
 struct switch_t3_window {
     int ran;
     unsigned cut;
@@ -134,6 +142,8 @@ enum switch_t3_verdict {
 #define SWITCH_T3_TACH_BIT          7u
 #define SWITCH_T3_MIN_SAMPLES       1000u
 #define SWITCH_T3_MIN_TRANSITIONS   4u
+/* Further sends of the rail off word when its readback did not show it off. */
+#define SWITCH_T3_OFF_RETRIES       2u
 #define SWITCH_T3_SAMPLE_LIMIT      100000000u
 #define SWITCH_T3_WINDOW_MS         2000u
 #define SWITCH_T3_SPINUP_MS         1000u
@@ -167,7 +177,7 @@ struct switch_t3_result {
     uint32_t issued;         /* bit w set once write w was sent to the gate */
     uint32_t mismatched;     /* bit w set when write w did not read back as written */
     uint32_t readback[T3_WRITE_COUNT];
-    int rail_on;
+    unsigned rail;           /* switch_t3_rail: set to off only by a rail off readback of zero */
     struct switch_t3_window window[T3_WINDOW_COUNT];
     unsigned verdict;
 };

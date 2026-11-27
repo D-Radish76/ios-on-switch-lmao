@@ -33,6 +33,11 @@ struct Fake {
     unsigned spin_period = 10; // samples per level change while the fan is driven
     unsigned idle_period = 0;  // samples per level change with no fan, 0 for none
     bool start_high = false;
+    unsigned rail_off_ignored = 0;     // the first n sends of the rail off word do not change the register
+    uint32_t rail_off_stores = ~0u;    // if set, a rail off send leaves this word in GPIO_A_OUT
+    int jump_after_show = -1;          // showing this step moves the clock far past every limit
+    int jump_after_write = -1;         // sending this write moves the clock far past every limit
+    unsigned long long jump = 100000;
 
     Fake()
     {
@@ -85,14 +90,25 @@ struct Fake {
     {
         Fake *f = static_cast<Fake *>(c);
         f->events.push_back(name("write", r, v));
-        if (!f->ignored_values.count(v))
+        if (r == T3_GPIO_A_OUT && v == SWITCH_T3_RAIL_OFF_WORD && f->rail_off_ignored) {
+            --f->rail_off_ignored;
+            return;
+        }
+        if (r == T3_GPIO_A_OUT && v == SWITCH_T3_RAIL_OFF_WORD && f->rail_off_stores != ~0u)
+            f->reg[r] = f->rail_off_stores;
+        else if (!f->ignored_values.count(v))
             f->reg[r] = v;
+        if (f->jump_after_write >= 0 && r == switch_t3_write_reg(f->jump_after_write) &&
+            v == switch_t3_write_value(f->jump_after_write))
+            f->now += f->jump;
     }
     static int show(void *c, unsigned step, const switch_t3_result *res)
     {
         Fake *f = static_cast<Fake *>(c);
         f->events.push_back(name("show", step));
         f->drawn[step] = *res;
+        if (static_cast<int>(step) == f->jump_after_show)
+            f->now += f->jump;
         return static_cast<int>(step) != f->refuse_step;
     }
     static int read_expired(void *c)
@@ -298,13 +314,12 @@ TEST(T3, ThePassingRunWritesInOrderReadsEachBackAndEndsWithEverythingOff)
         if (fake.events[i].rfind("write", 0) != 0)
             continue;
         const std::string reg = fake.events[i].substr(6, fake.events[i].find(' ', 6) - 6);
-        const size_t skip = fake.events[i + 1] == "rail_mark" ? 2 : 1;
-        EXPECT_EQ("read " + reg, fake.events[i + skip]) << fake.events[i];
+        EXPECT_EQ("read " + reg, fake.events[i + 1]) << fake.events[i];
     }
     EXPECT_EQ(0u, fake.reg[T3_GPIO_A_OUT]);
     EXPECT_EQ(0x81000000u, fake.reg[T3_PWM_CSR_1]);
     EXPECT_EQ(0x74u, fake.reg[T3_PINMUX_LCD_GPIO2]);
-    EXPECT_FALSE(result.rail_on);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), result.rail);
     for (unsigned w = 0; w < T3_WRITE_COUNT; ++w)
         EXPECT_EQ(switch_t3_write_value(w), result.readback[w]) << w;
 }
@@ -329,7 +344,7 @@ TEST(T3, ARailReadbackMismatchSendsNoPwmAndUndoesOnlyTheRail)
     const std::vector<std::string> expected = {write_event(T3_W_RAIL_ON), write_event(T3_O_RAIL_OFF)};
     EXPECT_EQ(expected, fake.writes());
     EXPECT_FALSE(result.window[T3_WINDOW_RAIL].ran);
-    EXPECT_FALSE(result.rail_on);
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), result.rail);
 }
 
 TEST(T3, APwmReadbackMismatchSkipsTheRouteAndUndoesPwmAndRail)
@@ -365,9 +380,10 @@ TEST(T3, EveryOffWriteStillRunsWhenAllOfThemReadBackWrong)
     Fake fake;
     fake.ignored_values = {SWITCH_T3_PWM_OFF_WORD, SWITCH_T3_RAIL_OFF_WORD, SWITCH_T3_PARK_PAD_WORD};
     const switch_t3_result result = fake.run();
-    EXPECT_EQ(SWITCH_T3_READBACK, result.stop);
-    EXPECT_EQ(6u, result.writes);
+    EXPECT_EQ(SWITCH_T3_RAIL_NOT_OFF, result.stop);
+    EXPECT_EQ(6u + SWITCH_T3_OFF_RETRIES, result.writes);
     EXPECT_EQ(7u << T3_O_PWM_OFF, result.mismatched & (7u << T3_O_PWM_OFF));
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_MAYBE_ON), result.rail);
 }
 
 TEST(T3, TheRailLimitCutsTheTachWindowItselfAndTheOffSequenceFollows)
@@ -564,4 +580,101 @@ TEST(T3, TheLinesSayWhatHappened)
     wrong.run();
     EXPECT_NE(std::string::npos,
               text_of(SWITCH_T3_STEP_DONE(T3_PHASE_OFF), wrong.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_OFF)]).find("READBACK DIFFERS"));
+}
+
+TEST(T3, ARailThatReadsBackOnAfterTheOffWriteIsRetriedAndNeverCalledOff)
+{
+    Fake fake;
+    fake.rail_off_ignored = 100;
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_MAYBE_ON), result.rail);
+    EXPECT_EQ(SWITCH_T3_RAIL_NOT_OFF, result.stop);
+    unsigned off_writes = 0;
+    for (const auto &w : fake.writes())
+        off_writes += w == write_event(T3_O_RAIL_OFF);
+    EXPECT_EQ(1u + SWITCH_T3_OFF_RETRIES, off_writes);
+    EXPECT_EQ(write_event(T3_O_PARK_PAD), fake.writes()[fake.writes().size() - 1 - SWITCH_T3_OFF_RETRIES]);
+    EXPECT_EQ(0x81000000u, fake.reg[T3_PWM_CSR_1]);
+    EXPECT_EQ(0x74u, fake.reg[T3_PINMUX_LCD_GPIO2]);
+    EXPECT_FALSE(result.window[T3_WINDOW_STOPPED].ran);
+}
+
+TEST(T3, ARailOffReadbackOfSomethingElseIsUnknownNotOn)
+{
+    Fake fake;
+    fake.rail_off_stores = 0x01;
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_UNKNOWN), result.rail);
+    EXPECT_EQ(SWITCH_T3_RAIL_NOT_OFF, result.stop);
+    EXPECT_NE(std::string::npos, text_of(SWITCH_T3_STEP_DONE(T3_PHASE_OFF), fake.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_OFF)]).find("RAIL STATE UNKNOWN"));
+}
+
+TEST(T3, AnOffWordThatSticksOnTheRetryEndsAsConfirmedOffWithTheMismatchKept)
+{
+    Fake fake;
+    fake.rail_off_ignored = 1;
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), result.rail);
+    EXPECT_EQ(SWITCH_T3_READBACK, result.stop);
+    EXPECT_TRUE(result.mismatched & 1u << T3_O_RAIL_OFF);
+    EXPECT_EQ(0u, fake.reg[T3_GPIO_A_OUT]);
+}
+
+TEST(T3, TheRailIsNotOffUntilItsOffReadbackSaysSo)
+{
+    Fake fake;
+    fake.run();
+    for (const auto &entry : fake.drawn) {
+        if (entry.first >= SWITCH_T3_STEP_DONE(T3_PHASE_RAIL) && entry.first < SWITCH_T3_STEP_DONE(T3_PHASE_OFF)) {
+            EXPECT_EQ(static_cast<unsigned>(T3_RAIL_MAYBE_ON), entry.second.rail) << entry.first;
+        }
+    }
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), fake.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_OFF)].rail);
+}
+
+TEST(T3, TheRailLimitIsLookedAtAfterADrawAndNoOnWriteFollowsIt)
+{
+    Fake fake;
+    fake.jump_after_show = SWITCH_T3_STEP_DONE(T3_PHASE_RAIL);
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(SWITCH_T3_RAIL_TIME, result.stop);
+    EXPECT_EQ(std::vector<std::string>({write_event(T3_W_RAIL_ON), write_event(T3_O_RAIL_OFF)}), fake.writes());
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), result.rail);
+}
+
+TEST(T3, TheRailLimitIsLookedAtBetweenTwoBackToBackOnWrites)
+{
+    Fake fake;
+    fake.jump_after_write = T3_W_PWM_DUTY;
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(SWITCH_T3_RAIL_TIME, result.stop);
+    EXPECT_EQ(0u, result.issued & 1u << T3_W_ROUTE_PWM);
+    const std::vector<std::string> expected = {write_event(T3_W_RAIL_ON), write_event(T3_W_PWM_DUTY), write_event(T3_O_PWM_OFF),
+                                               write_event(T3_O_RAIL_OFF)};
+    EXPECT_EQ(expected, fake.writes());
+    EXPECT_EQ(static_cast<unsigned>(T3_RAIL_OFF_CONFIRMED), result.rail);
+    EXPECT_EQ(0x81000000u, fake.reg[T3_PWM_CSR_1]);
+}
+
+TEST(T3, ASpentLimitDoesNotSkipAnyOffWrite)
+{
+    Fake fake;
+    fake.jump_after_write = T3_W_ROUTE_PWM;
+    const switch_t3_result result = fake.run();
+    EXPECT_EQ(SWITCH_T3_RAIL_TIME, result.stop);
+    EXPECT_EQ(6u, result.writes);
+    EXPECT_EQ(0u, fake.reg[T3_GPIO_A_OUT]);
+    EXPECT_EQ(0x74u, fake.reg[T3_PINMUX_LCD_GPIO2]);
+    EXPECT_EQ(0x81000000u, fake.reg[T3_PWM_CSR_1]);
+}
+
+TEST(T3, TheRailLineSaysWhatIsKnown)
+{
+    Fake fake;
+    fake.run();
+    EXPECT_NE(std::string::npos, text_of(SWITCH_T3_STEP_DONE(T3_PHASE_OFF), fake.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_OFF)]).find("RAIL OFF CONFIRMED"));
+    Fake stuck;
+    stuck.rail_off_ignored = 100;
+    stuck.run();
+    EXPECT_NE(std::string::npos, text_of(SWITCH_T3_STEP_DONE(T3_PHASE_OFF), stuck.drawn[SWITCH_T3_STEP_DONE(T3_PHASE_OFF)]).find("RAIL MAY BE ON"));
 }

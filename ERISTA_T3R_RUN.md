@@ -78,7 +78,7 @@ The Mac flat hash differs from the Linux one (`fc904cfc...`) because the toolcha
 | Existing inis | the five restored; six in total now |
 | Diff after the restore | exit 1; the differences were not reported |
 
-The exit 1 is recorded as it came. Its cause is not known here and is not guessed: it can be an expected difference (the sixth ini) or something else, and only the diff text says which. The fixed image has had no run. The Linux flat hash of the fixed image is `075d6816...`.
+The Mac comparison of the eleven image hashes starts from this commit, `907ae9923`, not `6da4f57ee`, which has no fixed T3-R. The exit 1 is recorded as it came. Its cause is not known here and is not guessed: it can be an expected difference (the sixth ini) or something else, and only the diff text says which. The fixed image has had no run. The Linux flat hash of the fixed image is `075d6816...`.
 
 ## First run
 

@@ -1,19 +1,34 @@
 #include "t3.h"
 
-static int shown(const struct switch_t3_io *io, struct switch_t3_result *result, unsigned step)
-{
-    if (io->show && !io->show(io->context, step, result)) {
-        if (!result->stop)
-            result->stop = SWITCH_T3_NOT_SHOWN;
-        return 0;
-    }
-    return 1;
-}
-
 static void stop(struct switch_t3_result *result, int code)
 {
     if (!result->stop)
         result->stop = code;
+}
+
+/* Drawing and settling take time with the rail on, so the rail limit is looked at after every step. */
+static int shown(const struct switch_t3_io *io, struct switch_t3_result *result, unsigned step)
+{
+    const int drawn = !io->show || io->show(io->context, step, result);
+    if (!drawn)
+        stop(result, SWITCH_T3_NOT_SHOWN);
+    if (result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context))
+        stop(result, SWITCH_T3_RAIL_TIME);
+    return drawn;
+}
+
+static int turns_on(unsigned write)
+{
+    return write == T3_W_RAIL_ON || write == T3_W_PWM_DUTY || write == T3_W_ROUTE_PWM;
+}
+
+/* No write that turns anything on is sent after a stop or once the rail limit is spent. Writes that turn things off are
+ * never held back by either. */
+static int on_write_allowed(const struct switch_t3_io *io, struct switch_t3_result *result)
+{
+    if (!result->stop && result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context))
+        stop(result, SWITCH_T3_RAIL_TIME);
+    return !result->stop;
 }
 
 /* Sends a write through the allowlist check, reads the register back and records whether it matched. A mismatch stops the
@@ -26,17 +41,23 @@ static int write_checked(const struct switch_t3_io *io, struct switch_t3_result 
         stop(result, SWITCH_T3_DENIED);
         return 0;
     }
+    if (turns_on(write) && !on_write_allowed(io, result))
+        return 0;
+    if (write == T3_W_RAIL_ON) {
+        result->rail = T3_RAIL_MAYBE_ON;
+        io->rail_mark(io->context);
+    }
     result->issued |= 1u << write;
     ++result->writes;
     io->write(io->context, reg, value);
-    if (write == T3_W_RAIL_ON) {
-        result->rail_on = 1;
-        io->rail_mark(io->context);
-    }
-    if (write == T3_O_RAIL_OFF)
-        result->rail_on = 0;
     ++result->reads;
     result->readback[write] = io->read(io->context, reg);
+    if (write == T3_O_RAIL_OFF) {
+        if (result->readback[write] == SWITCH_T3_RAIL_OFF_WORD)
+            result->rail = T3_RAIL_OFF_CONFIRMED;
+        else if (!(result->readback[write] & SWITCH_T3_RAIL_ON_WORD))
+            result->rail = T3_RAIL_UNKNOWN;
+    }
     if (result->readback[write] != value) {
         result->mismatched |= 1u << write;
         stop(result, SWITCH_T3_READBACK);
@@ -72,7 +93,7 @@ static int read_state(const struct switch_t3_io *io, struct switch_t3_result *re
 
 static int rail_ok(const struct switch_t3_io *io, struct switch_t3_result *result)
 {
-    if (result->rail_on && io->rail_expired(io->context))
+    if (result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context))
         stop(result, SWITCH_T3_RAIL_TIME);
     return !result->stop;
 }
@@ -88,11 +109,13 @@ static void off_sequence(const struct switch_t3_io *io, struct switch_t3_result 
     for (unsigned i = 0; i < sizeof(undo) / sizeof(undo[0]); ++i)
         if (result->issued & 1u << undo[i].on)
             write_checked(io, result, undo[i].off);
+    for (unsigned retry = 0; retry < SWITCH_T3_OFF_RETRIES && result->rail != T3_RAIL_OFF_CONFIRMED; ++retry)
+        write_checked(io, result, T3_O_RAIL_OFF);
 }
 
 static int begin(const struct switch_t3_io *io, struct switch_t3_result *result, unsigned phase)
 {
-    return !result->stop && shown(io, result, SWITCH_T3_STEP_BEGIN(phase));
+    return !result->stop && shown(io, result, SWITCH_T3_STEP_BEGIN(phase)) && !result->stop;
 }
 
 static void done(const struct switch_t3_io *io, struct switch_t3_result *result, unsigned phase)
@@ -127,7 +150,9 @@ static void spin(const struct switch_t3_io *io, struct switch_t3_result *result)
 
 static void finish(const struct switch_t3_io *io, struct switch_t3_result *result)
 {
-    if (!result->stop) {
+    if (result->rail != T3_RAIL_OFF_CONFIRMED)
+        result->stop = SWITCH_T3_RAIL_NOT_OFF;
+    else if (!result->stop) {
         result->verdict = switch_t3_verdict(result->window);
         if (result->verdict == T3_VERDICT_NO_EDGES)
             result->stop = SWITCH_T3_NO_EDGES;

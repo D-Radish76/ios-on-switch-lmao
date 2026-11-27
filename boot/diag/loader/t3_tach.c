@@ -16,7 +16,7 @@ void switch_t3_count_window(const struct switch_t3_io *io, struct switch_t3_resu
     w->samples = 1;
     w->high = w->first_level;
     for (uint32_t pass = 0; pass < SWITCH_T3_SAMPLE_LIMIT; ++pass) {
-        if (result->rail_on && io->rail_expired(io->context)) {
+        if (result->rail != T3_RAIL_OFF_CONFIRMED && io->rail_expired(io->context)) {
             w->cut = T3_CUT_RAIL;
             if (!result->stop)
                 result->stop = SWITCH_T3_RAIL_TIME;
