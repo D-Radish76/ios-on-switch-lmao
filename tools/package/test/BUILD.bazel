@@ -958,3 +958,25 @@ py_test(
     srcs = ["seeded_taint_test.py"],
     deps = ["//tools/package:seeded_taint_lib"],
 )
+
+# The XNU stage, IOKit path and roadmap documents against the source lines they cite.
+py_test(
+    name = "diag_xnu_port_docs_test",
+    srcs = ["diag_xnu_port_docs_test.py"],
+    data = [
+        "//:ERISTA_IOKIT_DEPENDENCIES.md",
+        "//:ERISTA_PORT_ROADMAP.md",
+        "//:ERISTA_XNU_BOOT_STAGES.md",
+        "//drivers/NativeSwitchBlock:NativeSwitchBlock.cpp",
+        "//kernel/xnu-10063.141.1/bsd:kern/bsd_init.c",
+        "//kernel/xnu-10063.141.1/iokit:Kernel/IOStartIOKit.cpp",
+        "//kernel/xnu-10063.141.1/iokit:bsddev/IOKitBSDInit.cpp",
+        "//kernel/xnu-10063.141.1/osfmk:arm/arm_init.c",
+        "//kernel/xnu-10063.141.1/osfmk:arm/rtclock.c",
+        "//kernel/xnu-10063.141.1/osfmk:arm64/arm_vm_init.c",
+        "//kernel/xnu-10063.141.1/osfmk:arm64/cpu.c",
+        "//kernel/xnu-10063.141.1/osfmk:arm64/machine_routines.c",
+        "//kernel/xnu-10063.141.1/osfmk:arm64/start.s",
+        "//kernel/xnu-10063.141.1/osfmk:kern/startup.c",
+    ],
+)
