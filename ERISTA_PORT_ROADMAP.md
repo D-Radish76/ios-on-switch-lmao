@@ -35,7 +35,7 @@ Exit: the owner approves one attended run in writing.
 ### P2. Past VM init without a root file system
 
 - Remove `switch_stop_after_vm`; keep the card without a root partition, so the kernel runs `PE_init_platform(TRUE)`, `PE_init_iokit`, `bsd_init`, IOKit matching and waits 30 s for the root (`IOKitBSDInit.cpp:795`), then panics `Failed to mount root device`.
-- What it settles: GIC bring-up and the first interrupt on the Erista (**unknown**), the generic timer under XNU's `cntkctl_el1` (a `wfe` wake has not been shown, `ERISTA_FIRST_XNU_BLOCKERS.md`), IOKit root, `ArmDTPlatform` and `ArmCpu` matching, the watchdog driver with no hardware.
+- What it settles: GIC bring-up and the first interrupt on the Erista (**unknown**; the generic `pe_arm_map_interrupt_controller` finds no node and is skipped, `ERISTA_XNU_EARLY_INIT.md`), the generic timer under XNU's `cntkctl_el1` (a `wfe` wake has not been shown, `ERISTA_FIRST_XNU_BLOCKERS.md`), IOKit root, `ArmDTPlatform` and `ArmCpu` matching, the watchdog driver with no hardware.
 - Expected stop: the panic screen, a person at POWER. This phase has the first interrupt-dependent code, so a hang is more likely than in P1 and nothing resets it unless T4 exists.
 - Exit: the panic text is the expected root-wait panic, nothing earlier.
 

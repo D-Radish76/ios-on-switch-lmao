@@ -1,11 +1,11 @@
-"""ERISTA_XNU_BOOT_STAGES.md, ERISTA_IOKIT_DEPENDENCIES.md and ERISTA_PORT_ROADMAP.md against the source lines they cite."""
+"""The XNU port documents against the source lines they cite."""
 
 import re
 import unittest
 from pathlib import Path
 
 XNU = Path('kernel/xnu-10063.141.1')
-DOCS = ('ERISTA_XNU_BOOT_STAGES.md', 'ERISTA_IOKIT_DEPENDENCIES.md', 'ERISTA_PORT_ROADMAP.md')
+DOCS = ('ERISTA_XNU_BOOT_STAGES.md', 'ERISTA_IOKIT_DEPENDENCIES.md', 'ERISTA_PORT_ROADMAP.md', 'ERISTA_XNU_EARLY_INIT.md')
 
 STAGE_CALLS = {
     7: ('osfmk/arm/arm_init.c', 360), 8: ('osfmk/arm/arm_init.c', 364), 9: ('osfmk/arm/arm_init.c', 378),
@@ -23,7 +23,12 @@ CITED_LINES = (
     ('iokit/Kernel/IOStartIOKit.cpp', 93, 'switch_pmic_start'), ('osfmk/kern/startup.c', 821, 'PE_init_iokit'),
     ('osfmk/arm/arm_init.c', 548, 'arm_vm_init'), ('osfmk/arm/arm_init.c', 688, 'machine_startup'),
     ('osfmk/arm/rtclock.c', 85, 'rtclock_early_init'), ('osfmk/arm64/cpu.c', 734, 'cpu_init'),
-    ('osfmk/arm64/machine_routines.c', 998, 'ml_parse_cpu_topology'),
+    ('osfmk/arm64/machine_routines.c', 998, 'ml_parse_cpu_topology'), ('config/recipes_development.bzl', 14, 'BCM2837'),
+    ('osfmk/arm/arm_init.c', 566, 'serial_init'), ('pexpert/arm/pe_serial.c', 792, 'serial_init'),
+    ('pexpert/arm/pe_identify_machine.c', 191, 'pe_arm_map_interrupt_controller'),
+    ('pexpert/arm/pe_identify_machine.c', 255, 'empty_funcs'), ('pexpert/arm/pe_init.c', 482, 'pe_arm_init_interrupts'),
+    ('pexpert/arm/pe_kprintf.c', 62, 'switch_native_text_console_active'), ('osfmk/arm/cpuid.c', 113, 'cpufamily'),
+    ('osfmk/arm/commpage/commpage.c', 174, '_COMM_PAGE_CPUFAMILY'), ('osfmk/arm/pmap/pmap.h', 118, '__ARM_16K_PG__'),
 )  # fmt: skip
 
 
@@ -58,7 +63,7 @@ class Documents(unittest.TestCase):
             self.assertNotRegex(text, '[\\u2013\\u2014]', name)
             self.assertNotRegex(text, '(?i)ioswitch', name)
             self.assertLess(len(text.splitlines()), 500, name)
-        for name in DOCS[:2]:
+        for name in DOCS[:2] + DOCS[3:]:
             self.assertIn('on HOLD', Path(name).read_text(), name)
         self.assertIn('HOLD', Path(DOCS[2]).read_text())
 

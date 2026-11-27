@@ -92,6 +92,8 @@ Classes: **common** (the same code and the same hardware, usable), **needs a cha
 2. A boot to launchd needs the SD driver on the Erista card, a root file system the loader's SD reference accepts, and the single-core ADT. Everything else stays behind the feature bits.
 3. The first features worth adding, in the plan's order: buttons (the only way to wake the screen), the read-only temperature display, then THERMAL. Each is a reviewed bit.
 
+The interrupt controller lookup of `PE_init_platform(TRUE)` finds nothing in the Erista ADT and returns early, and `serial_init` finds no `gpio` or `aux` node, so there is no serial console; both are read in `ERISTA_XNU_EARLY_INIT.md` (inferred harmless).
+
 ## Sources
 
 `kernel/xnu-10063.141.1/bsd/kern/bsd_init.c`, `osfmk/arm/arm_init.c`, `osfmk/kern/startup.c`, `iokit/Kernel/IOStartIOKit.cpp`, `iokit/bsddev/IOKitBSDInit.cpp`; `kernel/switch/boot/bsd_init.c`; `diagnostics/switch/SwitchRootBoot.c`; `drivers/NativeSwitchBlock/NativeSwitchBlock.cpp`, `drivers/ArmDTPlatform/Info.plist`, `drivers/ArmCpu/Info.plist`; `kits/SwitchBoard/SwitchBoard.h`; `ERISTA_ADT.md`, `ERISTA_NATIVE_PORT_PLAN.md`, `ERISTA_RESEARCH.md`, `ERISTA_THERMAL.md`, `ERISTA_FIRST_XNU_BOOT.md`, `ERISTA_BOOT_AUDIT.md`.
