@@ -200,9 +200,83 @@ Set `CARD=/Volumes/"NO NAME"` and `PKG=<the package path the build prints>`. Eve
 
 Any difference not named above stops the procedure and is reported with both files.
 
+## Card placement as measured (reported 2026-11-27 10:29 JST, commit `7424abcc4`)
+
+The procedure above was run on the Mac by the owner. It is the first time the T4-R files are on the card. Nothing was run on the console.
+
+| Step | Result |
+| --- | --- |
+| Hash record before the copy | 78 files |
+| Package files against this file's list | 4 of 4 equal, 64 digits each |
+| Four existing inis moved to `_ini_stash` | done; stash comparison exit 0 (same hashes as before) |
+| `rsync` dry run | only the four planned files |
+| `rsync` copy | success; package size 1004732 bytes |
+| Before and after diff | four inis moved, four T4-R files added, 0 changed hashes, no other difference |
+
+State of the card now: the four diagnostic inis sit in `_ini_stash`, so hekate's menu should show `iOS Diag T4R` and no other diagnostic. Not yet looked at: the menu itself, and whether hekate ignores `_ini_stash`. The inis are to be moved back after the run (step 8 of the procedure). Until then the other diagnostics cannot be started from the card.
+
+Having the files on the card is not a run approval. The run is not approved.
+
 ## Checklist for a run, if one is ever approved in writing
 
-Before: the hash list of the package matches this file; the card record of the previous section is clean; cold start; temperature written down and under the provisional 40 C; video on; a person with a hand on POWER; the card holds only this entry. On the screen, read in this order and write each line down: the title line, `T4R START. EL1 STATE PASS`, each BEGIN and RESULT pair, `TMRUS` advance, the count and expiry line, the state line with its reason, `T4R COMPLETE. READS 5. STOP 0000`, `RESET IN 15 S`. After: note whether hekate came back by itself and how long it took, and whether anything else on the card changed (re-run the hash record).
+Everything here is a precondition. One "no" means no run.
+
+Written approval and state:
+- [ ] The owner's written approval of the T4-R run exists, with the date.
+- [ ] `boot` 0, feature mask 0; nothing else of the repository is on the card's boot path; no watchdog is armed by anything on the card.
+
+Card:
+- [ ] A fresh `shasum` record of `bootloader` and `switchroot` equals `~/t4r-after.txt`.
+- [ ] The four T4-R files equal the hash list in this file.
+- [ ] The card holds the entry `ios-diag-t4r` and no other entry that boots iOS; the four inis are in `_ini_stash`.
+
+Console and set-up:
+- [ ] Cold start: powered off for several minutes, not charging, not just used.
+- [ ] Temperature of the case written down, under the provisional 40 C (not an official limit).
+- [ ] Video on, framing the screen and the clock or a timer.
+- [ ] A person with a hand on POWER for the whole run.
+- [ ] Hekate 6.5.5 starts and shows `iOS Diag T4R`, one entry. Note whether `_ini_stash` caused anything in the menu.
+
+During (write down each line as it is drawn; the screen is the record):
+- [ ] Title, `T4R START. EL1 STATE PASS`, then each BEGIN and RESULT pair for `TMRUS 1`, `TMR5 PTV`, `WDT0 CONFIG`, `WDT0 STATUS`, `TMRUS 2`.
+- [ ] The count and expiry line, the state line with its reason, `T4R COMPLETE. READS 5. STOP 0000`, `RESET IN 15 S`.
+- [ ] Hold POWER on any condition in "Stop and pass conditions, final".
+
+After:
+- [ ] Hekate came back by itself; time from COMPLETE to the menu.
+- [ ] A new hash record of the card; the diff against `~/t4r-after.txt` is empty.
+- [ ] The four inis moved back and the card equals `~/t4r-before.txt` plus the four T4-R files.
+
+## Record template for after a run
+
+Copy it into the run record. Every blank is filled from the video or the screen; a blank that cannot be read stays blank and is written as "not seen", never estimated.
+
+```
+Run date and time (JST):
+Commit and package hashes checked (yes/no):
+Case temperature before / after:
+Entry selected at (clock):
+Screen lines, in order, as drawn:
+  TMRUS 1 address / value:
+  TMR5 PTV address / value:
+  WDT0 CONFIG address / value:
+  WDT0 STATUS address / value:
+  TMRUS 2 address / value / advanced by (or DID NOT ADVANCE):
+  Count / expiry line:
+  State and reason (BUSY, DORMANT, IDLE, CONFIGURED_STOPPED, UNKNOWN):
+  COMPLETE line (reads, stop code):
+  RESET IN 15 S drawn (yes/no) and clock:
+Hekate back by itself (yes/no), clock, seconds after COMPLETE:
+Stopped by hand (yes/no), why, at which line:
+PSCI SYSTEM_RESET RETURNED / NO RESET / EXIT CALLED OUTSIDE EL1 / exception / black screen:
+Console warm or hot (observation):
+Card hash diff after the run (empty/not):
+Inis moved back (yes/no) and card equals the before record plus four files (yes/no):
+Evidence the run adds (one line each): what it shows / what it does not show
+Video file name and its SHA256:
+```
+
+A pass shows what "Stop and pass conditions, final" says it shows and nothing more.
 
 ## Moving on to T4-A
 

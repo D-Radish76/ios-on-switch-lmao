@@ -574,6 +574,13 @@ class T4Documents(unittest.TestCase):
             self.assertIn(phrase, run, phrase)
         self.assertNotRegex(run, '[\\u2013\\u2014]')
 
+    def test_t4r_card_placement_and_run_template(self) -> None:
+        run = read('ERISTA_T4R_RUN.md')
+        for phrase in ('## Card placement as measured', '1004732', '78 files', 'Having the files on the card is not a run approval',
+                       '## Record template for after a run', 'never estimated', 'The run is not approved'):
+            self.assertIn(phrase, run, phrase)
+        self.assertNotRegex(run, '[\\u2013\\u2014]')
+
     def test_t4r_revision_and_the_corrected_stop_conditions(self) -> None:
         run = read('ERISTA_T4R_RUN.md')
         review = read('ERISTA_T4R_REVIEW.md')
