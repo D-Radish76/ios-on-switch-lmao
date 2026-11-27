@@ -217,6 +217,14 @@ State of the card now: the four diagnostic inis sit in `_ini_stash`, so hekate's
 
 Having the files on the card is not a run approval. The run is not approved.
 
+## Timing reported after a run (2026-11-27 10:37 JST, owner's impression, not measured)
+
+The owner reported: hekate came back by itself about 15 s after the COMPLETE line; that is inside the provisional 30 s stop figure; no manual stop; no second run. The 15 s is the owner's impression, not a measurement from the video, and the report gives no screen values, so no state, count or register value is recorded here and none is inferred.
+
+How to read the figure: it is a reference, not the PSCI `SYSTEM_RESET` time and not a result of this repository's measuring. It does not fit the exit path as read from `exit.c` without a further explanation. From COMPLETE the loader draws `RESET IN 15 S`, waits 15 s on the counter and only then calls `SYSTEM_RESET`, so hekate could not be back within 15 s of COMPLETE unless the 15 s was counted from another line (the `RESET IN 15 S` line, say), or from the reset and not from COMPLETE, or the impression is off. This record does not choose between them. The video, if one was taken, settles it: clock at COMPLETE, at `RESET IN 15 S`, at the screen going dark and at the hekate menu.
+
+Until that is read from the video, the figures in "Stop and pass conditions, final" are not changed: the 22 s estimate and the 30 s stop stay as provisional, and no time limit is a safety guarantee. The pass conditions are not claimed either; they need the screen lines of the template below.
+
 ## Checklist for a run, if one is ever approved in writing
 
 Everything here is a precondition. One "no" means no run.

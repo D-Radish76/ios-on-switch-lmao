@@ -581,6 +581,13 @@ class T4Documents(unittest.TestCase):
             self.assertIn(phrase, run, phrase)
         self.assertNotRegex(run, '[\\u2013\\u2014]')
 
+    def test_t4r_reported_timing_is_a_reference(self) -> None:
+        run = read('ERISTA_T4R_RUN.md')
+        for phrase in ('## Timing reported after a run', "owner's impression, not a measurement", 'not the PSCI `SYSTEM_RESET` time',
+                       'no state, count or register value is recorded here'):
+            self.assertIn(phrase, run, phrase)
+        self.assertNotRegex(run, '[\\u2013\\u2014]')
+
     def test_t4r_revision_and_the_corrected_stop_conditions(self) -> None:
         run = read('ERISTA_T4R_RUN.md')
         review = read('ERISTA_T4R_REVIEW.md')
