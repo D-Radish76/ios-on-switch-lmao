@@ -989,3 +989,22 @@ py_test(
         "//kernel/xnu-10063.141.1/osfmk:kern/startup.c",
     ],
 )
+
+# The remaining-work document for the first XNU run keeps its holds and names real files.
+py_test(
+    name = "diag_remaining_docs_test",
+    srcs = ["diag_remaining_docs_test.py"],
+    data = [
+        "//:ERISTA_FIRST_XNU_BLOCKERS.md",
+        "//:ERISTA_FIRST_XNU_REMAINING.md",
+        "//:ERISTA_FIRST_XNU_RUN.md",
+        "//:ERISTA_PROTECTION.md",
+        "//:ERISTA_T3T4_MINIMAL.md",
+        "//:ERISTA_T3T4_OPTIONS.md",
+        "//:ERISTA_T3T4_REUSE.md",
+        "//:ERISTA_T4A_DESIGN.md",
+        "//:ERISTA_T4A_RESET_PATH.md",
+        "//:ERISTA_THERMAL.md",
+        "//:ERISTA_XNU_EARLY_INIT.md",
+    ],
+)
