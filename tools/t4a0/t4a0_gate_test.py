@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 HERE = Path('tools/t4a0')
+BAZEL_GENERATED = ('t4a0_gate_test.build_data.txt',)
 SOURCES = ('gate.c', 'sim.c', 'sequence.c')
 DESIGN = Path('ERISTA_T4A_DESIGN.md').read_text()
 
@@ -31,6 +32,9 @@ class Host(unittest.TestCase):
 
 
 class Isolation(unittest.TestCase):
+    def test_the_only_exempt_file_is_the_one_bazel_writes_for_this_test(self) -> None:
+        self.assertEqual(('t4a0_gate_test.build_data.txt',), BAZEL_GENERATED)
+
     def test_nothing_reaches_a_device_or_the_loader(self) -> None:
         for name in (*SOURCES, 'gate.h', 'sim.h', 'sequence.h', 'gate_test.c'):
             text = (HERE / name).read_text()
@@ -52,7 +56,7 @@ class Isolation(unittest.TestCase):
                 self.assertNotIn('t4a0', path.read_text(errors='ignore'), str(path))
 
     def test_only_the_allowed_source_extensions_exist(self) -> None:
-        for path in (p for p in HERE.iterdir() if p.is_file()):
+        for path in (p for p in HERE.iterdir() if p.is_file() and p.name not in BAZEL_GENERATED):
             self.assertIn(path.suffix, ('.c', '.h', '.py', '.bazel'), str(path))
 
 
