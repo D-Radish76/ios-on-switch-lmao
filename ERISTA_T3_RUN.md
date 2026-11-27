@@ -53,7 +53,57 @@ The audit must end with `AUDIT PASSED (T3)`; `boot/diag/erista-t3-mmio-audit.txt
 
 ## Card preparation (not executed; copying stays on hold)
 
-Nothing is copied until the owner approves a run in writing. The procedure is `ERISTA_T3R_RUN.md`'s with `t3` for `t3r`: package `bazel-bin/boot/diag_t3/package/`, files `switchroot/ios-diag-t3/{bl31.bin,bl33.bin,script.txt}` and `bootloader/ini/ios-diag-t3.ini`, before and after hash lists `~/t3-before.txt` and `~/t3-after.txt`, a collision check, the optional ini stash, `rsync --ignore-existing`, the diff, and the way back. The last T3-R card diff ended with exit 1 and its text was not reported (`ERISTA_T3R_RUN.md`); read that text before a card is prepared again.
+Nothing is copied until the owner approves a run in writing. The procedure is `ERISTA_T3R_RUN.md`'s with `t3` for `t3r`: package `bazel-bin/boot/diag_t3/package/`, files `switchroot/ios-diag-t3/{bl31.bin,bl33.bin,script.txt}` and `bootloader/ini/ios-diag-t3.ini`, before and after hash lists `~/t3-before.txt` and `~/t3-after.txt`, a collision check, the optional ini stash, `rsync --ignore-existing`, the diff, and the way back. The last T3-R card diff ended with exit 1; it held only the four added T3-R files and the 82 existing files were unchanged (`ERISTA_T3R_RUN.md`). Expect the same shape for T3: three added files plus the ini, nothing else.
+
+## Mac record (owner's report, 2026-11-28 01:48 JST, commit `35d04ec55`)
+
+| Item | Result |
+| --- | --- |
+| Toolchain | Homebrew clang 23.1.6 |
+| Regression tests | 10 of 10 pass |
+| `diag_images` | 12 of 12 pass, exit 0 |
+| Eleven earlier hashes | unchanged against `907ae9923` |
+| Audit | `AUDIT PASSED (T3)`, exit 0 |
+| Mac flat SHA256 of `diag_t3` | `737dd79bafc31f964b235fdb37815b195c70b2765184781796da17fbaa628c0a` |
+
+This is the commit with the unchecked rail state. The Linux flat hash is `405adc93...`; the Mac one differs by toolchain. Offline checks only: no run, no card copy.
+
+## Remaining risks
+
+None of these is measured, and the image cannot remove any of them.
+
+| Risk | What is known | Effect on a run |
+| --- | --- | --- |
+| Hang with the rail on | A bus access that never returns stops every software limit, the 15 s rail limit included. Nothing in the image leaves that state | The rail stays on until the person acts |
+| Recovery by POWER hold | Recovery rehearsal was skipped, the time to full off is unmeasured, and a hold with the rail on has never been tried | A hold is the only plan; it is not a sure recovery |
+| CC4 polarity | The state check requires CC4 low as hekate leaves it; whether low means fan enabled is read from source, not measured | If wrong, the rail write may not do what the design assumes |
+| Shared 5 V rail load | The loads on A5 are not known | Unknown current on a rail shared with other parts |
+| Fan current | Not known | Same |
+| Rail pin across `SYSTEM_RESET` | Not known. A reset is not claimed to restore registers | Matters only after a stop that skips the off sequence |
+| Rail off evidence | Off confirmed is a GPIO output latch read, not a 5 V measurement | A latch read of zero does not show the rail is at 0 V |
+| Readback exactness | `PWM_CSR_1` and the pad word reading back as written is untested on hardware | A mismatch stops the run and runs the off sequence |
+| Provisional limits | 15 s, 30 s, 35 s and 60 s are unmeasured | They guide the person and guarantee nothing |
+
+## Checklist before a run
+
+Offline, done for `35d04ec55`:
+- [x] Mac build, regression 10 of 10, `diag_images` 12 of 12, eleven hashes unchanged against `907ae9923`, `AUDIT PASSED (T3)`
+- [x] The T3-R card diff explained: four added files, 82 unchanged, six inis
+
+Open, each needs the owner in writing:
+- [ ] The write list and the safety judgement of `ERISTA_T3_FAN_DESIGN.md` accepted
+- [ ] CC4 polarity and the loads on the A5 rail checked against the schematic or a bench measurement, or accepted as unknown
+- [ ] The recovery position accepted: POWER hold is the only recovery, unmeasured, untried with the rail on
+- [ ] The card procedure for T3 run through its diff, result as expected
+- [ ] Console state: both Joy-Con detached, nothing on USB, fan free, battery, auto boot off
+- [ ] Who holds the console, and the 30 s, 35 s and 60 s rules read
+- [ ] The Mac `loader.uboot.bin` SHA256 and the package hashes recorded for this commit
+
+## Opinion on running it
+
+Not ready. The image fails closed on everything the code can see: the state is checked before any write, every write is read back, the off sequence runs after any stop, and an unconfirmed rail halts the loader. What it cannot cover is a hang with the rail on, and the only answer to that is a POWER hold that has never been timed or tried in that state. CC4 polarity and the rail loads are also open, and they are checkable on paper without touching the console.
+
+Before an approval request, settle CC4 and the A5 loads from the schematic or a bench measurement, and decide whether the unrehearsed POWER hold is acceptable for a rail that stays on for up to 15 s. If both are accepted, the remaining risk is a short hang with the fan powered. That is the owner's call. This document does not approve a run.
 
 ## Before a run can be approved
 

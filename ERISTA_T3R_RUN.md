@@ -76,9 +76,11 @@ The Mac flat hash differs from the Linux one (`fc904cfc...`) because the toolcha
 | Mac flat SHA256 of the fixed `diag_t3r` | not reported |
 | Card hash comparison after the T3-R run | exit 0 |
 | Existing inis | the five restored; six in total now |
-| Diff after the restore | exit 1; the differences were not reported |
+| Diff after the restore | exit 1; details reported 2026-11-28 01:48 JST, see below |
 
 On 2026-11-28 the owner reported the Mac flat SHA256 of the fixed `diag_t3r` as `74731b78275545fe695e47e21a9e68266dd5894efa2c56e7cd14a4e9dc1d28ff` (commit `302788696`, clang 23.1.6); the eleven hashes matched `907ae9923`.
+
+Restore result (owner's report, 2026-11-28 01:48 JST): the exit 1 diff holds only the four added T3-R files. The 82 existing files keep their hashes. The five existing inis are restored, six in total. So the exit 1 was the expected difference, not a card change. Recorded as reported; no diff text is held here.
 
 The Mac comparison of the eleven image hashes starts from this commit, `907ae9923`, not `6da4f57ee`, which has no fixed T3-R. The exit 1 is recorded as it came. Its cause is not known here and is not guessed: it can be an expected difference (the sixth ini) or something else, and only the diff text says which. The fixed image has had no run. The Linux flat hash of the fixed image is `075d6816...`.
 
