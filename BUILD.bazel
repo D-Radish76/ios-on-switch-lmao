@@ -60,6 +60,7 @@ exports_files([
     "ERISTA_T4_WATCHDOG_DESIGN.md",
     "ERISTA_T4R_DESIGN.md",
     "ERISTA_T4A_DESIGN.md",
+    "ERISTA_T4A_RESET_PATH.md",
     "ERISTA_T4R_RESULT.md",
     "ERISTA_T4R_REVIEW.md",
     "ERISTA_T4R_RUN.md",

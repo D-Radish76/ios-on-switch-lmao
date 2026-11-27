@@ -50,4 +50,4 @@ That any write to these registers works; that a watchdog can be armed, expires o
 
 ## Limits that stay
 
-T4-R is not approved to run again. T4-A and T4-P are not implemented, no watchdog is armed, no new MMIO write exists, `boot` 0, feature mask 0, T3 and T4 are not waived, the first XNU run is on HOLD, and the ten diagnostic hashes are unchanged. T4-A's design is on paper in `ERISTA_T4A_DESIGN.md`.
+T4-R is not approved to run again. T4-A and T4-P are not implemented, no watchdog is armed, no new MMIO write exists, `boot` 0, feature mask 0, T3 and T4 are not waived, the first XNU run is on HOLD, and the ten diagnostic hashes are unchanged. T4-A's design is on paper in `ERISTA_T4A_DESIGN.md`; the reset paths it depends on are in `ERISTA_T4A_RESET_PATH.md`.
