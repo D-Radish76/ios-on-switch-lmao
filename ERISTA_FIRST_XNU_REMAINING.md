@@ -65,7 +65,7 @@ Not covered by any measure: a hang before the VM text has no autonomous stop, th
 
 - A2 and A3 gate T4-A1 (conditions 2 and 3 of `ERISTA_T4A_DESIGN.md`), unless the owner accepts a provisional timer source in writing.
 - T4-A1 gates the T4-A2 prerequisites: run sheet, recovery rehearsal, separate approvals.
-- T4-A2's period needs video timings. The design says they come from "the first run". If that means the first XNU run, T4-A cannot come before it; the owner should say which run is meant.
+- T4-A2's period needs video timings. They are taken from independent diagnostics (the T3-R run's video, the owner's recovery rehearsal), not from the first XNU run, so there is no circle (`ERISTA_T3R_DESIGN.md`, 2026-11-27).
 - T3 needs its read-only state step (C1) first, then the fan run.
 - B and A4 to A7 gate nothing in the first run.
 - D5 depends on nothing and can happen now.

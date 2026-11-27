@@ -31,6 +31,8 @@ Replaces the table in `ERISTA_FIRST_XNU_BOOT.md`.
 
 The open T3 and T4 work sorted by where its answer can come from, with the dependencies and the shortest orders: `ERISTA_FIRST_XNU_REMAINING.md` (2026-11-27).
 
+The read-only design that precedes any fan step: `ERISTA_T3R_DESIGN.md` (2026-11-27, not built, not approved).
+
 Owner's decision (2026-11-26): the full D1 is not a condition of the first VM-stop diagnostic. The Mac's checks for the first-XNU package are in `ERISTA_FIRST_XNU_MAC.md`.
 
 Two things this run list does not need: D1-min's result (the first XNU diagnostic ends before IOKit and the SD driver, so XNU never touches the card in it) and

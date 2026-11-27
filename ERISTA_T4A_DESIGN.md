@@ -183,7 +183,7 @@ These open T4-A1 (the image). T4-A0 needed none beyond the approval given. All m
 1. The T4-A0 model, its tests and its isolation checks pass on the Mac as well as here.
 2. Items 4 and 6 settled from the TRM or the NVIDIA kernel source, or the owner accepts a provisional timer source in writing.
 3. The write order chosen from the comparison above: three arming writes and three stop writes.
-4. `T_A` and the stop rule set by the owner by the rule above, with the video timings of the first run in hand.
+4. `T_A` and the stop rule set by the owner by the rule above, with video timings from independent diagnostics in hand (`ERISTA_T3R_DESIGN.md`), not from the first XNU run.
 5. The ten earlier hashes unchanged in the build that adds `diag_t4a`.
 6. The owner's written approval to start T4-A1.
 
