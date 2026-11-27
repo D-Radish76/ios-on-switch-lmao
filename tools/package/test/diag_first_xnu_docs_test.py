@@ -588,6 +588,17 @@ class T4Documents(unittest.TestCase):
             self.assertIn(phrase, run, phrase)
         self.assertNotRegex(run, '[\\u2013\\u2014]')
 
+    def test_t4a_design_and_run_result_stay_on_paper(self) -> None:
+        design = read('ERISTA_T4A_DESIGN.md')
+        result = read('ERISTA_T4R_RESULT.md')
+        for phrase in ('Nothing here is built, implemented or approved', '## Unresolved, each needs an answer', 'Where the console lands after a watchdog reset',
+                       'T4-A is not ready'):
+            self.assertIn(phrase, design, phrase)
+        for phrase in ('Formal pass: not claimed', 'T4-R is not approved to run again', 'ERISTA_T4A_DESIGN.md'):
+            self.assertIn(phrase, result, phrase)
+        for doc in (design, result):
+            self.assertNotRegex(doc, '[\\u2013\\u2014]')
+
     def test_t4r_revision_and_the_corrected_stop_conditions(self) -> None:
         run = read('ERISTA_T4R_RUN.md')
         review = read('ERISTA_T4R_REVIEW.md')

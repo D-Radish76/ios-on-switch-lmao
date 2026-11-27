@@ -492,6 +492,19 @@ py_test(
     ],
 )
 
+# The recorded T4-R run replayed through the real C logic, and its result document (ERISTA_T4R_RESULT.md).
+py_test(
+    name = "diag_t4r_measured_test",
+    size = "medium",
+    srcs = ["diag_t4r_measured_test.py"],
+    data = [
+        "//:ERISTA_T4R_RESULT.md",
+        "//boot:all_sources",
+        "//boot:build_file",
+        "//boot:diag/erista-t4r-run1.txt",
+    ],
+)
+
 # The first-XNU run sheet and the boot-gate design against the sources they quote.
 py_test(
     name = "diag_first_xnu_docs_test",
@@ -503,6 +516,8 @@ py_test(
         "//:ERISTA_T4_DIAG_PLAN.md",
         "//:ERISTA_T4_WATCHDOG_DESIGN.md",
         "//:ERISTA_T4R_DESIGN.md",
+        "//:ERISTA_T4A_DESIGN.md",
+        "//:ERISTA_T4R_RESULT.md",
         "//:ERISTA_T4R_REVIEW.md",
         "//:ERISTA_T4R_RUN.md",
         "//:ERISTA_T3T4_REUSE.md",

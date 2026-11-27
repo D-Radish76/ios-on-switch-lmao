@@ -1,0 +1,53 @@
+# T4-R first hardware run. Erista (T210B01=0, SKU 0, BOOT=0), hekate 6.5.5, Auto Boot off, one menu entry, iOS Diag T4R.
+# Reported by the owner 2026-11-27 (10:37 and 10:40 JST) from the photograph IMG_8746.jpg of the loader screen, read first by ChatGPT and checked against the
+# photograph here. The photograph is not stored. Values are the screen's hexadecimal as printed; keys ending in _US are decimal microseconds.
+# The photograph was taken while RESET IN 15 S was on the screen, so it shows the screen before the reset.
+# Not measured or not recorded: the temperature during the run, the time from COMPLETE to hekate (the owner's impression is about 15 s, not a video
+# measurement), whether a video was taken, whether the console was cold at the start, the card's hashes after the run, the meaning of STATUS bits 0 and 1.
+# Nothing was written to a device register and no watchdog was set or stopped by the image; that follows from the image and its audit, not from this run.
+result=READ_AND_RETURN_OK
+run_date=2026-11-27
+attempts=1
+start_temperature=29.5 C
+end_temperature=31.3 C
+temperature_difference=+1.8 C
+temperature_during_run=not measured
+manual_power_hold_needed=no
+rerun=no
+returned_to_hekate_by_itself=yes
+complete_to_return_seconds_impression=15
+screen_stop_code=0000
+screen_reads=5
+tmrus_1=056E3BEE
+tmr5_ptv=00000000
+wdt0_config=00000000
+wdt0_status=00000000
+tmrus_2=057DA780
+tmrus_advanced_by_us=1010578
+screen_state=IDLE
+screen_count=0
+screen_expiry=0
+# The screen lines in order, as drawn (rows 9 to 22 of the loader screen, then the exit line).
+screen=T4R START. EL1 STATE PASS
+screen=T4R TMRUS 1 READ BEGIN. ADDRESS 60005010. 32 BIT
+screen=T4R TMRUS 1 READ RESULT 056E3BEE
+screen=T4R TMR5 PTV READ BEGIN. ADDRESS 60005060. 32 BIT
+screen=T4R TMR5 PTV READ RESULT 00000000
+screen=T4R WDT0 CONFIG READ BEGIN. ADDRESS 60005100. 32 BIT
+screen=T4R WDT0 CONFIG READ RESULT 00000000
+screen=T4R WDT0 STATUS READ BEGIN. ADDRESS 60005104. 32 BIT
+screen=T4R WDT0 STATUS READ RESULT 00000000
+screen=T4R WDT0 AFTER HEKATE INIT: IDLE
+screen=T4R WDT0 STATUS COUNT 0 EXPIRY 0. BITS 0 AND 1 NOT CONFIRMED
+screen=T4R TMRUS 2 READ BEGIN. ADDRESS 60005010. 32 BIT
+screen=T4R TMRUS 2 READ RESULT 057DA780. ADVANCED BY 1010578 US
+screen=T4R COMPLETE. READS 5. STOP 0000
+# Header lines of the same photograph.
+header_hidrev=00022117
+header_odm4=00000204
+header_board=ERISTA T210B01=0 SKU=0 BOOT=0
+header_el1=EL=4 SCTLR=30D00800 DAIF=3C0
+header_counter=CNTFRQ=19200000 HCR=80000000 CNTHCTL=3 CNTVOFF=0
+header_isar0=0000000000011120 CRC32 1 OK
+header_entry_sp=FF87DD10 IN NATIVE_GATE RANGE
+exit_line=RESET IN 15 S. PSCI SYSTEM_RESET FROM THE LOADER IS NOT VERIFIED

@@ -225,6 +225,8 @@ How to read the figure: it is a reference, not the PSCI `SYSTEM_RESET` time and 
 
 Until that is read from the video, the figures in "Stop and pass conditions, final" are not changed: the 22 s estimate and the 30 s stop stay as provisional, and no time limit is a safety guarantee. The pass conditions are not claimed either; they need the screen lines of the template below.
 
+The first run, with its screen values and the formal pass left open, is in `ERISTA_T4R_RESULT.md` and `boot/diag/erista-t4r-run1.txt`.
+
 ## Checklist for a run, if one is ever approved in writing
 
 Everything here is a precondition. One "no" means no run.
