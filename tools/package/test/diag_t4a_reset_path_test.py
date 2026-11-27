@@ -74,7 +74,7 @@ class Documents(unittest.TestCase):
     def test_the_withdrawn_pass_condition_and_the_period_rule(self) -> None:
         self.assertIn('withdrawn', DESIGN)
         self.assertIn('The period is not taken from existing values', DESIGN)
-        self.assertIn('## Conditions before T4-A could be approved', DESIGN)
+        self.assertIn('## Conditions before T4-A could be implemented', DESIGN)
         self.assertIn('## The gate: order and state, not only values', DESIGN)
         self.assertEqual(14, len(re.findall(r'^\| \d+ \|', DESIGN, re.MULTILINE)))
 

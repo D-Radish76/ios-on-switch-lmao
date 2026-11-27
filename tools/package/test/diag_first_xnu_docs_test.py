@@ -592,7 +592,7 @@ class T4Documents(unittest.TestCase):
         design = read('ERISTA_T4A_DESIGN.md')
         result = read('ERISTA_T4R_RESULT.md')
         for phrase in ('Nothing here is built, implemented or approved', '## Unresolved, with the source behind each', 'Where the console lands after a WDT0 expiry',
-                       '## Conditions before T4-A could be approved'):
+                       '## Conditions before T4-A could be implemented'):
             self.assertIn(phrase, design, phrase)
         for phrase in ('Formal pass: not claimed', 'T4-R is not approved to run again', 'ERISTA_T4A_DESIGN.md'):
             self.assertIn(phrase, result, phrase)

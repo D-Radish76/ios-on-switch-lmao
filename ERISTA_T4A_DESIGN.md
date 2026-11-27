@@ -33,7 +33,9 @@ Three pairings of source index and PTV address exist:
 - index 7 with PTV `0x60005088`: the pinned DTB, and the L4T 28.2 page for the index;
 - the `heartbeat.h` table (TRM table 20, as cited there) maps index 7 to `0x70` and puts `0x88` at index 0.
 
-So the DTB's own pair disagrees with that table, and the table agrees with mainline. The vendor documents point at timer 7 and the upstream and this-tree code at timer 5. T4-R read `0x60005060` and found zero, which does not tell which timer the hardware watchdog counts. Only the TRM, or a measurement on a running timer, settles it. A read of the other candidate PTV words would be new MMIO and is not approved. Until it is settled, T4-A's chosen source is a provisional choice, and a wrong source could mean the watchdog counts a timer that is not running (no reset) or one that runs at another rate (a reset at another time). The stop figure has to cover both.
+The Switchroot kernel source (CTCaer `switch-l4t-kernel-4.9`, `drivers/watchdog/tegra_wdt.c` and `tegra-wdt-legacy.c`) was read this round. **Confirmed:** `tegra_wdt.c` uses source 5 and PTV `+0x60` like mainline, and the pinned DTB's `timer@60005000` lists `nvidia,tegra30-timer-wdt` among its compatibles, so that driver can bind there. `tegra-wdt-legacy.c` takes the source from the PTV address it is given; its formula maps PTV `0x88` to source 0, `0x60` to 5 and `0x70` to 7, which agrees with the `heartbeat.h` table. **Unknown:** the `nvidia,tegra-wdt-t21x` driver the DTB names for `watchdog@60005100` (not found in any source reachable here) and so what its `nvidia,timer-index` 7 means; which of these drivers the Switchroot kernel configuration builds (the config was not read).
+
+So the DTB's own pair disagrees with that table, and the table agrees with mainline and with the legacy driver's formula. The vendor documents point at timer 7 and the upstream and this-tree code at timer 5. T4-R read `0x60005060` and found zero, which does not tell which timer the hardware watchdog counts. Only the TRM, or a measurement on a running timer, settles it. A read of the other candidate PTV words would be new MMIO and is not approved. Until it is settled, T4-A's chosen source is a provisional choice, and a wrong source could mean the watchdog counts a timer that is not running (no reset) or one that runs at another rate (a reset at another time). The stop figure has to cover both.
 
 ## Write order
 
@@ -49,7 +51,7 @@ Unknown: whether config is ignored while the counter runs (the heartbeat's comme
 
 ## PMC2CAR scope and the BPMP
 
-Unknown. The only source for bit 15 is its name and the three code comments in this tree and Linux; the TRM is not here. BL31's own reset does not use it (`MAIN_RST`). The L4T 28.2 page says that expiry resets the CPU, and does not say the SoC. In a loader stage the BPMP firmware is not running (`NOTES.md`: BL31 powers it off on the Erista when hekate hands it an SC7 entry firmware), so a PMC2CAR reset that needed live BPMP software would not happen; that dependence is not known either way.
+Unknown. The only sources for bit 15 are its name, the legacy driver's names for config bits 12 to 14 (interrupt, FIQ and system reset enables) and the code comments in this tree and Linux; the TRM is not here. A config word that sets bit 15 without bit 14 or the FIQ path is what the mainline arm writes; whether `SYS_RST_EN` (bit 14) is needed on this SoC is not known. BL31's own reset does not use it (`MAIN_RST`). The L4T 28.2 page says that expiry resets the CPU, and does not say the SoC. In a loader stage the BPMP firmware is not running (`NOTES.md`: BL31 powers it off on the Erista when hekate hands it an SC7 entry firmware), so a PMC2CAR reset that needed live BPMP software would not happen; that dependence is not known either way.
 
 ## Does the setting survive a reset
 
@@ -73,18 +75,35 @@ Power removal is the only certain way out. Whether it clears a half-armed TKE bl
 
 ## The gate: order and state, not only values
 
-A value allowlist would accept the right words in the wrong place. The gate is a small state machine over the write targets, in `t4a_gate.c`, with its own model test over every 32-bit value:
+A value allowlist would accept the right words in the wrong place. The gate is a small state machine over the write targets, in `t4a_gate.c`, with a model test described below:
 
 | State | Allowed next | Moves to |
 | --- | --- | --- |
 | `CHECKED` (the T4-R reads done, idle, line settled) | write 1 with the one periodic word | `PTV_SET` |
-| `PTV_SET` | write 2 with the one config word | `CONFIG_SET` |
-| `CONFIG_SET` (config read back equal) | write 3 with 1 | `ARMED` (once, ever) |
-| `ARMED` | reads; the park | none; no write is accepted |
-| any state after write 1 | the stop sequence, only after a failed read back, in its order | `STOPPED` |
+| `PTV_SET` | write 2 with the one config word; or the stop sequence after a failed read back | `CONFIG_SET`; `STOPPED` |
+| `CONFIG_SET` (config read back equal) | write 3 with 1; or the stop sequence after a failed read back | `ARMED` (once, ever); `STOPPED` |
+| `ARMED` | reads and the park. The stop sequence only if the read back after write 3 differs from what was written, once, with its three stop writes and no other write | `STOPPED` |
 | `STOPPED`, `REFUSED` | reads | none; no write is accepted |
 
-Rules: a write is accepted only if the previous step's line is drawn and settled; the START write is refused unless the read back of config and `TMR5_PTV` equals what was written; the arm happens once per run (a `.data` flag); any other address, value or width, any write from a wrong state, and every WDT4, PMC and CAR address is refused, ends the run with the refusal on screen and runs no stop sequence unless the state is after write 1. The audit lists each write once with its function and fails on any other store. All design: no gate, test or audit exists.
+Rules: a write is accepted only if the previous step's line is drawn and settled; the START write is refused unless the read back of config and `TMR5_PTV` equals what was written; the arm happens once per run (a `.data` flag); any other address, value or width, any write from a wrong state, and every WDT4, PMC and CAR address is refused and ends the run with the refusal on screen. A refusal runs the stop sequence only from `PTV_SET`, `CONFIG_SET` or `ARMED`, once, and only its three writes; from `CHECKED` nothing was written and nothing is stopped. After `STOPPED` or `REFUSED` the gate accepts no write. An armed run that reads back correctly never stops by software: it parks. The audit lists each write once with its function and fails on any other store. All design: no gate, test or audit exists.
+
+## How the gate is tested
+
+Walking all 2^32 values per target is not the plan. The test is built from classes:
+
+- boundary values per target: 0, 1, the allowed word, the allowed word plus and minus 1, each single bit flipped, all ones, the top bit alone;
+- invalid addresses (neighbours of each allowed address at plus and minus 4, the WDT4, PMC and CAR addresses, unaligned ones) and invalid widths (8, 16, 64 bit);
+- every state against every action (3 allowed writes, any other write, a read, the stop writes, a second arm), asserting the table above;
+- bounded sequences: all action sequences up to a fixed length from `CHECKED`, with the invariants that START is written at most once, nothing is written after `STOPPED` or `REFUSED`, no write precedes its predecessor, and the stop sequence is exactly three writes in order;
+- a fixed-seed random sample of values and addresses as a check on the classes, not as proof.
+
+The audit that lists every store in the image and fails on any other is separate and is a build-time check.
+
+## Temperature and hangs during a run
+
+No temperature source is read by T4-A (the SoC sensor is a new MMIO read and not approved). The run sheet takes the temperature from outside: an infrared thermometer or thermal camera at fixed points and times, or a thermocouple taped to the case, in a video that also shows the screen. That gives readings before, at arming, at the expiry window and after, not a continuous record, and an unmeasured peak is stated as unmeasured.
+
+An unmonitorable hang is a real risk: if the SoC stops answering, nothing on screen changes and the person cannot tell a hang from a long wait. The countdown therefore comes from the generic timer counter (`cntpct`, a CPU register, no MMIO) and the screen is redrawn from DRAM by the display scan without register access. A frozen countdown means the CPU stopped; a counting countdown with no reset means the watchdog did not fire. Neither says why. The person's rule is fixed before the run, from the video timings, and POWER hold is attempted at it without being counted on (see recovery in `ERISTA_T4A_RESET_PATH.md`).
 
 ## Image and sequence
 
@@ -100,29 +119,38 @@ The 45 s, 48 s and 60 s of the shutdown watch, heartbeat and panic path are time
 | --- | --- | --- | --- | --- |
 | 1 | Where the console lands after a WDT0 expiry | unknown | BL31 and hekate do the return only on the PSCI path (`ERISTA_T4A_RESET_PATH.md`) | the owner's description of a cold start, then an observation |
 | 2 | How the owner's console starts hekate from cold (modchip, payload on the boot path, jig and injector) | unknown to this tree | none | the owner |
-| 3 | Where `R2P_PAYLOAD_BASE` is and whether any stage can overwrite it | unknown | `l4t_defs.h` not read | hekate source; matters to every PSCI stop |
+| 3 | Whether any stage can overwrite `R2P_PAYLOAD_BASE` (`0xFFE40000`, secure firmware carveout) | base confirmed, overwrite risk inferred low | hekate `l4t.c`; the loaders do not touch it | the T4-A audit lists no store there |
 | 4 | Timer wiring: source 5 at `0x60`, or 7 at `0x88` | unknown | mainline and this tree against the DTB and L4T 28.2; the `heartbeat.h` table agrees with neither DTB pair | the TRM; or a read-only extension of T4-R (needs approval) |
-| 5 | Whether mainline's driver binds on T210 | unknown | `tegra_wdt_of_match` against `tegra210.dtsi` | a mainline check |
-| 6 | The `nvidia,tegra-wdt-t21x` driver's write order | unread | the DTB names it; the L4T 4.9 source was not fetched | the Switchroot kernel source |
+| 5 | Whether mainline's driver binds on T210 | unknown | mainline lists `tegra210-timer` only; the pinned DTB adds `tegra30-timer-wdt` | the Switchroot kernel config |
+| 6 | The `nvidia,tegra-wdt-t21x` driver, its write order and the meaning of `nvidia,timer-index` 7 | unread | the DTB names it; not found in any reachable source (GitLab blocked) | the NVIDIA kernel source |
 | 7 | Writes at EL1 | unknown | reads answered; BL31 never touches the block | T4-A itself |
 | 8 | Status bits 0 and 1 for WDT0; the expiry count | unknown | none; the zero word names nothing | the read back after arming |
 | 9 | The scope of the PMC2CAR reset (CCPLEX or SoC) and the BPMP's part | unknown | the L4T 28.2 page speaks of resetting the CPU; BL31's reset is `MAIN_RST` | the TRM |
 | 10 | Survival of the TKE setting across a reset | unknown | see above | the read after a reset |
 | 11 | A boot ROM watchdog (`WDT_DURING_BR`) | unknown | hekate's `hw_init` comment | the TRM |
 | 12 | The unit of the period | inferred | Linux comment: 250 ms tick, four expiries; not measured | the video of T4-A |
-| 13 | The temperature during a run | unmeasured | only before and after were taken | a reading during the run |
+| 13 | The temperature during a run, and a hang that cannot be seen | unmeasured | only before and after were taken | external readings on video (above); a countdown from `cntpct` |
 | 14 | PSCI after an armed watchdog (T4-P) | out of scope here | `ERISTA_T4_DIAG_PLAN.md` | not designed here |
 
-## Conditions before T4-A could be approved
+## Conditions before T4-A could be implemented
 
-All must hold and be recorded; the owner approves in writing.
+Paper and host work only. All must hold and be recorded.
 
-1. Items 1 and 2 answered: the owner says how the console starts and where it lands after a cold reset, and agrees to the recovery for a landing outside hekate.
-2. The timer wiring (item 4) settled from the TRM or by an approved read-only step, or the owner accepts a provisional source in writing.
-3. The write order chosen from the table above, and the gate, its model test and its audit written and passing, with no store outside the gate.
-4. `T_A` chosen by the owner by the rule above, with the video timings of the first run in hand (a formal T4-R pass needs them too).
-5. The loader image's ten earlier hashes unchanged and `diag_t4a` built on the Mac with its hashes recorded.
-6. A run sheet (stop conditions, the temperature during the run, the card hash before and after) like `ERISTA_T4R_RUN.md`.
-7. The owner's separate written approval of: the four writes, the stop sequence, the recovery by POWER hold, and the loop risk.
+1. Items 4 and 6 settled from the TRM or the NVIDIA kernel source, or the owner accepts a provisional timer source in writing.
+2. The write order chosen from the comparison above, with three arming writes and three stop writes named.
+3. The gate, its class based model test and its store audit written and passing, with no store outside the gate.
+4. `T_A` and the stop rule set by the owner by the rule above, with the video timings of the first run in hand.
+5. The ten earlier hashes unchanged in the build that adds `diag_t4a`.
+6. The owner's written approval to start implementation (not to run).
+
+## Conditions before a real device run
+
+Each of these needs the image built on the Mac and recorded.
+
+1. A built `diag_t4a` with its hashes recorded and the card compared before and after placement.
+2. A run sheet like `ERISTA_T4R_RUN.md`: stop conditions, external temperature readings during the run, the video setup, the card hash before and after.
+3. The owner's recovery rehearsal without any image of ours: time a POWER hold from a running hekate, enter RCM with the jig from off, inject hekate and note the time from injection to the menu. This shows what works from a calm state and says nothing about a state with a watchdog armed.
+4. The owner's separate written approval of the three arming writes, the three stop writes, the recovery being unverified for a watchdog left armed, and the loop risk.
+5. The owner's answer to what happens if the console lands outside hekate (item 1) and agreement to inject hekate again.
 
 Standing limits: T4-R not run again, T4-A and T4-P not implemented, no watchdog armed, no new MMIO write, the ten hashes unchanged, `boot` 0, feature mask 0, T3 and T4 not waived, the first XNU run on HOLD.

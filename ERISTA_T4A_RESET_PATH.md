@@ -35,7 +35,7 @@ The same BL31 ends `SYSTEM_OFF` in an error and `panic()` (ATF source; the binar
 ## What the PSCI path needs, and what it leaves
 
 - BL31 alive and the SMC working at EL1: shown by every run.
-- hekate's copy at `R2P_PAYLOAD_BASE` intact at the moment of the reset. Not read: the base address (`l4t_defs.h` was not fetched). Any later run that lets another program write that region could turn the return into a jump into garbage.
+- hekate's copy at `R2P_PAYLOAD_BASE` intact at the moment of the reset. **Confirmed** in hekate v6.5.5 `bootloader/l4t/l4t.c` (`l4t_defs.h` could not be fetched; the defines are in this file): `SECFW_BASE` is `GEN_CARVEOUT_TOP` (`0xFFE00000`) and `R2P_PAYLOAD_BASE` is `SECFW_BASE + SZ_256K`, so `0xFFE40000`, inside the secure firmware carveout (`0xFFE00000` to `0xFFF00000`). hekate also zeroes `R2P_PAYLOAD_BASE + 0x94` (the boot config) there. Any later run that lets another program write that region could turn the return into a jump into garbage; the diagnostic loaders do not touch it, and T4-A's sequence must not either.
 - The reset is `MAIN_RST` (`PMC_RST_STATUS` 3, "software main") with a boot ROM warm boot request. Hekate then saves and clears the reset status in `hw_init` (`hw_rst_reason`, `PMC_RST_STATUS` written to POR, `PMC_SCRATCH200` zeroed), so the cause is not readable by anything started from hekate.
 
 ## WDT0 expiry: how it differs
@@ -56,13 +56,32 @@ The same BL31 ends `SYSTEM_OFF` in an error and `panic()` (ATF source; the binar
 
 `ERISTA_T4_DIAG_PLAN.md` and the first T4-A design expected the console to land in hekate. That expectation was taken from the PSCI path and does not carry to a watchdog reset. `ERISTA_T4A_DESIGN.md` is revised for it.
 
+## The owner's environment (answered 2026-11-27)
+
+Erista HAC-001, RCM-unpatched, no modchip as far as the owner knows, an RCM jig that works, USB APX detection confirmed, hekate started by payload injection from a Mac before, Auto Boot off, Switchroot Linux booted from another card. So from a cold start the owner can reach hekate through RCM. **Recovery when a watchdog is left armed is unverified.**
+
+## Where the console may land after a WDT0 expiry
+
+| Scenario | Basis | What the owner does |
+| --- | --- | --- |
+| BootROM cold boot, eMMC chain starts | **inferred**: no warm boot request is set on this path | cannot inject unless RCM is entered; with the jig, enter RCM from the off state |
+| BootROM cold boot enters RCM by itself | **inferred**, only if its usual conditions hold | inject hekate |
+| The console hangs or stays dark | **unknown** | see POWER hold below |
+| The TKE configuration survives the reset and the counter runs again | **unknown** | the second expiry would repeat the reset; the sequence cannot be ended from software that has not started |
+| A boot ROM watchdog (`WDT_DURING_BR`) is armed | **unknown** | none known |
+
 ## Recovery
 
-- The power button held ends any run by cutting power. A power cut is expected to reset the TKE block (unverified), so a watchdog left armed does not survive it.
-- If a watchdog reset lands outside hekate, the way back is whatever the owner uses to start hekate from a cold start. A card written by the T4-R procedure is unchanged by that.
-- BPMP: BL31 powers it off on the Erista when hekate hands it an SC7 entry firmware (`NOTES.md`), so in a loader stage the BPMP firmware is not running. Whether the PMC2CAR reset needs a live BPMP is not known; the loader stages cannot depend on it either way.
+- POWER hold: the repository's documents cite Nintendo's roughly 12 s force-off (`ERISTA_THERMAL_DESIGN.md`, `ERISTA_T1.md`, `boot/diag/README.md`, `sd_loader/RUN_CHECKLIST.md`), each saying it was not tried here. The Nintendo pages were not fetched. It is **not** treated as a certain recovery: whether it works with a watchdog armed, in a reset loop, or while the SoC is held in reset is unverified, and whether a power cut clears the TKE block is unverified.
+- RCM entry with the jig, then payload injection: works from the owner's cold start (reported). With a watchdog left armed it is unverified, because the console must stay off long enough to enter RCM and the BootROM's behaviour with a running TKE counter is unknown.
+- After a landing outside hekate the card written by the T4-R procedure is unchanged.
+- BPMP: BL31 powers it off on the Erista when hekate hands it an SC7 entry firmware (`NOTES.md`), so in a loader stage the BPMP firmware is not running. Whether the PMC2CAR reset needs a live BPMP is unknown (item 9 of the design); the loader stages cannot depend on it either way.
 - PSCI `SYSTEM_RESET` after an armed watchdog is the T4-P question and is not part of T4-A.
+
+A rehearsal the owner can do without any image of ours is listed in the design (conditions before a real device run).
 
 ## What stays unsaid
 
 The boot ROM's behaviour at a warm boot, the meaning of `PMC_SCRATCH33`, `40`, `45`, `46` as written by BL31, whether `0x6000c200` bit 1 is a CCPLEX or a BPMP control, and the real conditions of the PMC2CAR reset are not in any source read here. None is needed to say that the two paths differ.
+
+The `nvidia,tegra-wdt-t21x` driver was not found in any source reachable here, and the Switchroot kernel's configuration (which watchdog driver is built) was not read.
